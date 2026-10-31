@@ -15,7 +15,8 @@ is planned versus what is implemented.
 
 - **CommitVerse Core** — a Git-like version control engine implemented in
   Python. Git internals are to be developed in this project rather than
-  delegated to GitPython or another existing Git engine.
+  delegated to GitPython or another existing Git engine. Its planned package
+  location is `packages/commitverse-core/`.
 - **CommitVerse Hub** — repository hosting and developer collaboration.
 - **CommitVerse AI** — a future AI developer assistant.
 
@@ -27,11 +28,24 @@ functionality has been implemented yet.
 - **Backend:** Python, FastAPI, PostgreSQL, SQLAlchemy, and Pydantic.
 - **Version control engine:** Python standard library wherever practical.
 - **Frontend:** React and Tailwind CSS.
-- **Infrastructure and testing:** Docker and Pytest.
+- **Infrastructure and testing:** Docker is mandatory infrastructure; Pytest is
+  planned for Python tests.
 - **Future AI:** PyTorch and Hugging Face Transformers.
 
 These technologies are planned; dependencies and services have not yet been
 set up.
+
+## Development environment
+
+Python development will use a repository-root `.venv`; project dependencies
+must not be installed globally. Core is planned as an independently installable
+package with its own `pyproject.toml` under `packages/commitverse-core/`, with
+production and development dependencies separated. Whether the monorepo needs
+a root-level `pyproject.toml` for workspace-wide configuration remains
+undecided; it would not replace Core's package-level configuration. Docker
+complements local development and provides reproducible environments and
+containerized application services; the standalone Core engine does not
+initially need to run in Docker.
 
 ## Status
 

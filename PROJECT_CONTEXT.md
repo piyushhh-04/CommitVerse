@@ -20,11 +20,20 @@ until working implementations and their tests exist.
 
 - Keep the system modular, with clear boundaries between the version control
   engine, backend/API, frontend, and future AI capabilities.
+- Place the independently installable Core package under
+  `packages/commitverse-core/`, with source in
+  `packages/commitverse-core/src/commitverse_core/` and tests in
+  `packages/commitverse-core/tests/{unit,integration,compatibility}/`.
 - Keep Git repository objects and version-control data separate from Hub
   application metadata, such as users, permissions, and collaboration records.
 - Define explicit interfaces between components. Do not make one component's
   internal storage format an accidental dependency of another.
 - Keep deployment and infrastructure concerns distinct from product logic.
+- Docker is mandatory infrastructure for reproducible environments and
+  containerized application services. Keep Docker configuration modular and
+  use Docker Compose when integrating FastAPI, PostgreSQL, and frontend
+  services. Docker complements local Core development; the standalone Python
+  engine does not need to run in Docker during initial development.
 - Record significant architectural choices in `docs/decisions/`.
 
 The architecture overview is in `docs/architecture/overview.md`.
@@ -43,6 +52,26 @@ Planned stack:
 These are technology choices, not a declaration that dependencies, services, or
 features are already configured. Do not introduce additional technologies
 without a clear project need and an explicit decision.
+
+## Development environment and workflow
+
+- Use the repository-root `.venv` for Python development. Never install
+  project dependencies globally.
+- Use a package-level `pyproject.toml` at
+  `packages/commitverse-core/pyproject.toml` for Core configuration and
+  dependency management, keeping production dependencies separate from
+  development-only dependencies.
+- The scope of any future root-level `pyproject.toml` is undecided. It may
+  configure workspace-wide tooling if needed, but must not replace the Core
+  package's independently installable configuration.
+- Keep `.venv/` excluded from Git.
+- Local Core development and tests must work without Docker. Docker complements
+  this workflow and is mandatory infrastructure for reproducible environments
+  and containerized application services.
+- Use modular Docker configuration. Use Docker Compose when integrating the
+  Hub's FastAPI backend, PostgreSQL, and frontend services; do not make a
+  containerized Core a prerequisite for its initial development.
+- Document setup and execution commands as project workflows are established.
 
 ## Engineering conventions
 
@@ -67,7 +96,8 @@ without a clear project need and an explicit decision.
   implementing CommitVerse Core's Git internals.
 - Add dependencies only when justified by a concrete requirement; document
   significant choices and update the appropriate dependency manifest when
-  manifests exist.
+  manifests exist. Core's Python dependencies belong in its package-level
+  `pyproject.toml`, separated into production and development requirements.
 - Do not install or configure planned technologies before the project needs
   them.
 

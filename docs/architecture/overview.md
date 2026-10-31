@@ -22,6 +22,12 @@ The components should have explicit interfaces and independently understandable
 responsibilities. The exact process boundaries and deployment topology remain
 open until implementation requirements are known.
 
+Core is planned as an independently installable Python package under
+`packages/commitverse-core/`, with source in
+`packages/commitverse-core/src/commitverse_core/` and tests in
+`packages/commitverse-core/tests/{unit,integration,compatibility}/`. This
+package boundary follows the modular monorepo decision.
+
 ## Communication
 
 Hub is expected to coordinate user-facing hosting and collaboration workflows
@@ -35,8 +41,8 @@ perform actions.
 ## Storage separation
 
 - **Version control data:** Core owns repository objects and other data needed
-  for version control. The on-disk format and object model are not yet
-  implemented or specified.
+  for version control. The object format and model are documented as proposed
+  designs, but have not yet been implemented.
 - **Application metadata:** Hub will own platform metadata such as accounts,
   access control, and collaboration records. PostgreSQL is planned for this
   metadata.
@@ -52,8 +58,32 @@ perform actions.
   within CommitVerse rather than wrapping an existing Git engine.
 - FastAPI, SQLAlchemy, Pydantic, and PostgreSQL for the planned Hub backend.
 - React and Tailwind CSS for the planned frontend.
-- Docker for planned infrastructure and Pytest for Python tests.
+- Docker is mandatory infrastructure for reproducible environments and
+  containerized application services; Pytest is planned for Python tests.
 - PyTorch and Hugging Face Transformers for future AI work only.
 
 These choices do not indicate that the corresponding dependencies, services, or
 components have been created.
+
+## Development environment and deployment
+
+Python development uses a root-level `.venv`, which is excluded from Git.
+Core's project configuration and dependency management belong in
+`packages/commitverse-core/pyproject.toml`, with production dependencies
+separate from development dependencies. Project packages must not be installed
+globally. Whether to add a root-level `pyproject.toml` for workspace-wide
+configuration remains undecided; it does not replace Core's package-level
+configuration.
+
+Core must be usable and testable locally through `.venv`; Docker complements
+that workflow and is not a requirement for running the standalone Core engine
+during initial development. Docker remains mandatory infrastructure for
+reproducible environments and containerized application services. When Hub's
+FastAPI backend, PostgreSQL, and frontend are integrated, use Docker Compose.
+Keep Docker configuration modular and avoid coupling container definitions to
+Core's storage or product logic.
+
+No Docker or Compose configuration, Python environment, dependency manifest, or
+service integration is present yet. Setup and execution commands should be
+documented alongside the implementation they support; see the proposed Core
+workflow in [the Core roadmap](../core/implementation-roadmap.md).

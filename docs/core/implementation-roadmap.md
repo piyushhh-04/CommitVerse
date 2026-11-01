@@ -6,10 +6,11 @@ This roadmap describes the planned sequence and current progress. The Core
 package foundation, canonical object serialization, SHA-1 hashing,
 zlib-compressed loose-object storage with integrity validation, non-bare
 repository initialization/discovery, Git-compatible trees, index-v2 staging,
-and initial CLI commands are implemented. Unit, integration, and external Git
-compatibility tests cover these behaviors. Commit payload parsing/creation,
-refs as repository operations, branching, checkout, merging, and transport
-remain future work.
+commit objects, loose branch refs, symbolic/detached `HEAD`, initial branch
+operations, revision resolution, history traversal, and their CLI commands
+are implemented. Unit, integration, and external Git compatibility tests cover
+these behaviors. Branch switching, checkout, merging, and transport remain
+future work.
 Each milestone depends on the earlier milestones listed below. Acceptance
 criteria are testable gates; passing them does not by itself imply full Git
 compatibility.
@@ -61,6 +62,10 @@ The initial commands are:
 .venv/bin/cv add -A
 .venv/bin/cv write-tree
 .venv/bin/cv ls-files
+.venv/bin/cv commit -m "message"
+.venv/bin/cv branch [--list|<name>]
+.venv/bin/cv rev-parse <revision>
+.venv/bin/cv log
 ```
 
 `cat-file -p` writes payload bytes directly to standard output. Object commands
@@ -89,8 +94,9 @@ non-bare SHA-1 repositories, and provides `cv init`, `cv hash-object -w`, and
 `cv cat-file -t/-s/-p`. Canonical serialization, hashing, loose-object storage,
 and envelope integrity checks support blob, tree, and commit payload bytes.
 Unit/integration tests and external Git compatibility tests verify this scope.
-Structured commit payload parsing and full repository workflows remain future
-work; Git tree parsing and staging are covered by Milestone 2 below.
+Milestone 1 stored commit payloads as opaque bytes; structured commit handling
+and workflow commands are covered by Milestone 3. Git tree parsing and staging
+are covered by Milestone 2 below.
 
 **Objective**
 
@@ -115,8 +121,8 @@ loose blob storage.
 - `cv cat-file -p <object-id>`
 
 The listed command syntax is implemented. `cat-file -p` writes payload bytes
-without an implicit text decode. This CLI does not implement staging, commits,
-refs, or other repository workflows.
+without an implicit text decode. Staging and commit workflows are implemented
+in the later milestones below.
 
 **Tests**
 
@@ -210,7 +216,23 @@ guide; full Git ignore semantics are not claimed.
 - Milestone 1 for repository discovery, blob storage, object IDs, and object
   integrity checks.
 
-## Milestone 3 — Commits and refs
+## Milestone 3 — Commits, refs, and initial history commands
+
+**Status: Implemented for the documented subset.** Commit payloads are
+serialized, parsed, stored, and verified against referenced tree/parent object
+types. `cv commit -m` derives a tree from the index, uses the current commit as
+its sole parent when present, reads identity from repository configuration
+with environment overrides, and atomically advances symbolic or detached
+`HEAD`. Loose local branch refs can be listed and created. `rev-parse` resolves
+`HEAD`, local branch names, and full commit IDs. `log` traverses all parents in
+deterministic depth-first order with cycle and corruption detection. Isolated
+Git compatibility tests verify commit IDs, objects, refs, `HEAD`, and history.
+
+Empty initial commits and commits whose tree equals the current `HEAD` tree are
+rejected. Removing the last tracked paths is permitted when it changes the
+tree. Optional commit headers, packed refs, reflog management, ref locks, and
+concurrent ref updates are unsupported. An unborn branch is listed as current;
+branch creation is rejected until the first commit exists.
 
 **Objective**
 
@@ -219,20 +241,23 @@ create/update branch refs safely.
 
 **Modules**
 
-- Commit serializer/parser.
-- Ref and symbolic `HEAD` resolution.
-- Commit application service.
-- Safe ref update and typed failure handling.
+- Commit serializer/parser. **Implemented and tested.**
+- Ref and symbolic/detached `HEAD` resolution. **Implemented and tested.**
+- Commit application service. **Implemented and tested.**
+- Safe atomic loose-ref updates and typed failure handling. **Implemented;**
+  concurrent writers are unsupported.
 
 **CLI commands**
 
 - `cv commit -m <message>`
-- `cv rev-parse HEAD`
-- `cv branch [<name>]`
-- `cv branch --list`
+- `cv rev-parse <revision>`
+- `cv branch [--list|<name>]`
+- `cv log`
 
-These forms are proposed. Identity configuration and behavior when `HEAD` is
-detached must be decided before implementation.
+These command forms are implemented. Identity is read from `.git/config`
+`[user]` settings and may be overridden with the documented `GIT_AUTHOR_*` and
+`GIT_COMMITTER_*` variables. Date overrides support `@<unix-seconds> ±HHMM`.
+Commits in detached state advance `HEAD` without moving any branch.
 
 **Tests**
 
@@ -243,16 +268,18 @@ detached must be decided before implementation.
   IDs and newline, never tree-entry binary encoding.
 - Invalid names, missing objects, malformed refs, and invalid target types fail
   explicitly.
-- Ref updates do not leave partial contents; concurrent update policy is
-  tested before concurrent writers are claimed as supported.
-- A Git compatibility test may inspect generated commits and refs externally.
+- Ref updates do not leave partial contents. Concurrent ref writers are
+  unsupported.
+- Isolated Git compatibility tests inspect generated commits and refs and
+  read ordinary Git-generated commits.
 
 **Acceptance criteria**
 
 - A commit points to the tree written from the staged index and the expected
   parent commit(s).
-- A successful commit advances the current branch according to the documented
-  policy; failures do not report success or silently discard staged data.
+- A successful commit advances symbolic `HEAD` or detached `HEAD` according
+  to the documented policy; failures do not report success or silently
+  discard staged data.
 - Ref and commit responsibilities remain independent of CLI output.
 
 **Dependencies**
@@ -260,18 +287,19 @@ detached must be decided before implementation.
 - Milestone 2 for index-to-tree construction.
 - Milestone 1 for validated object storage.
 
-## Milestone 4 — Status, diff, and log
+## Milestone 4 — Status and diff
+
+**Status: Planned.** Commit history traversal and `cv log` were delivered in
+Milestone 3; working-tree/index/`HEAD` comparison and diff remain future work.
 
 **Objective**
 
-Describe differences between working tree, index, and `HEAD`, and traverse
-commit history.
+Describe differences between working tree, index, and `HEAD`.
 
 **Modules**
 
 - Tree/index/worktree comparison.
 - Diff representation and output formatting.
-- Commit graph traversal and log formatting.
 - Status and diff application services.
 
 **CLI commands**
@@ -279,7 +307,6 @@ commit history.
 - `cv status`
 - `cv diff`
 - `cv diff --cached`
-- `cv log`
 
 Proposed output formats should be documented before they are treated as stable.
 
@@ -288,8 +315,6 @@ Proposed output formats should be documented before they are treated as stable.
 - Status distinguishes staged, unstaged, and untracked paths.
 - Diff compares the requested layers and handles add, modify, delete, mode
   change, binary content, and rename behavior according to documented scope.
-- Log follows parent links, handles root and merge commits, and detects
-  malformed or missing referenced objects.
 - Clean, partially staged, and empty repositories report accurate state.
 - Output tests cover stable fields without making incidental formatting a
   storage contract.
@@ -298,8 +323,6 @@ Proposed output formats should be documented before they are treated as stable.
 
 - The three states—`HEAD`, index, and working tree—are compared independently
   and correctly for supported cases.
-- Log output reflects commit parent relationships and does not mutate refs or
-  objects.
 - Unsupported cases are reported rather than silently misrepresented.
 
 **Dependencies**
@@ -307,7 +330,7 @@ Proposed output formats should be documented before they are treated as stable.
 - Milestone 3 for commits, refs, and `HEAD`.
 - Milestone 2 for index and tree operations.
 
-## Milestone 5 — Branches, checkout, and basic merge
+## Milestone 5 — Branch switching, checkout, and basic merge
 
 **Objective**
 
@@ -319,14 +342,13 @@ implementation.
 
 **Modules**
 
-- Branch/ref operations.
+- Branch switching on the loose refs implemented in Milestone 3.
 - Checkout planning and safe worktree application.
 - Merge-base and three-way merge logic.
 - Conflict representation and resolution boundary.
 
 **CLI commands**
 
-- `cv branch <name>`
 - `cv switch <branch>`
 - `cv checkout <branch>`
 - `cv merge <branch>`

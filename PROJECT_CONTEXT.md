@@ -16,12 +16,15 @@ collaboration platform:
 Core has an installable Python package with canonical object serialization,
 SHA-1 hashing, zlib-compressed loose-object storage, non-bare repository
 initialization/discovery, Git-compatible tree serialization/parsing, a
-version-2 Git index, and initial staging/tree CLI commands. Unit, integration,
-and isolated external Git compatibility tests cover these behaviors. This is
-not a complete version control engine: commit payload parsing and creation,
-refs as repository operations, branching, checkout, merging, remotes, and
-transport remain unimplemented. Treat Hub, AI, and other unimplemented Core
-functionality as plans until working implementations and their tests exist.
+version-2 Git index, staging, commit object parsing/creation, loose branch
+references, symbolic and detached `HEAD`, branch listing/creation, revision
+resolution, and initial commit history traversal. The `cv` CLI exposes these
+tested operations. Unit, integration, and isolated external Git compatibility
+tests cover the implemented scope. This is not a complete version control
+engine: checkout/switching, merge, remotes, transport, packfiles, and full Git
+compatibility remain unimplemented. Treat Hub, AI, and other unimplemented
+Core functionality as plans until working implementations and their tests
+exist.
 
 ## Architecture
 
@@ -54,8 +57,9 @@ Planned stack:
   internals in CommitVerse.
 - Frontend: React and Tailwind CSS.
 - Infrastructure and tests: Docker and Pytest. Pytest is installed in Core's
-  development extra; Core's unit and external Git compatibility suites cover
-  the implemented object serialization and storage behavior.
+  development extra; Core's unit, integration, and external Git compatibility
+  suites cover the implemented object, tree, index, commit, ref, and CLI
+  behavior.
 - Future AI: PyTorch and Hugging Face Transformers.
 
 These are technology choices, not a declaration that the planned application
@@ -78,11 +82,12 @@ technologies without a clear project need and an explicit decision.
 - Keep `.venv/` excluded from Git.
 - Core source includes `repository.py` for repository initialization and
   discovery, `trees.py` for Git tree payloads, `index.py` for index-v2
-  persistence, `staging.py` for worktree staging, and `cli.py` for the `cv`
-  entry point. `objects/format.py` and `objects/store.py` provide canonical
-  object bytes, hashing, and verified loose-object storage. Compatibility
-  tests invoke Git only in isolated temporary repositories. Commit payload
-  parsing/creation, refs as repository operations, branching, checkout,
+  persistence, `staging.py` for worktree staging, `commits.py` for commit
+  payloads, `refs.py` for loose refs and `HEAD`, `commit_service.py` for commit
+  creation, `history.py` for parent traversal, and `cli.py` for the `cv` entry
+  point. `objects/format.py` and `objects/store.py` provide canonical object
+  bytes, hashing, and verified loose-object storage. Compatibility tests
+  invoke Git only in isolated temporary repositories. Checkout/switching,
   merging, and remote transport are not implemented.
 - Local Core development and tests must work without Docker. Docker complements
   this workflow and is mandatory infrastructure for reproducible environments

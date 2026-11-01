@@ -1,12 +1,28 @@
 """Command-line interface for CommitVerse Core."""
 
 import argparse
+import re
 import sys
 from pathlib import Path
 from typing import Sequence
 
+from commitverse_core.commit_service import create_commit
+from commitverse_core.commits import read_commit
+from commitverse_core.history import (
+    format_commit_date,
+    format_commit_message,
+    walk_history,
+)
 from commitverse_core.index import read_index
 from commitverse_core.objects import read_object, write_object
+from commitverse_core.refs import (
+    ReferenceError,
+    create_branch,
+    current_branch,
+    list_branches,
+    resolve_branch,
+    resolve_head,
+)
 from commitverse_core.repository import (
     RepositoryError,
     discover_repository,
@@ -19,7 +35,7 @@ from commitverse_core.trees import write_tree
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="cv",
-        description="Initialize repositories, stage files, and inspect Git-compatible objects.",
+        description="Initialize, stage, commit, and inspect CommitVerse repositories.",
     )
     commands = parser.add_subparsers(dest="command", required=True)
 
@@ -52,6 +68,20 @@ def _build_parser() -> argparse.ArgumentParser:
 
     commands.add_parser("write-tree", help="write a tree from the current index")
     commands.add_parser("ls-files", help="list staged paths")
+
+    commit_parser = commands.add_parser("commit", help="record the staged snapshot")
+    commit_parser.add_argument("-m", "--message", required=True, help="commit message")
+
+    branch_parser = commands.add_parser("branch", help="list or create local branches")
+    branch_parser.add_argument("--list", action="store_true", help="list local branches")
+    branch_parser.add_argument("name", nargs="?", help="new local branch name")
+
+    rev_parse_parser = commands.add_parser(
+        "rev-parse", help="resolve HEAD, a local branch, or a full commit ID"
+    )
+    rev_parse_parser.add_argument("revision", help="revision to resolve")
+
+    commands.add_parser("log", help="show commit history from HEAD")
 
     return parser
 
@@ -99,6 +129,84 @@ def main(argv: Sequence[str] | None = None) -> int:
                     sys.stdout.buffer.write(entry.path + b"\n")
                     seen.add(entry.path)
             sys.stdout.buffer.flush()
+            return 0
+
+        if arguments.command == "commit":
+            repository = discover_repository()
+            result = create_commit(repository, arguments.message)
+            location = result.branch_name or "detached HEAD"
+            root_marker = " (root-commit)" if result.parent_id is None else ""
+            subject = arguments.message.partition("\n")[0]
+            print(f"[{location}{root_marker} {result.object_id}] {subject}")
+            print(f"{result.path_count} staged path(s) committed")
+            return 0
+
+        if arguments.command == "branch":
+            repository = discover_repository()
+            if arguments.name is not None:
+                if arguments.list:
+                    raise ReferenceError("cv branch --list does not accept a branch name")
+                object_id = resolve_head(repository)
+                if object_id is None:
+                    raise ReferenceError("cannot create a branch before the first commit")
+                create_branch(repository, arguments.name, object_id)
+                print(f"Created branch {arguments.name} at {object_id}")
+                return 0
+
+            branches = {
+                branch.name: branch.object_id for branch in list_branches(repository)
+            }
+            current = current_branch(repository)
+            if current is not None and current not in branches:
+                if resolve_head(repository) is not None:
+                    raise ReferenceError(f"HEAD branch {current!r} has no reference")
+                branches[current] = ""
+            for name in sorted(branches, key=lambda value: value.encode("utf-8")):
+                marker = "* " if name == current else "  "
+                print(f"{marker}{name}")
+            return 0
+
+        if arguments.command == "rev-parse":
+            repository = discover_repository()
+            revision = arguments.revision
+            if revision == "HEAD":
+                object_id = resolve_head(repository)
+                if object_id is None:
+                    raise ReferenceError("HEAD is unborn and does not resolve to a commit")
+            elif re.fullmatch(r"[0-9a-f]{40}", revision):
+                try:
+                    read_commit(repository.objects_dir, revision)
+                except (OSError, ValueError) as error:
+                    raise ReferenceError(
+                        f"commit object {revision} does not exist or is invalid: {error}"
+                    ) from error
+                object_id = revision
+            else:
+                object_id = resolve_branch(repository, revision)
+            print(object_id)
+            return 0
+
+        if arguments.command == "log":
+            repository = discover_repository()
+            commits = list(walk_history(repository))
+            if not commits:
+                print("No commits yet.")
+                return 0
+            for object_id, commit in commits:
+                print(f"commit {object_id}")
+                if commit.parent_ids:
+                    print("Parents: " + " ".join(commit.parent_ids))
+                print(f"Author: {commit.author.name} <{commit.author.email}>")
+                print(f"Date:   {format_commit_date(commit)}")
+                print()
+                message = format_commit_message(commit.message)
+                lines = message.splitlines()
+                if not lines and not message:
+                    print("    ")
+                else:
+                    for line in lines:
+                        print(f"    {line}")
+                print()
             return 0
 
         repository = discover_repository()

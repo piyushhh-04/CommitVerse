@@ -11,14 +11,19 @@ zlib-compressed loose-object storage with integrity validation in
 worktree paths and writes trees. Unit and integration tests cover these
 operations. External Git compatibility tests verify object interoperability,
 index interoperability in both directions, matching tree IDs, and Git
-recognition of initialized repositories.
+recognition of initialized repositories. `commits.py` serializes and parses
+the supported commit headers; `refs.py` manages loose branch refs and symbolic
+or detached `HEAD`; `commit_service.py` creates commits from the index; and
+`history.py` traverses parent commits. The CLI provides commit, branch,
+revision-resolution, and log commands, with isolated Git tests covering commit
+and ref interoperability.
 
 The object store handles the common object envelope. Tree payloads are parsed
-and validated separately; commit payloads remain opaque bytes. Non-bare
-repository initialization/discovery and the initial `cv` commands for object
-inspection, staging, and tree writing are implemented. Commit creation and
-parsing, refs as repository operations, branching, checkout, merging, and
-transport are not implemented.
+and validated separately; supported commit payloads are parsed and validated
+separately. Non-bare repository initialization/discovery and the `cv`
+commands for object inspection, staging, tree writing, commits, local branch
+listing/creation, revision resolution, and history display are implemented.
+Branch switching, checkout, merging, and transport are not implemented.
 
 Core is a custom Git-like version control engine. Production implementation is
 planned for Python's standard library wherever practical; Pytest is the test
@@ -34,15 +39,18 @@ boundaries even if implementation uses a different internal naming scheme.
 
 | Area | Responsibility |
 |---|---|
-| `cli` | Implemented `cv init`, `cv hash-object -w`, `cv cat-file -t/-s/-p`, `cv add`, `cv write-tree`, and `cv ls-files`; parse arguments, map expected errors to diagnostics and exit codes, and delegate repository/object operations. |
+| `cli` | Implemented repository/object, staging/tree, commit, branch, revision-resolution, and history commands; parse arguments, map expected errors to diagnostics and exit codes, and delegate repository/object operations. |
 | `commands` | Adapt each user command to application services; validate command-specific options and format output. |
 | `repository` | Implemented initialization and parent-walking discovery for non-bare SHA-1 repositories; provide repository paths without depending on the CLI or Hub. |
-| `objects` | Implemented canonical object-byte serialization and hashing. Typed commit payload parsing remains future work. |
+| `objects` | Implemented canonical object-byte serialization and hashing. |
 | `object_store` | Implemented by `objects.store`: write, read, locate, and verify content-addressed loose objects. |
 | `trees` | Implemented Git-compatible tree entry serialization, parsing, ordering, type validation, and nested tree construction from index entries. |
 | `index` | Implemented Git index v2 encoding/decoding, checksum validation, entry metadata and stage preservation, and atomic replacement. |
 | `staging` | Implemented path validation, file/symlink staging, recursive directory staging, `-A` updates/deletions, and the documented root `.gitignore` subset. |
-| `refs` | Read/update branches and other refs, resolve symbolic or detached `HEAD`, and perform safe ref updates. |
+| `commits` | Implemented serialization, parsing, and loose-object storage for supported tree/parent/author/committer/message fields. Optional commit headers and signatures are unsupported. |
+| `refs` | Implemented loose branch refs, ref-name validation, safe atomic writes, symbolic/detached `HEAD`, and unborn-branch handling. |
+| `commit_service` | Implemented identity lookup/overrides, tree/index coordination, no-op detection, commit writing, and current-HEAD advancement. |
+| `history` | Implemented deterministic depth-first traversal of all parents with cycle/error detection and date/message formatting. |
 | `worktree` | Inspect paths and file modes in the checked-out working tree; apply checkout changes safely. |
 | `diff` | Compare object trees, index state, and working-tree content and represent changes independently of output formatting. |
 | `merge` | Find merge bases, combine tree changes, and report conflicts without silently overwriting user data. |
@@ -64,15 +72,18 @@ packages/
         src/
             commitverse_core/
                 cli.py
+                commit_service.py
+                commits.py
+                history.py
                 index.py
                 objects/
                     format.py
                     store.py
                 commands/
                 repository.py
+                refs.py
                 staging.py
                 trees.py
-                refs.py
                 worktree.py
                 diff.py
                 merge.py
@@ -112,7 +123,7 @@ development.
 The package's `pyproject.toml`, development dependency, and `cv` console entry
 point are present. The entry point provides the implemented commands described
 in the [implementation roadmap](./implementation-roadmap.md). Docker
-configuration and all other CLI commands remain future work.
+configuration and commands not listed as implemented there remain future work.
 
 ## Repository and administrative layout
 
@@ -175,7 +186,7 @@ size, object type, and the SHA-1 ID against the canonical bytes before exposing
 the object. Corrupt or mismatched data is an error, not a cache miss or a
 success-shaped fallback. The object storage layer performs envelope and
 integrity checks. The tree layer parses and validates supported tree entries;
-commit payload parsing remains future work.
+the commit layer parses and validates the documented commit header subset.
 
 ## Index and staging
 
@@ -212,16 +223,29 @@ tracked paths remain tracked and are refreshed by `add -A`.
 
 ## Refs and `HEAD`
 
-Branches are mutable refs that name commit object IDs, conventionally stored
-under `.git/refs/heads/`. In a symbolic state, `.git/HEAD` contains a ref such
-as `ref: refs/heads/main\n`; in detached state it contains a commit's full
-hexadecimal object ID and newline. Ref contents use hexadecimal IDs; this is
-distinct from the raw binary object IDs embedded in tree entries.
+Loose local branches are mutable refs under `.git/refs/heads/`. Each supported
+ref contains one full lowercase 40-character commit ID followed by a newline.
+`HEAD` is either a symbolic `ref: refs/heads/<name>` line or a detached full
+commit ID. Ref contents use hexadecimal IDs, distinct from raw binary IDs
+embedded in tree entries. Ref names are checked against Git's common
+`check-ref-format` restrictions; packed refs, reflogs as a managed feature,
+symbolic refs other than `HEAD`, and ref transactions are unsupported.
 
-Ref updates should validate the target object and use safe writes so a partial
-write cannot leave a truncated ref. Concurrent-update protection and locking
-must be designed before concurrent writers are supported. Updating a branch
-does not mutate the commit object it names.
+Ref reads validate file contents and referenced commit objects. Writes use a
+same-directory temporary file and atomic replacement; branch creation uses an
+atomic create-if-absent operation and refuses duplicates. Locks and concurrent
+writer protection are not implemented. A missing symbolic `refs/heads/*`
+target is an unborn branch: `branch` lists it as current, while `rev-parse
+HEAD` reports that it does not yet resolve to a commit. Detached commits update
+`HEAD` directly and never move a branch ref. Creating a branch requires an
+existing commit and is rejected while the current repository is unborn.
+
+Commit identity comes from `[user] name` and `[user] email` in `.git/config`.
+`GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME`, and
+`GIT_COMMITTER_EMAIL` override those values. The corresponding
+`GIT_AUTHOR_DATE` and `GIT_COMMITTER_DATE` accept the documented
+`@<unix-seconds> ±HHMM` form (the leading `@` is optional). Without date
+overrides, the local clock and timezone are used.
 
 ## Command execution and data flow
 
@@ -239,10 +263,11 @@ command follows this flow:
 Implemented `add` flow: select paths, validate that they are inside the
 worktree, read file bytes and mode, write or reuse blobs, and update the index.
 Implemented `write-tree` flow: validate stage-zero index entries, construct
-nested tree objects, and print the root tree ID. Example `commit` flow:
-construct and write a commit referencing the root tree and current parent, then
-advance the current branch ref (or handle detached `HEAD` according to an
-explicitly defined policy).
+nested tree objects, and print the root tree ID. Implemented `commit` flow:
+write a commit referencing the index-derived tree and current parent, then
+advance symbolic or detached `HEAD`. An empty initial commit and an unchanged
+tree are rejected; deleting the final tracked paths is allowed when it changes
+the current tree. `log` traverses all reachable parents deterministically.
 
 Storage code returns typed values or raises typed errors; it does not print to
 the terminal. The CLI handles arguments, output, and process exit status; it
@@ -286,6 +311,7 @@ working tree
     -> branch ref / HEAD
 ```
 
-Status and diff compare these layers; log traverses commit parent links. Future
-remote operations exchange refs and objects through a transport boundary.
-These are intended flows, not implemented commands.
+The object, index, tree, commit, ref, and history flows are implemented for the
+documented subset. Status and diff comparisons and remote operations remain
+future work; remotes would exchange refs and objects through a transport
+boundary.

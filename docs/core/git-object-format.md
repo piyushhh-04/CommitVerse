@@ -8,17 +8,18 @@ Canonical serialization, hashing, loose-object storage, and envelope integrity
 validation are implemented and covered by unit tests. Git-compatible tree
 serialization/parsing and index version 2 encoding/decoding are also
 implemented. External Git compatibility tests verify Git reads objects, trees,
-and indexes written by CommitVerse; CommitVerse reads Git-written objects and
-indexes; and both implementations produce the same tree IDs.
+indexes, commits, and refs written by CommitVerse; CommitVerse reads Git-written
+objects, indexes, and ordinary commits; and both implementations produce the
+same tree IDs and commit IDs.
 
-Compatibility evidence is limited to the tested loose-object, tree, and index
-operations. It does not claim complete Git compatibility or a complete Git
-replacement.
+Compatibility evidence is limited to the tested loose-object, tree, index,
+commit, and loose-ref operations. It does not claim complete Git compatibility
+or a complete Git replacement.
 
 Object serialization is independent of the index, refs, CLI, Hub metadata, and
-transport. This document covers loose objects, trees, and the separate index
-file format; packfiles, alternate object databases, SHA-256 repositories, and
-other Git extensions are out of scope.
+transport. This document covers loose objects, trees, commits, refs, and the
+separate index file format; packfiles, alternate object databases, SHA-256
+repositories, and other Git extensions are out of scope.
 
 ## Object ID and canonical bytes
 
@@ -52,9 +53,8 @@ The supported initial type names are the ASCII strings `blob`, `tree`, and
 decimal size, the NUL header terminator, and exactly the declared number of
 payload bytes. The payload itself may contain NUL bytes. Never hash the
 compressed representation or only the payload. Tree payload serialization and
-parsing are implemented below. Commit payload serialization/parsing as
-structured Git objects is not implemented; storage accepts and returns commit
-payload bytes without interpreting them.
+parsing and the documented commit payload serialization/parsing are
+implemented below.
 
 ## Loose-object storage
 
@@ -186,12 +186,41 @@ binary bytes. The blank line separates headers from the message. The commit
 object header wraps the entire commit payload as type `commit` with its exact
 byte size.
 
-Identity and timestamp generation/configuration, message encoding policy,
-optional headers (for example encoding or signatures), and preservation of
-unknown headers need explicit implementation decisions. Do not invent a
-different header order or delimiter and call it Git-compatible. Parsers should
-preserve payload bytes and reject malformed required fields rather than
-silently manufacturing defaults.
+The implementation requires exactly one tree, zero or more ordered parent
+headers, one author, and one committer in that order. Identity names and emails
+are UTF-8 and may not contain line breaks or NUL; timestamps are signed Unix
+seconds; timezone offsets are signed `HHMM`. The message is an opaque byte
+sequence after the blank line and is preserved exactly, with or without a
+final newline. `cv commit -m` accepts UTF-8 text and adds a final newline when
+needed.
+
+Commit serialization/parsing and storage validate lowercase SHA-1 syntax.
+When reading or writing a commit through the object store, its tree must exist
+as a tree object and every parent must exist as a commit object. Git optional
+headers (including `encoding`, `gpgsig`, and `mergetag`) are unsupported;
+payloads containing unrecognized or reordered headers are rejected.
+Compatibility tests compare generated IDs with Git and read ordinary
+Git-generated commits in isolated repositories.
+
+## Loose references and `HEAD`
+
+References are repository metadata, not Git objects. A supported loose branch
+ref is stored as:
+
+```text
+.git/refs/heads/<branch-name> = <40 lowercase hexadecimal commit ID>\n
+```
+
+`HEAD` contains either `ref: refs/heads/<branch-name>\n` or a detached full
+commit ID followed by a newline. Symbolic refs and `HEAD` targets are validated
+against existing commit objects when resolved. A missing symbolic local branch
+is treated as unborn; other malformed or unresolved states are errors.
+
+Reference updates use same-directory temporary files and atomic replacement.
+Creating a branch refuses to replace an existing ref. Only loose local branch
+refs and `HEAD` are supported; packed refs, ref locks/concurrent transactions,
+reflog management, and symbolic refs other than `HEAD` are outside the current
+scope.
 
 ## Reading and integrity verification
 
@@ -207,10 +236,10 @@ For each read by object ID:
    declared size.
 6. Recompute SHA-1 over the original uncompressed header and payload, and
    require its hexadecimal ID to equal the requested ID.
-7. Type-specific payload parsing is outside the current object-store
-   implementation. A future tree parser must consume each entry's
-   NUL-delimited name and exactly 20 following ID bytes; never decode those
-   bytes as hexadecimal text.
+7. The object store validates the common envelope; `trees.py` and `commits.py`
+   parse their supported payload formats separately. The tree parser consumes
+   each entry's NUL-delimited name and exactly 20 following ID bytes; it never
+   decodes those bytes as hexadecimal text.
 
 An object whose path and content disagree is corruption, not an alternate
 object. Integrity verification applies on reads as well as writes; the object

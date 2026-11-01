@@ -20,8 +20,10 @@ is planned versus what is implemented.
 - **CommitVerse Hub** — repository hosting and developer collaboration.
 - **CommitVerse AI** — a future AI developer assistant.
 
-These are project goals, not descriptions of working features. No application
-functionality has been implemented yet.
+These are project goals, not descriptions of complete working products. The
+Core package foundation and initial Git-compatible object operations are
+implemented and tested; repository initialization, staging, refs, CLI, Hub,
+and AI functionality remain future work.
 
 ## Technology direction
 
@@ -50,13 +52,18 @@ initially need to run in Docker.
 
 ## Status
 
-**Initial Core package scaffold.** The repository-root `.venv` and Core package
-metadata are in place, and the package has been installed in editable mode.
-Core's source currently contains only its package initializer, and its unit
-test directory contains two initial package tests; both tests have passed. The
-integration and compatibility test directories are empty. No Core engine
-functionality, API, frontend, database integration, or AI functionality has
-been implemented.
+**Core foundation and loose-object operations.** The independently installable
+Python package and its tests are in place. Core implements canonical
+serialization for blob, tree, and commit object bytes; SHA-1 object IDs; and
+zlib-compressed loose-object writes and reads with header, size, type, and hash
+validation. Unit tests cover these behaviors, and external Git compatibility
+tests verify object reads/writes and blob ID agreement.
+
+This is a narrow object-format and storage capability, not a complete Git
+replacement. Repository initialization/discovery, index and staging, tree or
+commit payload parsing, refs and commits as repository operations, CLI,
+branching, merging, and transport are not implemented. Hub, frontend, database
+integration, and AI functionality are also future work.
 
 See [PROJECT_CONTEXT.md](./PROJECT_CONTEXT.md) for the project-wide engineering
 and contribution guidelines, and [the architecture overview](./docs/architecture/overview.md)

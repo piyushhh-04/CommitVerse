@@ -13,9 +13,14 @@ collaboration platform:
 - **CommitVerse Hub:** repository hosting and collaboration.
 - **CommitVerse AI:** a future AI developer assistant.
 
-Core has an initial package scaffold, but no engine functionality has been
-implemented. Treat the Hub and AI components, and any unimplemented Core
-functionality, as plans until working implementations and their tests exist.
+Core has an installable Python package with canonical object serialization,
+SHA-1 hashing, and zlib-compressed loose-object storage for blob, tree, and
+commit payloads. These object operations have unit tests and external Git
+compatibility tests. This is not a complete version control engine: repository
+initialization/discovery, index and staging, tree and commit payload parsing,
+refs, CLI, branching, merging, and transport remain unimplemented. Treat Hub,
+AI, and other unimplemented Core functionality as plans until working
+implementations and their tests exist.
 
 ## Architecture
 
@@ -48,7 +53,8 @@ Planned stack:
   internals in CommitVerse.
 - Frontend: React and Tailwind CSS.
 - Infrastructure and tests: Docker and Pytest. Pytest is installed in Core's
-  development extra; the initial two package tests have passed.
+  development extra; Core's unit and external Git compatibility suites cover
+  the implemented object serialization and storage behavior.
 - Future AI: PyTorch and Hugging Face Transformers.
 
 These are technology choices, not a declaration that the planned application
@@ -69,11 +75,15 @@ technologies without a clear project need and an explicit decision.
   configure workspace-wide tooling if needed, but must not replace the Core
   package's independently installable configuration.
 - Keep `.venv/` excluded from Git.
-- Core's current source layout contains only `src/commitverse_core/__init__.py`.
-  The `tests/unit/` directory contains the two initial package tests;
-  `tests/integration/` and `tests/compatibility/` exist but are empty. The
-  initial two package tests have passed. No Core engine functionality has been
-  implemented.
+- Core source includes its package initializer and `objects/format.py` for
+  canonical serialization and hashing, plus `objects/store.py` for loose
+  object storage. Unit tests cover serialization, hashing, storage, and package
+  imports. Compatibility tests use external Git in isolated temporary
+  repositories to validate blob, tree, and commit object storage behavior.
+- Repository initialization/discovery, index and staging, type-specific tree
+  and commit payload parsing, refs, CLI, branching, merging, and remote
+  transport are not implemented. `tests/integration/` currently has no
+  implemented integration coverage.
 - Local Core development and tests must work without Docker. Docker complements
   this workflow and is mandatory infrastructure for reproducible environments
   and containerized application services.

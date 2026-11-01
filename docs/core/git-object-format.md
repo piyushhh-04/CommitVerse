@@ -2,10 +2,15 @@
 
 ## Status and compatibility scope
 
-This document defines the initial CommitVerse Core object-serialization target:
-Git-compatible SHA-1 loose objects containing blobs, trees, and commits. This
-format is planned and has not been implemented or verified against Git yet. It
-does not claim complete Git compatibility.
+This document defines CommitVerse Core's initial object-serialization and
+storage target: SHA-1 loose objects containing blob, tree, and commit payloads.
+Canonical serialization, hashing, loose-object storage, and envelope integrity
+validation are implemented and covered by unit tests. External Git
+compatibility tests verify Git reads objects written by CommitVerse, CommitVerse
+reads objects written by Git, and blob object IDs agree.
+
+Compatibility evidence is limited to these tested loose-object operations. It
+does not claim complete Git compatibility or a complete Git replacement.
 
 Object serialization is independent of the index, refs, CLI, Hub metadata, and
 transport. This document covers loose objects only; packfiles, alternate
@@ -40,10 +45,12 @@ The NUL shown here represents one zero byte. It is not the two printable
 characters `\` and `0`.
 
 The supported initial type names are the ASCII strings `blob`, `tree`, and
-`commit`. Header parsing must require a valid type, a canonical nonnegative
+`commit`. Loose-object reads require a supported type, a canonical nonnegative
 decimal size, the NUL header terminator, and exactly the declared number of
 payload bytes. The payload itself may contain NUL bytes. Never hash the
-compressed representation or only the payload.
+compressed representation or only the payload. Tree and commit payload
+serialization/parsing as structured Git objects is not implemented; storage
+accepts and returns their payload bytes without interpreting them.
 
 ## Loose-object storage
 
@@ -66,6 +73,12 @@ read and decompress the file, parse the header, verify the payload size, and
 recompute SHA-1 over the exact canonical bytes. A mismatch, invalid stream,
 truncated data, invalid header, or unexpected trailing data must produce a
 corruption error. A corrupt object must never be returned as valid.
+
+The current reader materializes the compressed input and the complete
+decompressed object in memory. It deliberately imposes no arbitrary object-size
+limit. Before reading objects from any future untrusted remote source, assess
+streaming or other resource-aware decompression and appropriate memory and CPU
+protections.
 
 ## Blob serialization
 
@@ -152,9 +165,10 @@ For each read by object ID:
    declared size.
 6. Recompute SHA-1 over the original uncompressed header and payload, and
    require its hexadecimal ID to equal the requested ID.
-7. Parse the payload according to the requested or declared type. For trees,
-   consume each entry's NUL-delimited name and exactly 20 following ID bytes;
-   never decode those bytes as hexadecimal text.
+7. Type-specific payload parsing is outside the current object-store
+   implementation. A future tree parser must consume each entry's
+   NUL-delimited name and exactly 20 following ID bytes; never decode those
+   bytes as hexadecimal text.
 
 An object whose path and content disagree is corruption, not an alternate
 object. Integrity verification applies on reads as well as writes; the object

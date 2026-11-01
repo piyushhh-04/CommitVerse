@@ -2,12 +2,18 @@
 
 ## Status and scope
 
-This is the proposed architecture for CommitVerse Core. It is a design document,
-not evidence of an engine implementation. The package currently contains only
-`src/commitverse_core/__init__.py` and two initial package tests under
-`tests/unit/`. The `tests/integration/` and `tests/compatibility/` directories
-exist but are empty. Both initial package tests have passed. There is no CLI or
-object database, and no Core engine functionality has been implemented.
+This document describes the intended architecture and distinguishes it from
+implemented behavior. Core currently has an installable Python package,
+canonical object serialization and SHA-1 hashing in `objects/format.py`, and
+zlib-compressed loose-object storage with integrity validation in
+`objects/store.py`. Unit tests cover these operations; external Git
+compatibility tests verify supported object storage and blob ID behavior.
+
+The object store handles the common object envelope and treats tree and commit
+payloads as bytes; it does not parse their internal structures. Repository
+initialization/discovery, index and staging, type-specific payload parsing,
+refs and commits as repository operations, CLI, branching, merging, and
+transport are not implemented.
 
 Core is a custom Git-like version control engine. Production implementation is
 planned for Python's standard library wherever practical; Pytest is the test
@@ -141,7 +147,7 @@ the canonical, uncompressed Git object bytes. The loose-object file contains
 the zlib-compressed canonical bytes. The detailed byte format is specified in
 [Git Object Format](./git-object-format.md).
 
-The initial object model is:
+The planned object model is:
 
 - **Blob:** stores file content bytes. It has no filename or directory
   information; the same content can be referenced from multiple paths.
@@ -159,7 +165,8 @@ are not Git objects.
 Loose-object reads must validate decompression, object header, declared payload
 size, object type, and the SHA-1 ID against the canonical bytes before exposing
 the object. Corrupt or mismatched data is an error, not a cache miss or a
-success-shaped fallback.
+success-shaped fallback. The implemented storage layer performs these
+envelope and integrity checks but does not parse tree or commit payloads.
 
 ## Index and staging
 

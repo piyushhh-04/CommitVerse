@@ -2,13 +2,16 @@
 
 ## Status
 
-This roadmap is a proposed sequence, not a report of completed engine work.
-Core's source currently contains only its package initializer, and its unit
-test directory contains two initial package tests; both tests have passed. Its
-integration and compatibility test directories exist but are empty. No engine
-functionality has been implemented. Each milestone depends on the earlier
-milestones listed below. Acceptance criteria are testable gates; passing them
-does not by itself imply full Git compatibility.
+This roadmap describes the planned sequence and current progress. The Core
+package foundation, canonical object serialization, SHA-1 hashing, and
+zlib-compressed loose-object storage with integrity validation are implemented.
+Unit tests and external Git compatibility tests cover those object operations.
+Milestone 1 is partial: repository initialization/discovery, CLI commands, and
+repository-level workflows have not been implemented. Type-specific tree and
+commit payload parsing, index/staging, refs, branching, merging, and transport
+also remain future work. Each milestone depends on the earlier milestones
+listed below. Acceptance criteria are testable gates; passing them does not by
+itself imply full Git compatibility.
 
 Use Python's standard library in production wherever practical and Pytest for
 tests. Do not use GitPython or subprocess calls to system Git in production
@@ -67,6 +70,12 @@ work.
 
 ## Milestone 1 — Repository initialization and blob storage
 
+**Status: Partial.** Canonical object serialization, SHA-1 object IDs,
+zlib-compressed loose-object writes/reads, and envelope integrity checks are
+implemented for blob, tree, and commit payloads. Unit tests and external Git
+compatibility tests cover these operations. Repository initialization and
+discovery, CLI commands, and repository-level workflows remain unimplemented.
+
 **Objective**
 
 Create/discover a repository and implement validated Git-compatible SHA-1
@@ -75,8 +84,9 @@ loose blob storage.
 **Modules**
 
 - Repository discovery and initialization.
-- Object ID and canonical object header utilities.
+- Object ID and canonical object header utilities. **Implemented and tested.**
 - Loose object store with zlib compression and integrity checks.
+  **Implemented and tested for blob, tree, and commit payload bytes.**
 - Typed storage and repository errors.
 - CLI adapter and focused tests.
 
@@ -102,15 +112,17 @@ without an implicit text decode.
 - Empty, binary, and newline-containing payloads round-trip exactly.
 - Missing, malformed, truncated, invalid-zlib, size-mismatched, and
   hash-mismatched objects raise explicit errors.
-- A Git compatibility test may compare known blob IDs and read/write behavior
-  with Git installed externally; production code must not invoke it.
+- External Git compatibility tests compare blob IDs and exercise object
+  read/write behavior in isolated temporary repositories; production code must
+  not invoke Git.
 
 **Acceptance criteria**
 
 - Hash IDs are calculated over `<type> <size>\0<payload>` before compression.
 - Loose objects are readable by object ID and are integrity-verified on read.
 - Repository and object-store modules do not depend on CLI presentation.
-- No application behavior is claimed beyond these tested operations.
+- No application behavior is claimed beyond these tested object operations.
+- Repository initialization/discovery and CLI operations remain incomplete.
 
 **Dependencies**
 

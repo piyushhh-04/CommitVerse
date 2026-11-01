@@ -29,29 +29,34 @@ functionality has been implemented yet.
 - **Version control engine:** Python standard library wherever practical.
 - **Frontend:** React and Tailwind CSS.
 - **Infrastructure and testing:** Docker is mandatory infrastructure; Pytest is
-  planned for Python tests.
+  used for Core's Python tests.
 - **Future AI:** PyTorch and Hugging Face Transformers.
 
-These technologies are planned; dependencies and services have not yet been
-set up.
+These technologies are planned; aside from Pytest in Core's development
+dependencies, application dependencies and services have not yet been set up.
 
 ## Development environment
 
-Python development will use a repository-root `.venv`; project dependencies
-must not be installed globally. Core is planned as an independently installable
-package with its own `pyproject.toml` under `packages/commitverse-core/`, with
-production and development dependencies separated. Whether the monorepo needs
-a root-level `pyproject.toml` for workspace-wide configuration remains
-undecided; it would not replace Core's package-level configuration. Docker
-complements local development and provides reproducible environments and
-containerized application services; the standalone Core engine does not
+Python development uses the repository-root `.venv`; project dependencies must
+not be installed globally. Core has an independently installable package with
+its own `pyproject.toml` under `packages/commitverse-core/`, with production and
+development dependencies separated. Core is installed in editable mode in the
+local development environment. The `dev` extra includes Pytest. Whether the
+monorepo needs a root-level `pyproject.toml` for workspace-wide configuration
+remains undecided; it would not replace Core's package-level configuration.
+Docker complements local development and provides reproducible environments
+and containerized application services; the standalone Core engine does not
 initially need to run in Docker.
 
 ## Status
 
-**Project initialization.** The repository currently contains foundational
-project documentation only. There is no application code, version control
-engine, API, frontend, database integration, or AI functionality.
+**Initial Core package scaffold.** The repository-root `.venv` and Core package
+metadata are in place, and the package has been installed in editable mode.
+Core's source currently contains only its package initializer, and its unit
+test directory contains two initial package tests; both tests have passed. The
+integration and compatibility test directories are empty. No Core engine
+functionality, API, frontend, database integration, or AI functionality has
+been implemented.
 
 See [PROJECT_CONTEXT.md](./PROJECT_CONTEXT.md) for the project-wide engineering
 and contribution guidelines, and [the architecture overview](./docs/architecture/overview.md)

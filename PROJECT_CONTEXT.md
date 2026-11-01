@@ -13,8 +13,9 @@ collaboration platform:
 - **CommitVerse Hub:** repository hosting and collaboration.
 - **CommitVerse AI:** a future AI developer assistant.
 
-The repository is at project initialization. Treat these components as plans
-until working implementations and their tests exist.
+Core has an initial package scaffold, but no engine functionality has been
+implemented. Treat the Hub and AI components, and any unimplemented Core
+functionality, as plans until working implementations and their tests exist.
 
 ## Architecture
 
@@ -46,25 +47,33 @@ Planned stack:
 - Core engine: Python standard library wherever practical; implement Git
   internals in CommitVerse.
 - Frontend: React and Tailwind CSS.
-- Infrastructure and tests: Docker and Pytest.
+- Infrastructure and tests: Docker and Pytest. Pytest is installed in Core's
+  development extra; the initial two package tests have passed.
 - Future AI: PyTorch and Hugging Face Transformers.
 
-These are technology choices, not a declaration that dependencies, services, or
-features are already configured. Do not introduce additional technologies
-without a clear project need and an explicit decision.
+These are technology choices, not a declaration that the planned application
+dependencies, services, or features are configured. Pytest is the exception:
+it is installed as Core's development dependency. Do not introduce additional
+technologies without a clear project need and an explicit decision.
 
 ## Development environment and workflow
 
-- Use the repository-root `.venv` for Python development. Never install
-  project dependencies globally.
-- Use a package-level `pyproject.toml` at
+- The repository-root `.venv` exists and is used for Python development.
+  Never install project dependencies globally.
+- Core has a package-level `pyproject.toml` at
   `packages/commitverse-core/pyproject.toml` for Core configuration and
   dependency management, keeping production dependencies separate from
-  development-only dependencies.
+  development-only dependencies. Core is installed in editable mode in the
+  local development environment, and its `dev` extra includes Pytest.
 - The scope of any future root-level `pyproject.toml` is undecided. It may
   configure workspace-wide tooling if needed, but must not replace the Core
   package's independently installable configuration.
 - Keep `.venv/` excluded from Git.
+- Core's current source layout contains only `src/commitverse_core/__init__.py`.
+  The `tests/unit/` directory contains the two initial package tests;
+  `tests/integration/` and `tests/compatibility/` exist but are empty. The
+  initial two package tests have passed. No Core engine functionality has been
+  implemented.
 - Local Core development and tests must work without Docker. Docker complements
   this workflow and is mandatory infrastructure for reproducible environments
   and containerized application services.

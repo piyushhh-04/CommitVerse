@@ -2,10 +2,13 @@
 
 ## Status
 
-This roadmap is a proposed sequence, not a report of completed work. Core has
-not yet been implemented. Each milestone depends on the earlier milestones
-listed below. Acceptance criteria are testable gates; passing them does not by
-itself imply full Git compatibility.
+This roadmap is a proposed sequence, not a report of completed engine work.
+Core's source currently contains only its package initializer, and its unit
+test directory contains two initial package tests; both tests have passed. Its
+integration and compatibility test directories exist but are empty. No engine
+functionality has been implemented. Each milestone depends on the earlier
+milestones listed below. Acceptance criteria are testable gates; passing them
+does not by itself imply full Git compatibility.
 
 Use Python's standard library in production wherever practical and Pytest for
 tests. Do not use GitPython or subprocess calls to system Git in production
@@ -13,18 +16,18 @@ implementation. External Git may be used only by compatibility tests.
 
 ## Development environment and commands
 
-Use the repository-root `.venv` for local Core development. Never install
-project dependencies globally. Core is planned as an independently installable
+Use the existing repository-root `.venv` for local Core development. Never
+install project dependencies globally. Core is an independently installable
 package at `packages/commitverse-core/`, with its own
-`packages/commitverse-core/pyproject.toml`. Production requirements belong in
+`packages/commitverse-core/pyproject.toml`, and is installed in editable mode
+in the local development environment. Production requirements belong in
 `dependencies` under `[project]`, and development-only requirements belong in
-`dev` under `[project.optional-dependencies]`. `.venv/` must remain excluded
-from Git. Whether a root-level `pyproject.toml` is needed for workspace-wide
-configuration remains undecided and does not replace the Core package
-configuration.
+`dev` under `[project.optional-dependencies]`; the `dev` extra includes
+Pytest. `.venv/` must remain excluded from Git. Whether a root-level
+`pyproject.toml` is needed for workspace-wide configuration remains undecided
+and does not replace the Core package configuration.
 
-Once the package metadata and development extra exist, the planned local setup
-and test workflow is:
+The local package setup and test workflow is:
 
 ```sh
 python3 -m venv .venv
@@ -42,9 +45,9 @@ python -m commitverse_core --help
 ```
 
 The module name and command availability are contingent on implementation; no
-such entry point or package-level `pyproject.toml` exists yet. Run the package
-commands from `packages/commitverse-core/`. The commands above are
-documentation only and have not been run.
+such entry point exists yet. Run the package commands from
+`packages/commitverse-core/`. The package setup and focused unit tests have
+been run; the engine command has not been implemented or verified.
 
 Docker is mandatory infrastructure for reproducible environments and
 containerized application services, and complements local Core development.

@@ -3,8 +3,11 @@
 ## Status and scope
 
 This is the proposed architecture for CommitVerse Core. It is a design document,
-not evidence of an implementation. The repository currently has no Core source
-code, CLI, object database, or tests.
+not evidence of an engine implementation. The package currently contains only
+`src/commitverse_core/__init__.py` and two initial package tests under
+`tests/unit/`. The `tests/integration/` and `tests/compatibility/` directories
+exist but are empty. Both initial package tests have passed. There is no CLI or
+object database, and no Core engine functionality has been implemented.
 
 Core is a custom Git-like version control engine. Production implementation is
 planned for Python's standard library wherever practical; Pytest is the test
@@ -15,8 +18,10 @@ compatibility is not claimed.
 
 ## Proposed module boundaries
 
-The names and layout below are proposals, not existing modules. Keep the
-boundaries even if implementation uses a different internal naming scheme.
+The module names below are proposals, not existing modules. The package
+configuration, source-package directory, and test directories shown in the
+layout are present; the engine modules remain proposed. Keep the boundaries
+even if implementation uses a different internal naming scheme.
 
 | Area | Responsibility |
 |---|---|
@@ -39,7 +44,8 @@ FastAPI, SQLAlchemy, frontend, AI, or CLI presentation code.
 
 ## Proposed repository layout
 
-This is an illustrative target, not a claim about files already present:
+This layout combines the existing package scaffold with proposed future engine
+modules:
 
 ```text
 packages/
@@ -73,11 +79,13 @@ runtime dependency of Core.
 
 Core development and tests must run locally using the repository-root `.venv`;
 Docker complements, but does not replace or gate, this initial standalone
-workflow. Never install project dependencies globally. Core's package-level
-`pyproject.toml` at `packages/commitverse-core/pyproject.toml` is the source of
-its Python project configuration and dependency management, with production
-requirements separated from development-only requirements. The root `.venv/`
-is excluded from Git.
+workflow. The root `.venv/` exists and is excluded from Git. Never install
+project dependencies globally. Core's package-level `pyproject.toml` at
+`packages/commitverse-core/pyproject.toml` is the source of its Python project
+configuration and dependency management, with production requirements
+separated from development-only requirements. Core is installed in editable
+mode in the local development environment, and Pytest is installed in its
+development extra.
 
 The scope of a root-level `pyproject.toml` is undecided. If introduced, it may
 hold workspace-wide configuration but must not replace Core's
@@ -89,11 +97,11 @@ Docker Compose when integrating Hub's FastAPI, PostgreSQL, and frontend
 services, but do not require Core itself to run in a container during initial
 development.
 
-The repository does not yet contain the Core package's `pyproject.toml`, the
-proposed package entry point, dependencies, or Docker configuration. Future
-setup and execution commands are documented in the
-[implementation roadmap](./implementation-roadmap.md); they are plans, not
-commands verified against an existing application.
+The package's `pyproject.toml` and development dependency are present. The
+proposed package entry point and Docker configuration do not exist. Setup and
+execution commands are documented in the [implementation roadmap](./implementation-roadmap.md);
+the package setup is in place, but the engine commands remain plans rather than
+verified application behavior.
 
 ## Repository and administrative layout
 

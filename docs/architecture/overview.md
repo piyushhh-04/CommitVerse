@@ -3,8 +3,8 @@
 ## Status
 
 This document describes the intended architecture, not a deployed or
-implemented system. The repository is currently at project initialization;
-there are no application components, APIs, schemas, or runtime integrations.
+implemented system. Core has an initial Python package scaffold, but there are
+no implemented engine features, APIs, schemas, or runtime integrations.
 
 ## System shape
 
@@ -26,7 +26,11 @@ Core is planned as an independently installable Python package under
 `packages/commitverse-core/`, with source in
 `packages/commitverse-core/src/commitverse_core/` and tests in
 `packages/commitverse-core/tests/{unit,integration,compatibility}/`. This
-package boundary follows the modular monorepo decision.
+package boundary follows the modular monorepo decision. The package currently
+contains only `src/commitverse_core/__init__.py`; `tests/unit/` contains two
+initial package tests, and `tests/integration/` and `tests/compatibility/` are
+empty. Both initial package tests have passed. No Core engine functionality
+has been implemented.
 
 ## Communication
 
@@ -59,18 +63,21 @@ perform actions.
 - FastAPI, SQLAlchemy, Pydantic, and PostgreSQL for the planned Hub backend.
 - React and Tailwind CSS for the planned frontend.
 - Docker is mandatory infrastructure for reproducible environments and
-  containerized application services; Pytest is planned for Python tests.
+  containerized application services. Pytest is installed as a Core development
+  dependency.
 - PyTorch and Hugging Face Transformers for future AI work only.
 
-These choices do not indicate that the corresponding dependencies, services, or
-components have been created.
+These choices do not indicate that the corresponding dependencies, services,
+or components have been created, except for Pytest in Core's development
+environment.
 
 ## Development environment and deployment
 
-Python development uses a root-level `.venv`, which is excluded from Git.
-Core's project configuration and dependency management belong in
+Python development uses the existing root-level `.venv`, which is excluded
+from Git. Core's project configuration and dependency management are in
 `packages/commitverse-core/pyproject.toml`, with production dependencies
-separate from development dependencies. Project packages must not be installed
+separate from development dependencies. Core is installed in editable mode in
+the local development environment. Project packages must not be installed
 globally. Whether to add a root-level `pyproject.toml` for workspace-wide
 configuration remains undecided; it does not replace Core's package-level
 configuration.
@@ -83,7 +90,7 @@ FastAPI backend, PostgreSQL, and frontend are integrated, use Docker Compose.
 Keep Docker configuration modular and avoid coupling container definitions to
 Core's storage or product logic.
 
-No Docker or Compose configuration, Python environment, dependency manifest, or
-service integration is present yet. Setup and execution commands should be
-documented alongside the implementation they support; see the proposed Core
-workflow in [the Core roadmap](../core/implementation-roadmap.md).
+No Docker or Compose configuration or service integration is present yet. The
+Python environment and Core dependency manifest are in place. Setup and
+execution commands should be documented alongside the implementation they
+support; see the Core workflow in [the Core roadmap](../core/implementation-roadmap.md).

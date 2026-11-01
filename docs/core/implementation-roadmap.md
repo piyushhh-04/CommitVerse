@@ -8,9 +8,10 @@ zlib-compressed loose-object storage with integrity validation, non-bare
 repository initialization/discovery, Git-compatible trees, index-v2 staging,
 commit objects, loose branch refs, symbolic/detached `HEAD`, initial branch
 operations, revision resolution, history traversal, and their CLI commands
-are implemented. Unit, integration, and external Git compatibility tests cover
-these behaviors. Branch switching, checkout, merging, and transport remain
-future work.
+are implemented. Read-only status and tracked-file diff comparisons are also
+implemented for the documented subset. Unit, integration, and external Git
+compatibility tests cover these behaviors. Branch switching, checkout,
+merging, and transport remain future work.
 Each milestone depends on the earlier milestones listed below. Acceptance
 criteria are testable gates; passing them does not by itself imply full Git
 compatibility.
@@ -66,6 +67,9 @@ The initial commands are:
 .venv/bin/cv branch [--list|<name>]
 .venv/bin/cv rev-parse <revision>
 .venv/bin/cv log
+.venv/bin/cv status
+.venv/bin/cv diff
+.venv/bin/cv diff --cached
 ```
 
 `cat-file -p` writes payload bytes directly to standard output. Object commands
@@ -289,8 +293,20 @@ Commits in detached state advance `HEAD` without moving any branch.
 
 ## Milestone 4 — Status and diff
 
-**Status: Planned.** Commit history traversal and `cv log` were delivered in
-Milestone 3; working-tree/index/`HEAD` comparison and diff remain future work.
+**Status: Implemented for the documented subset.** `cv status` compares
+`HEAD`, the index, and the working tree, and classifies staged, unstaged, and
+untracked paths. `cv diff` compares index to worktree; `cv diff --cached`
+compares `HEAD` to index. Status/diff do not write repository state. Isolated
+Git compatibility tests compare supported staged/unstaged classifications and
+changed paths.
+
+Rename detection, porcelain/color options, full Git ignore semantics,
+unmerged-index presentation, and full Git status/diff compatibility are
+unsupported. Diff excludes untracked files, recognizes text only as strict
+UTF-8 without NUL bytes, and reports other contents as binary. Tracked
+filesystem reads reject symlink traversal outside the worktree and report
+concurrent file changes. Tracked file payloads are currently buffered in
+memory.
 
 **Objective**
 
@@ -298,9 +314,12 @@ Describe differences between working tree, index, and `HEAD`.
 
 **Modules**
 
-- Tree/index/worktree comparison.
-- Diff representation and output formatting.
-- Status and diff application services.
+- Tree/index/worktree comparison — implemented for stage-zero entries and
+  supported filesystem paths.
+- Diff representation and deterministic output — implemented for staged and
+  unstaged tracked-file changes.
+- Status output and application service — implemented for staged, unstaged,
+  untracked, clean, and unborn states.
 
 **CLI commands**
 
@@ -308,13 +327,15 @@ Describe differences between working tree, index, and `HEAD`.
 - `cv diff`
 - `cv diff --cached`
 
-Proposed output formats should be documented before they are treated as stable.
+These command forms are implemented. Output is deterministic and human-readable
+but is not a stable porcelain interface.
 
 **Tests**
 
 - Status distinguishes staged, unstaged, and untracked paths.
 - Diff compares the requested layers and handles add, modify, delete, mode
-  change, binary content, and rename behavior according to documented scope.
+  changes, binary content, and missing-final-newline markers; rename detection
+  is not implemented.
 - Clean, partially staged, and empty repositories report accurate state.
 - Output tests cover stable fields without making incidental formatting a
   storage contract.

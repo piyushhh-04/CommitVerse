@@ -56,8 +56,12 @@ def _load_ignore_rules(root: Path) -> tuple[tuple[bytes, bool, bool, bool], ...]
         return ()
     if not stat.S_ISREG(metadata.st_mode):
         raise StagingError("the worktree-root .gitignore must be a regular file")
-    contents = ignore_path.read_bytes()
+    return _parse_ignore_rules(ignore_path.read_bytes())
 
+
+def _parse_ignore_rules(
+    contents: bytes,
+) -> tuple[tuple[bytes, bool, bool, bool], ...]:
     rules: list[tuple[bytes, bool, bool, bool]] = []
     for raw_line in contents.splitlines():
         line = raw_line.rstrip(b" \t")

@@ -23,8 +23,8 @@ is planned versus what is implemented.
 These are project goals, not descriptions of complete working products. The
 Core package foundation, Git-compatible loose objects and trees, index-v2
 staging, non-bare repository initialization/discovery, commit objects and
-history, loose branch refs, and initial `cv` commands are implemented and
-tested.
+history, loose branch refs, read-only status/diff, and initial `cv` commands
+are implemented and tested.
 
 ## Technology direction
 
@@ -57,21 +57,27 @@ initially need to run in Docker.
 installable Python package provides `cv init`, object writing/inspection,
 `cv add [<path> ...]`, `cv add -A`, `cv write-tree`, `cv ls-files`,
 `cv commit -m`, `cv branch [--list|<name>]`, `cv rev-parse <revision>`, and
-`cv log`. It implements canonical blob/tree/commit envelopes and SHA-1 IDs,
-zlib loose-object storage with integrity validation, Git-compatible trees and
+`cv log`. It also provides `cv status`, `cv diff`, and `cv diff --cached`.
+Core implements canonical blob/tree/commit envelopes and SHA-1 IDs, zlib
+loose-object storage with integrity validation, Git-compatible trees and
 index-v2 staging, commit parsing/creation, loose branch refs, symbolic and
-detached `HEAD`, branch listing/creation, revision resolution, and
-deterministic parent-history traversal. Unit, integration, and isolated
-external Git compatibility tests cover object, tree, index, commit, ref, and
-history interoperability.
+detached `HEAD`, branch listing/creation, revision resolution, deterministic
+parent-history traversal, and read-only comparison of `HEAD`, index, and
+worktree state. Unit, integration, and isolated external Git compatibility
+tests cover object, tree, index, commit, ref, history, status, and diff
+behavior.
 
 This is a limited foundation, not a complete Git replacement. Branch
 deletion/switching, checkout, merge, remotes, transport, and packfiles are not
 implemented. Commit creation requires configured identity and `-m`; an empty
 initial commit or unchanged tree is rejected. Optional commit headers and
 signatures, packed refs, index extensions other than `TREE`, advanced Git
-ignore semantics, and non-v2 indexes are unsupported. Hub, frontend, database
-integration, and AI functionality are also future work.
+ignore semantics, and non-v2 indexes are unsupported. Status/diff do not
+detect renames; diff excludes untracked files, treats non-UTF-8 or NUL-bearing
+content as binary, and buffers tracked file contents in memory. Full Git
+ignore semantics, color/porcelain output, and complete Git status/diff
+compatibility are not claimed. Hub, frontend, database integration, and AI
+functionality are also future work.
 
 See [PROJECT_CONTEXT.md](./PROJECT_CONTEXT.md) for the project-wide engineering
 and contribution guidelines, and [the architecture overview](./docs/architecture/overview.md)

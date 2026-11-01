@@ -16,14 +16,17 @@ the supported commit headers; `refs.py` manages loose branch refs and symbolic
 or detached `HEAD`; `commit_service.py` creates commits from the index; and
 `history.py` traverses parent commits. The CLI provides commit, branch,
 revision-resolution, and log commands, with isolated Git tests covering commit
-and ref interoperability.
+and ref interoperability. `status.py` compares the committed tree, index, and
+working tree without writing repository data; `diff.py` renders staged or
+unstaged tracked-file changes as unified diffs.
 
 The object store handles the common object envelope. Tree payloads are parsed
 and validated separately; supported commit payloads are parsed and validated
 separately. Non-bare repository initialization/discovery and the `cv`
 commands for object inspection, staging, tree writing, commits, local branch
-listing/creation, revision resolution, and history display are implemented.
-Branch switching, checkout, merging, and transport are not implemented.
+listing/creation, revision resolution, history display, status, and diff are
+implemented. Branch switching, checkout, merging, and transport are not
+implemented.
 
 Core is a custom Git-like version control engine. Production implementation is
 planned for Python's standard library wherever practical; Pytest is the test
@@ -39,7 +42,7 @@ boundaries even if implementation uses a different internal naming scheme.
 
 | Area | Responsibility |
 |---|---|
-| `cli` | Implemented repository/object, staging/tree, commit, branch, revision-resolution, and history commands; parse arguments, map expected errors to diagnostics and exit codes, and delegate repository/object operations. |
+| `cli` | Implemented repository/object, staging/tree, commit, branch, revision-resolution, history, status, and diff commands; parse arguments, map expected errors to diagnostics and exit codes, and delegate repository/object operations. |
 | `commands` | Adapt each user command to application services; validate command-specific options and format output. |
 | `repository` | Implemented initialization and parent-walking discovery for non-bare SHA-1 repositories; provide repository paths without depending on the CLI or Hub. |
 | `objects` | Implemented canonical object-byte serialization and hashing. |
@@ -51,8 +54,9 @@ boundaries even if implementation uses a different internal naming scheme.
 | `refs` | Implemented loose branch refs, ref-name validation, safe atomic writes, symbolic/detached `HEAD`, and unborn-branch handling. |
 | `commit_service` | Implemented identity lookup/overrides, tree/index coordination, no-op detection, commit writing, and current-HEAD advancement. |
 | `history` | Implemented deterministic depth-first traversal of all parents with cycle/error detection and date/message formatting. |
+| `status` | Implemented read-only comparison of commit trees, index entries, and filesystem state; reports staged, unstaged, and untracked paths. |
+| `diff` | Implemented deterministic unified text diffs for staged or unstaged tracked-file changes, with binary and mode-change reporting. |
 | `worktree` | Inspect paths and file modes in the checked-out working tree; apply checkout changes safely. |
-| `diff` | Compare object trees, index state, and working-tree content and represent changes independently of output formatting. |
 | `merge` | Find merge bases, combine tree changes, and report conflicts without silently overwriting user data. |
 | `transport` (future) | Exchange objects and refs with remotes through an explicitly selected protocol; must not shell out to Git. |
 | `errors` | Provide typed, actionable domain errors shared by application services and translated at the CLI boundary. |
@@ -74,6 +78,7 @@ packages/
                 cli.py
                 commit_service.py
                 commits.py
+                diff.py
                 history.py
                 index.py
                 objects/
@@ -83,9 +88,9 @@ packages/
                 repository.py
                 refs.py
                 staging.py
+                status.py
                 trees.py
                 worktree.py
-                diff.py
                 merge.py
                 errors.py
         tests/
@@ -311,7 +316,35 @@ working tree
     -> branch ref / HEAD
 ```
 
-The object, index, tree, commit, ref, and history flows are implemented for the
-documented subset. Status and diff comparisons and remote operations remain
-future work; remotes would exchange refs and objects through a transport
-boundary.
+The object, index, tree, commit, ref, history, status, and diff flows are
+implemented for the documented subset. Remote operations remain future work;
+remotes would exchange refs and objects through a transport boundary.
+
+## Status and diff
+
+`status.py` compares three independent snapshots: the current commit tree
+(empty for an unborn branch), stage-zero index entries, and the filesystem
+contents/modes for paths present in either tracked snapshot. The `HEAD` to
+index comparison yields staged additions, modifications, and deletions. The
+index to working-tree comparison yields unstaged changes, including a working
+copy that differs from an already-staged version. Paths tracked by either
+`HEAD` or the index remain tracked even if they become ignored. Untracked
+regular files and symlinks are listed separately, subject to the implemented
+root `.gitignore` subset; `.git`, nested repositories, and ignored paths are
+excluded. Unmerged index entries and tracked special filesystem objects are
+reported as errors. Rename detection is not implemented.
+
+`cv diff` compares the index to the working tree; `cv diff --cached` compares
+`HEAD` to the index. Neither includes untracked files. Output is deterministic
+and uses unified hunks for valid UTF-8 text without NUL bytes. Other content is
+reported as binary rather than decoded with replacement characters. Missing
+final newlines are marked explicitly, and supported executable/symlink mode
+changes are shown. Status and diff are read-only: they do not write objects,
+the index, or references.
+
+Filesystem inspection uses descriptor-relative, no-follow access for tracked
+files and does not traverse symlink directories. It rejects a tracked path
+that enters `.git`, a file that changes while it is being read, and unsafe or
+unsupported filesystem cases. Tracked file bytes are currently buffered in
+memory for hashing and diff generation; there is no large-file resource limit
+or streaming diff implementation.

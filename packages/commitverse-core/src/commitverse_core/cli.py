@@ -8,6 +8,7 @@ from typing import Sequence
 
 from commitverse_core.commit_service import create_commit
 from commitverse_core.commits import read_commit
+from commitverse_core.diff import generate_diff
 from commitverse_core.history import (
     format_commit_date,
     format_commit_message,
@@ -29,6 +30,7 @@ from commitverse_core.repository import (
     initialize_repository,
 )
 from commitverse_core.staging import add_paths
+from commitverse_core.status import RepositoryStatus, display_path, get_status
 from commitverse_core.trees import write_tree
 
 
@@ -82,6 +84,13 @@ def _build_parser() -> argparse.ArgumentParser:
     rev_parse_parser.add_argument("revision", help="revision to resolve")
 
     commands.add_parser("log", help="show commit history from HEAD")
+    commands.add_parser("status", help="show staged, unstaged, and untracked changes")
+    diff_parser = commands.add_parser("diff", help="show working-tree or staged changes")
+    diff_parser.add_argument(
+        "--cached",
+        action="store_true",
+        help="compare the index with HEAD instead of the working tree",
+    )
 
     return parser
 
@@ -209,6 +218,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print()
             return 0
 
+        if arguments.command == "status":
+            repository = discover_repository()
+            status = get_status(repository)
+            _print_status(status)
+            return 0
+
+        if arguments.command == "diff":
+            repository = discover_repository()
+            sys.stdout.write(generate_diff(repository, cached=arguments.cached))
+            return 0
+
         repository = discover_repository()
         object_type, payload = read_object(repository.objects_dir, arguments.object_id)
         if arguments.t:
@@ -222,3 +242,34 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (OSError, RepositoryError, ValueError) as error:
         print(f"cv: error: {error}", file=sys.stderr)
         return 1
+
+
+def _print_status(status: RepositoryStatus) -> None:
+    """Write a deterministic human-readable summary of repository status."""
+    if status.branch_name is not None:
+        print(f"On branch {status.branch_name}")
+    elif status.head_id is not None:
+        print(f"HEAD detached at {status.head_id[:12]}")
+    else:
+        print("HEAD detached (unborn)")
+
+    if status.unborn:
+        print("No commits yet.")
+
+    if status.staged:
+        print("\nChanges to be committed:")
+        for change in status.staged:
+            print(f"  {change.kind + ':':<9}   {display_path(change.path)}")
+
+    if status.unstaged:
+        print("\nChanges not staged for commit:")
+        for change in status.unstaged:
+            print(f"  {change.kind + ':':<9}   {display_path(change.path)}")
+
+    if status.untracked:
+        print("\nUntracked files:")
+        for path in status.untracked:
+            print(f"  {display_path(path)}")
+
+    if status.clean:
+        print("nothing to commit, working tree clean")

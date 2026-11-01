@@ -14,13 +14,14 @@ collaboration platform:
 - **CommitVerse AI:** a future AI developer assistant.
 
 Core has an installable Python package with canonical object serialization,
-SHA-1 hashing, and zlib-compressed loose-object storage for blob, tree, and
-commit payloads. These object operations have unit tests and external Git
-compatibility tests. This is not a complete version control engine: repository
-initialization/discovery, index and staging, tree and commit payload parsing,
-refs, CLI, branching, merging, and transport remain unimplemented. Treat Hub,
-AI, and other unimplemented Core functionality as plans until working
-implementations and their tests exist.
+SHA-1 hashing, zlib-compressed loose-object storage, non-bare repository
+initialization/discovery, and an initial `cv` CLI for writing and inspecting
+objects. These behaviors have unit, integration, and external Git compatibility
+tests. This is not a complete version control engine: index and staging, tree
+and commit payload parsing, commits and refs as repository operations,
+branching, merging, and transport remain unimplemented. Treat Hub, AI, and
+other unimplemented Core functionality as plans until working implementations
+and their tests exist.
 
 ## Architecture
 
@@ -75,15 +76,15 @@ technologies without a clear project need and an explicit decision.
   configure workspace-wide tooling if needed, but must not replace the Core
   package's independently installable configuration.
 - Keep `.venv/` excluded from Git.
-- Core source includes its package initializer and `objects/format.py` for
-  canonical serialization and hashing, plus `objects/store.py` for loose
-  object storage. Unit tests cover serialization, hashing, storage, and package
-  imports. Compatibility tests use external Git in isolated temporary
-  repositories to validate blob, tree, and commit object storage behavior.
-- Repository initialization/discovery, index and staging, type-specific tree
-  and commit payload parsing, refs, CLI, branching, merging, and remote
-  transport are not implemented. `tests/integration/` currently has no
-  implemented integration coverage.
+- Core source includes `repository.py` for non-bare repository initialization
+  and parent-walking discovery, `cli.py` for the `cv` entry point, and
+  `objects/format.py` and `objects/store.py` for canonical object bytes,
+  hashing, and verified loose-object storage. Unit and integration tests cover
+  these behaviors. Compatibility tests invoke Git only in isolated temporary
+  repositories to validate repository recognition and object interoperability.
+- Index and staging, type-specific tree and commit payload parsing, commits and
+  refs as repository operations, branching, merging, and remote transport are
+  not implemented.
 - Local Core development and tests must work without Docker. Docker complements
   this workflow and is mandatory infrastructure for reproducible environments
   and containerized application services.

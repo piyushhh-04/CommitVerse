@@ -22,8 +22,9 @@ is planned versus what is implemented.
 
 These are project goals, not descriptions of complete working products. The
 Core package foundation and initial Git-compatible object operations are
-implemented and tested; repository initialization, staging, refs, CLI, Hub,
-and AI functionality remain future work.
+implemented and tested. Core now also supports local non-bare repository
+initialization and discovery, plus initial `cv` commands for writing and
+inspecting loose objects.
 
 ## Technology direction
 
@@ -52,18 +53,19 @@ initially need to run in Docker.
 
 ## Status
 
-**Core foundation and loose-object operations.** The independently installable
-Python package and its tests are in place. Core implements canonical
-serialization for blob, tree, and commit object bytes; SHA-1 object IDs; and
-zlib-compressed loose-object writes and reads with header, size, type, and hash
-validation. Unit tests cover these behaviors, and external Git compatibility
-tests verify object reads/writes and blob ID agreement.
+**Core repository and loose-object foundation.** The independently installable
+Python package provides `cv init`, parent-walking repository discovery,
+`cv hash-object -w`, and `cv cat-file -t`, `-s`, and `-p`. Core implements
+canonical serialization for blob, tree, and commit object bytes; SHA-1 object
+IDs; and zlib-compressed loose-object writes and reads with header, size, type,
+and hash validation. Unit, integration, and external Git compatibility tests
+cover these operations, including Git recognizing initialized repositories and
+reading blobs written through the CLI.
 
-This is a narrow object-format and storage capability, not a complete Git
-replacement. Repository initialization/discovery, index and staging, tree or
-commit payload parsing, refs and commits as repository operations, CLI,
-branching, merging, and transport are not implemented. Hub, frontend, database
-integration, and AI functionality are also future work.
+This is a limited foundation, not a complete Git replacement. Index and
+staging, tree and commit payload parsing, commits and refs as repository
+operations, branching, merging, and transport are not implemented. Hub,
+frontend, database integration, and AI functionality are also future work.
 
 See [PROJECT_CONTEXT.md](./PROJECT_CONTEXT.md) for the project-wide engineering
 and contribution guidelines, and [the architecture overview](./docs/architecture/overview.md)

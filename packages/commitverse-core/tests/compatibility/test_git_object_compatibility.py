@@ -1,10 +1,14 @@
 import os
 import shutil
 import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
+from commitverse_core.cli import main
 from commitverse_core.objects import hash_object, read_object, write_object
+from commitverse_core.repository import initialize_repository
 
 
 @pytest.fixture(scope="session")
@@ -49,6 +53,17 @@ def _initialize_repository(git_executable, repository):
         "--object-format=sha1",
     )
     return repository / ".git" / "objects"
+
+
+def _run_cv(repository, *arguments):
+    executable = Path(sys.executable).with_name("cv")
+    return subprocess.run(
+        [str(executable), *arguments],
+        cwd=repository,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
 
 
 @pytest.mark.parametrize(
@@ -174,3 +189,85 @@ def test_object_id_matches_git_hash_object(git_executable, tmp_path, payload):
     ).stdout.decode("ascii").strip()
 
     assert hash_object("blob", payload) == git_object_id
+
+
+def test_git_recognizes_commitverse_initialized_repository(git_executable, tmp_path):
+    repository = initialize_repository(tmp_path / "repository")
+
+    top_level = _run_git(
+        git_executable, repository.root, "rev-parse", "--show-toplevel"
+    ).stdout.decode("utf-8").strip()
+    object_format = _run_git(
+        git_executable, repository.root, "rev-parse", "--show-object-format"
+    ).stdout.decode("ascii").strip()
+
+    assert top_level == str(repository.root)
+    assert object_format == "sha1"
+
+
+def test_git_reads_blob_written_through_hash_object_command(
+    git_executable, tmp_path, monkeypatch, capsysbinary
+):
+    repository = initialize_repository(tmp_path / "repository")
+    monkeypatch.chdir(repository.root)
+    payload = b"CLI-written \x00binary\nblob"
+    file_path = repository.root / "payload.bin"
+    file_path.write_bytes(payload)
+
+    assert main(["hash-object", "-w", file_path.name]) == 0
+    object_id = capsysbinary.readouterr().out.decode("ascii").strip()
+
+    assert _run_git(
+        git_executable, repository.root, "cat-file", "-p", object_id
+    ).stdout == payload
+
+
+def test_commitverse_reads_blob_written_by_git_through_cat_file_command(
+    git_executable, tmp_path, monkeypatch, capsysbinary
+):
+    repository = initialize_repository(tmp_path / "repository")
+    monkeypatch.chdir(repository.root)
+    payload = b"Git-written \x00binary\nblob"
+    object_id = _run_git(
+        git_executable,
+        repository.root,
+        "hash-object",
+        "-w",
+        "--stdin",
+        input=payload,
+    ).stdout.decode("ascii").strip()
+
+    assert main(["cat-file", "-p", object_id]) == 0
+    assert capsysbinary.readouterr().out == payload
+
+
+def test_cv_console_script_writes_blob_git_can_read(git_executable, tmp_path):
+    repository = initialize_repository(tmp_path / "repository")
+    payload = b"console-script \x00binary\nblob"
+    file_path = repository.root / "payload.bin"
+    file_path.write_bytes(payload)
+
+    object_id = (
+        _run_cv(repository.root, "hash-object", "-w", file_path.name)
+        .stdout.decode("ascii")
+        .strip()
+    )
+
+    assert _run_git(
+        git_executable, repository.root, "cat-file", "-p", object_id
+    ).stdout == payload
+
+
+def test_cv_console_script_reads_blob_written_by_git(git_executable, tmp_path):
+    repository = initialize_repository(tmp_path / "repository")
+    payload = b"git-to-console \x00binary\nblob"
+    object_id = _run_git(
+        git_executable,
+        repository.root,
+        "hash-object",
+        "-w",
+        "--stdin",
+        input=payload,
+    ).stdout.decode("ascii").strip()
+
+    assert _run_cv(repository.root, "cat-file", "-p", object_id).stdout == payload

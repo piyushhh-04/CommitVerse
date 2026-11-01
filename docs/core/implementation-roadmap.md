@@ -3,15 +3,15 @@
 ## Status
 
 This roadmap describes the planned sequence and current progress. The Core
-package foundation, canonical object serialization, SHA-1 hashing, and
-zlib-compressed loose-object storage with integrity validation are implemented.
-Unit tests and external Git compatibility tests cover those object operations.
-Milestone 1 is partial: repository initialization/discovery, CLI commands, and
-repository-level workflows have not been implemented. Type-specific tree and
-commit payload parsing, index/staging, refs, branching, merging, and transport
-also remain future work. Each milestone depends on the earlier milestones
-listed below. Acceptance criteria are testable gates; passing them does not by
-itself imply full Git compatibility.
+package foundation, canonical object serialization, SHA-1 hashing,
+zlib-compressed loose-object storage with integrity validation, non-bare
+repository initialization/discovery, and initial CLI commands are implemented.
+Unit, integration, and external Git compatibility tests cover these behaviors.
+Type-specific tree and commit payload parsing, index/staging, commits and refs
+as repository operations, branching, merging, and transport remain future work.
+Each milestone depends on the earlier milestones listed below. Acceptance
+criteria are testable gates; passing them does not by itself imply full Git
+compatibility.
 
 Use Python's standard library in production wherever practical and Pytest for
 tests. Do not use GitPython or subprocess calls to system Git in production
@@ -40,17 +40,27 @@ python -m pip install -e ".[dev]"
 python -m pytest
 ```
 
-After the CLI package entry point has been implemented, the planned local
-execution form is:
+Install the package in the root virtual environment to register the `cv`
+console command:
 
 ```sh
-python -m commitverse_core --help
+.venv/bin/python -m pip install -e "packages/commitverse-core[dev]"
+.venv/bin/cv --help
 ```
 
-The module name and command availability are contingent on implementation; no
-such entry point exists yet. Run the package commands from
-`packages/commitverse-core/`. The package setup and focused unit tests have
-been run; the engine command has not been implemented or verified.
+The initial commands are:
+
+```sh
+.venv/bin/cv init [path]
+.venv/bin/cv hash-object -w <file>
+.venv/bin/cv cat-file -t <object-id>
+.venv/bin/cv cat-file -s <object-id>
+.venv/bin/cv cat-file -p <object-id>
+```
+
+`cat-file -p` writes payload bytes directly to standard output. Object commands
+discover the repository by walking parent directories from the current working
+directory.
 
 Docker is mandatory infrastructure for reproducible environments and
 containerized application services, and complements local Core development.
@@ -65,16 +75,17 @@ docker compose up --build
 docker compose down
 ```
 
-Do not run these commands or install dependencies as part of this documentation
-work.
+These container commands are not needed for standalone Core development.
 
 ## Milestone 1 — Repository initialization and blob storage
 
-**Status: Partial.** Canonical object serialization, SHA-1 object IDs,
-zlib-compressed loose-object writes/reads, and envelope integrity checks are
-implemented for blob, tree, and commit payloads. Unit tests and external Git
-compatibility tests cover these operations. Repository initialization and
-discovery, CLI commands, and repository-level workflows remain unimplemented.
+**Status: Implemented for the initial scope.** Core initializes and discovers
+non-bare SHA-1 repositories, and provides `cv init`, `cv hash-object -w`, and
+`cv cat-file -t/-s/-p`. Canonical serialization, hashing, loose-object storage,
+and envelope integrity checks support blob, tree, and commit payload bytes.
+Unit/integration tests and external Git compatibility tests verify this scope.
+Tree and commit payload parsing and full repository workflows remain future
+work.
 
 **Objective**
 
@@ -83,12 +94,12 @@ loose blob storage.
 
 **Modules**
 
-- Repository discovery and initialization.
+- Non-bare repository discovery and initialization. **Implemented and tested.**
 - Object ID and canonical object header utilities. **Implemented and tested.**
 - Loose object store with zlib compression and integrity checks.
   **Implemented and tested for blob, tree, and commit payload bytes.**
-- Typed storage and repository errors.
-- CLI adapter and focused tests.
+- Clear repository and CLI error handling. **Implemented and tested.**
+- Initial CLI adapter and commands. **Implemented and tested.**
 
 **CLI commands**
 
@@ -98,31 +109,32 @@ loose blob storage.
 - `cv cat-file -s <object-id>`
 - `cv cat-file -p <object-id>`
 
-The exact command syntax and output should be finalized before implementation;
-the names above are proposed. `cat-file -p` for a blob writes payload bytes
-without an implicit text decode.
+The listed command syntax is implemented. `cat-file -p` writes payload bytes
+without an implicit text decode. This CLI does not implement staging, commits,
+refs, or other repository workflows.
 
 **Tests**
 
-- Initialization creates a valid marker/layout and does not overwrite an
-  existing repository's data.
+- Initialization creates a Git-recognized marker/layout and preserves valid
+  existing repository data on reinitialization.
 - Repository discovery succeeds from nested worktree directories and fails
-  clearly outside a repository.
+  clearly outside or at malformed repository metadata.
 - Known blob fixtures yield expected SHA-1 IDs and loose-object paths.
 - Empty, binary, and newline-containing payloads round-trip exactly.
 - Missing, malformed, truncated, invalid-zlib, size-mismatched, and
   hash-mismatched objects raise explicit errors.
-- External Git compatibility tests compare blob IDs and exercise object
-  read/write behavior in isolated temporary repositories; production code must
-  not invoke Git.
+- External Git compatibility tests verify Git recognizes initialized
+  repositories, reads CLI-written blobs, and CommitVerse reads Git-written
+  blobs in isolated temporary repositories; production code must not invoke
+  Git.
 
 **Acceptance criteria**
 
 - Hash IDs are calculated over `<type> <size>\0<payload>` before compression.
 - Loose objects are readable by object ID and are integrity-verified on read.
 - Repository and object-store modules do not depend on CLI presentation.
-- No application behavior is claimed beyond these tested object operations.
-- Repository initialization/discovery and CLI operations remain incomplete.
+- No application behavior is claimed beyond the implemented repository,
+  object, and CLI operations.
 
 **Dependencies**
 

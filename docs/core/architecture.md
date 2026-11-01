@@ -7,13 +7,15 @@ implemented behavior. Core currently has an installable Python package,
 canonical object serialization and SHA-1 hashing in `objects/format.py`, and
 zlib-compressed loose-object storage with integrity validation in
 `objects/store.py`. Unit tests cover these operations; external Git
-compatibility tests verify supported object storage and blob ID behavior.
+compatibility tests verify supported object storage, blob ID behavior, and Git
+recognition of initialized repositories.
 
 The object store handles the common object envelope and treats tree and commit
-payloads as bytes; it does not parse their internal structures. Repository
-initialization/discovery, index and staging, type-specific payload parsing,
-refs and commits as repository operations, CLI, branching, merging, and
-transport are not implemented.
+payloads as bytes; it does not parse their internal structures. Non-bare
+repository initialization/discovery and the initial `cv` CLI commands for
+initialization, blob writing, and object inspection are implemented. Index and
+staging, type-specific payload parsing, commits and refs as repository
+operations, branching, merging, and transport are not implemented.
 
 Core is a custom Git-like version control engine. Production implementation is
 planned for Python's standard library wherever practical; Pytest is the test
@@ -24,18 +26,16 @@ compatibility is not claimed.
 
 ## Proposed module boundaries
 
-The module names below are proposals, not existing modules. The package
-configuration, source-package directory, and test directories shown in the
-layout are present; the engine modules remain proposed. Keep the boundaries
-even if implementation uses a different internal naming scheme.
+The module names below mix existing implementation and proposed work. Keep the
+boundaries even if implementation uses a different internal naming scheme.
 
 | Area | Responsibility |
 |---|---|
-| `cli` | Parse arguments, select a command, map domain errors to user-facing diagnostics and exit codes. Must not implement object serialization or repository mutations itself. |
+| `cli` | Implemented initial `cv init`, `cv hash-object -w`, and `cv cat-file -t/-s/-p` commands; parse arguments, map expected errors to diagnostics and exit codes, and delegate repository/object operations. |
 | `commands` | Adapt each user command to application services; validate command-specific options and format output. |
-| `repository` | Discover and represent a worktree and its administrative directory; provide repository-scoped services without depending on the CLI or Hub. |
-| `objects` | Define typed object values and canonical blob, tree, and commit serialization/parsing. |
-| `object_store` | Write, read, locate, and verify content-addressed loose objects. |
+| `repository` | Implemented initialization and parent-walking discovery for non-bare SHA-1 repositories; provide repository paths without depending on the CLI or Hub. |
+| `objects` | Implemented canonical object-byte serialization and hashing. Typed object values and tree/commit payload parsing remain future work. |
+| `object_store` | Implemented by `objects.store`: write, read, locate, and verify content-addressed loose objects. |
 | `index` | Read and write the staging index; represent staged paths and their modes and object IDs. |
 | `refs` | Read/update branches and other refs, resolve symbolic or detached `HEAD`, and perform safe ref updates. |
 | `worktree` | Inspect paths and file modes in the checked-out working tree; apply checkout changes safely. |
@@ -50,8 +50,7 @@ FastAPI, SQLAlchemy, frontend, AI, or CLI presentation code.
 
 ## Proposed repository layout
 
-This layout combines the existing package scaffold with proposed future engine
-modules:
+This layout combines implemented modules with proposed future engine modules:
 
 ```text
 packages/
@@ -59,12 +58,12 @@ packages/
         pyproject.toml
         src/
             commitverse_core/
-                __main__.py
                 cli.py
+                objects/
+                    format.py
+                    store.py
                 commands/
                 repository.py
-                objects/
-                object_store.py
                 index.py
                 refs.py
                 worktree.py
@@ -103,28 +102,29 @@ Docker Compose when integrating Hub's FastAPI, PostgreSQL, and frontend
 services, but do not require Core itself to run in a container during initial
 development.
 
-The package's `pyproject.toml` and development dependency are present. The
-proposed package entry point and Docker configuration do not exist. Setup and
-execution commands are documented in the [implementation roadmap](./implementation-roadmap.md);
-the package setup is in place, but the engine commands remain plans rather than
-verified application behavior.
+The package's `pyproject.toml`, development dependency, and `cv` console entry
+point are present. The entry point provides the implemented commands described
+in the [implementation roadmap](./implementation-roadmap.md). Docker
+configuration and all other CLI commands remain future work.
 
 ## Repository and administrative layout
 
-The initial repository format should use the conventional `.git` administrative
-directory for a non-bare worktree. A bare repository has no checked-out
-worktree; support for it is a separate capability and must not be assumed.
-Repository discovery should walk parent directories from the command's working
-directory, recognize a valid repository marker, and fail clearly if none is
-found.
+The implemented initial repository format uses the conventional `.git`
+administrative directory for a non-bare worktree. Initialization creates
+`objects/info`, `objects/pack`, `refs/heads`, and `refs/tags`, writes a Git
+compatible SHA-1 `config`, and sets `HEAD` to `refs/heads/main`. Reinitializing
+a valid repository preserves its existing data; malformed or unsupported
+metadata is rejected. Discovery walks parent directories, validates the
+repository structure/configuration and `HEAD`, and reports failure when no
+supported repository is found. Bare repositories and linked-worktree `.git`
+files are not supported.
 
-The initial on-disk layout is planned to include:
+The initialized repository contains:
 
 ```text
 .git/
     HEAD
     config
-    index
     objects/
         info/
         pack/
@@ -133,12 +133,13 @@ The initial on-disk layout is planned to include:
         tags/
 ```
 
-Only loose object storage is in the initial object-format scope. `pack/` is
-shown because packed objects are relevant to later remote operations; its
-format and behavior are future work. Any `config` fields or index encoding
-needed for Git interoperability must follow the relevant Git format rather
-than an undocumented private serialization. A CommitVerse-specific extension
-must be explicit and must not change the serialization of Git objects.
+Only loose object storage is implemented in the initial object-format scope.
+`pack/` is created as part of the conventional layout, but packed-object
+behavior is future work. The initial `config` fields follow Git's repository
+format. The index is not created until staging is implemented. Other Git
+interoperability requirements remain future work. A CommitVerse-specific
+extension must be explicit and must not change the serialization of Git
+objects.
 
 ## Object database and object relationships
 
@@ -170,7 +171,7 @@ envelope and integrity checks but does not parse tree or commit payloads.
 
 ## Index and staging
 
-The index is the proposed boundary between a working tree and the next
+The index is the planned boundary between a working tree and the next
 committed tree. It represents the staged snapshot by repository-relative paths,
 file modes, blob IDs, and the metadata needed to detect working-tree changes.
 The exact index encoding, version policy, stat-cache behavior, and extension

@@ -32,6 +32,7 @@ pnpm-debug.log*
 build/
 dist/
 out/
+*.egg-info/
 
 # Secrets and local environment configuration
 .env

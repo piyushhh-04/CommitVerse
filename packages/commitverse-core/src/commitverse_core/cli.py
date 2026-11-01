@@ -5,18 +5,21 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
+from commitverse_core.index import read_index
 from commitverse_core.objects import read_object, write_object
 from commitverse_core.repository import (
     RepositoryError,
     discover_repository,
     initialize_repository,
 )
+from commitverse_core.staging import add_paths
+from commitverse_core.trees import write_tree
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="cv",
-        description="Initialize repositories and inspect Git-compatible loose objects.",
+        description="Initialize repositories, stage files, and inspect Git-compatible objects.",
     )
     commands = parser.add_subparsers(dest="command", required=True)
 
@@ -38,6 +41,18 @@ def _build_parser() -> argparse.ArgumentParser:
     cat_format.add_argument("-p", action="store_true", help="write the payload bytes")
     cat_parser.add_argument("object_id", help="40-character lowercase SHA-1 object ID")
 
+    add_parser = commands.add_parser("add", help="stage working-tree files")
+    add_parser.add_argument(
+        "-A",
+        "--all",
+        action="store_true",
+        help="stage additions, modifications, and deletions",
+    )
+    add_parser.add_argument("paths", nargs="*", help="file or directory paths to stage")
+
+    commands.add_parser("write-tree", help="write a tree from the current index")
+    commands.add_parser("ls-files", help="list staged paths")
+
     return parser
 
 
@@ -58,6 +73,32 @@ def main(argv: Sequence[str] | None = None) -> int:
             repository = discover_repository()
             payload = Path(arguments.file).expanduser().read_bytes()
             print(write_object(repository.objects_dir, "blob", payload))
+            return 0
+
+        if arguments.command == "add":
+            repository = discover_repository()
+            add_paths(
+                repository,
+                arguments.paths,
+                all=arguments.all,
+            )
+            return 0
+
+        if arguments.command == "write-tree":
+            repository = discover_repository()
+            index = read_index(repository.git_dir / "index")
+            print(write_tree(repository.objects_dir, index.entries))
+            return 0
+
+        if arguments.command == "ls-files":
+            repository = discover_repository()
+            index = read_index(repository.git_dir / "index")
+            seen: set[bytes] = set()
+            for entry in index.entries:
+                if entry.path not in seen:
+                    sys.stdout.buffer.write(entry.path + b"\n")
+                    seen.add(entry.path)
+            sys.stdout.buffer.flush()
             return 0
 
         repository = discover_repository()

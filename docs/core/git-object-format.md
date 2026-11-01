@@ -5,17 +5,20 @@
 This document defines CommitVerse Core's initial object-serialization and
 storage target: SHA-1 loose objects containing blob, tree, and commit payloads.
 Canonical serialization, hashing, loose-object storage, and envelope integrity
-validation are implemented and covered by unit tests. External Git
-compatibility tests verify Git reads objects written by CommitVerse, CommitVerse
-reads objects written by Git, and blob object IDs agree.
+validation are implemented and covered by unit tests. Git-compatible tree
+serialization/parsing and index version 2 encoding/decoding are also
+implemented. External Git compatibility tests verify Git reads objects, trees,
+and indexes written by CommitVerse; CommitVerse reads Git-written objects and
+indexes; and both implementations produce the same tree IDs.
 
-Compatibility evidence is limited to these tested loose-object operations. It
-does not claim complete Git compatibility or a complete Git replacement.
+Compatibility evidence is limited to the tested loose-object, tree, and index
+operations. It does not claim complete Git compatibility or a complete Git
+replacement.
 
 Object serialization is independent of the index, refs, CLI, Hub metadata, and
-transport. This document covers loose objects only; packfiles, alternate
-object databases, SHA-256 repositories, and other Git extensions are out of
-scope for the initial format.
+transport. This document covers loose objects, trees, and the separate index
+file format; packfiles, alternate object databases, SHA-256 repositories, and
+other Git extensions are out of scope.
 
 ## Object ID and canonical bytes
 
@@ -48,9 +51,10 @@ The supported initial type names are the ASCII strings `blob`, `tree`, and
 `commit`. Loose-object reads require a supported type, a canonical nonnegative
 decimal size, the NUL header terminator, and exactly the declared number of
 payload bytes. The payload itself may contain NUL bytes. Never hash the
-compressed representation or only the payload. Tree and commit payload
-serialization/parsing as structured Git objects is not implemented; storage
-accepts and returns their payload bytes without interpreting them.
+compressed representation or only the payload. Tree payload serialization and
+parsing are implemented below. Commit payload serialization/parsing as
+structured Git objects is not implemented; storage accepts and returns commit
+payload bytes without interpreting them.
 
 ## Loose-object storage
 
@@ -122,6 +126,44 @@ The canonical tree object is the ordinary object header for type `tree` and
 payload byte length followed by this exact payload. Its SHA-1 is calculated
 over header plus payload. The child IDs in the payload remain raw 20-byte
 values; only external displays and text fields encode IDs as hexadecimal.
+The tree implementation validates supported modes, entry boundaries, unique
+names, Git ordering, object IDs, and referenced object types when reading a
+tree from the object database. Tree construction from index entries recursively
+writes directory trees and rejects unmerged or conflicting paths. Gitlinks and
+submodules are not supported.
+
+## Index v2 file format
+
+The index is repository metadata, not a Git object. The initial implementation
+supports Git index version 2 and uses big-endian integers:
+
+```text
+"DIRC" | uint32 version (= 2) | uint32 entry count
+entry[0] ... entry[n-1]
+optional supported extensions
+20-byte SHA-1 checksum
+```
+
+Each entry contains ten unsigned 32-bit stat fields (ctime seconds/nanoseconds,
+mtime seconds/nanoseconds, device, inode, mode, uid, gid, and size), a raw
+20-byte object ID, a 16-bit flags field, pathname bytes, a NUL terminator, and
+zero padding so the entry size is a multiple of eight bytes. The low 12 flag
+bits store pathname length (saturated at `0xFFF`); bits 12-13 store merge
+stage; bit 15 is the assume-valid flag. Extended flags are rejected. Entries
+are sorted by raw pathname bytes and stage; stage values 1-3 are preserved,
+but tree writing rejects unmerged entries.
+
+The final checksum is SHA-1 over all preceding index bytes. Writes use a
+temporary file and atomic replacement. Existing stat metadata and entry flags
+are preserved by decoding and re-encoding; staging updates metadata for
+changed entries. A missing index is treated as empty.
+
+Only the `TREE` cache-tree extension is recognized and preserved when entries
+are unchanged. It is dropped when staging changes entries because cached tree
+data may be stale. Other extensions (including split-index, resolve-undo,
+untracked-cache, and filesystem-monitor data), extended entry flags, and index
+versions other than 2 are explicitly unsupported and rejected rather than
+silently rewritten.
 
 ## Commit serialization
 

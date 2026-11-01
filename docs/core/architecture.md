@@ -6,16 +6,19 @@ This document describes the intended architecture and distinguishes it from
 implemented behavior. Core currently has an installable Python package,
 canonical object serialization and SHA-1 hashing in `objects/format.py`, and
 zlib-compressed loose-object storage with integrity validation in
-`objects/store.py`. Unit tests cover these operations; external Git
-compatibility tests verify supported object storage, blob ID behavior, and Git
+`objects/store.py`. `trees.py` serializes and parses supported Git tree entries;
+`index.py` reads and writes Git index version 2; and `staging.py` stages
+worktree paths and writes trees. Unit and integration tests cover these
+operations. External Git compatibility tests verify object interoperability,
+index interoperability in both directions, matching tree IDs, and Git
 recognition of initialized repositories.
 
-The object store handles the common object envelope and treats tree and commit
-payloads as bytes; it does not parse their internal structures. Non-bare
-repository initialization/discovery and the initial `cv` CLI commands for
-initialization, blob writing, and object inspection are implemented. Index and
-staging, type-specific payload parsing, commits and refs as repository
-operations, branching, merging, and transport are not implemented.
+The object store handles the common object envelope. Tree payloads are parsed
+and validated separately; commit payloads remain opaque bytes. Non-bare
+repository initialization/discovery and the initial `cv` commands for object
+inspection, staging, and tree writing are implemented. Commit creation and
+parsing, refs as repository operations, branching, checkout, merging, and
+transport are not implemented.
 
 Core is a custom Git-like version control engine. Production implementation is
 planned for Python's standard library wherever practical; Pytest is the test
@@ -31,12 +34,14 @@ boundaries even if implementation uses a different internal naming scheme.
 
 | Area | Responsibility |
 |---|---|
-| `cli` | Implemented initial `cv init`, `cv hash-object -w`, and `cv cat-file -t/-s/-p` commands; parse arguments, map expected errors to diagnostics and exit codes, and delegate repository/object operations. |
+| `cli` | Implemented `cv init`, `cv hash-object -w`, `cv cat-file -t/-s/-p`, `cv add`, `cv write-tree`, and `cv ls-files`; parse arguments, map expected errors to diagnostics and exit codes, and delegate repository/object operations. |
 | `commands` | Adapt each user command to application services; validate command-specific options and format output. |
 | `repository` | Implemented initialization and parent-walking discovery for non-bare SHA-1 repositories; provide repository paths without depending on the CLI or Hub. |
-| `objects` | Implemented canonical object-byte serialization and hashing. Typed object values and tree/commit payload parsing remain future work. |
+| `objects` | Implemented canonical object-byte serialization and hashing. Typed commit payload parsing remains future work. |
 | `object_store` | Implemented by `objects.store`: write, read, locate, and verify content-addressed loose objects. |
-| `index` | Read and write the staging index; represent staged paths and their modes and object IDs. |
+| `trees` | Implemented Git-compatible tree entry serialization, parsing, ordering, type validation, and nested tree construction from index entries. |
+| `index` | Implemented Git index v2 encoding/decoding, checksum validation, entry metadata and stage preservation, and atomic replacement. |
+| `staging` | Implemented path validation, file/symlink staging, recursive directory staging, `-A` updates/deletions, and the documented root `.gitignore` subset. |
 | `refs` | Read/update branches and other refs, resolve symbolic or detached `HEAD`, and perform safe ref updates. |
 | `worktree` | Inspect paths and file modes in the checked-out working tree; apply checkout changes safely. |
 | `diff` | Compare object trees, index state, and working-tree content and represent changes independently of output formatting. |
@@ -59,12 +64,14 @@ packages/
         src/
             commitverse_core/
                 cli.py
+                index.py
                 objects/
                     format.py
                     store.py
                 commands/
                 repository.py
-                index.py
+                staging.py
+                trees.py
                 refs.py
                 worktree.py
                 diff.py
@@ -136,10 +143,10 @@ The initialized repository contains:
 Only loose object storage is implemented in the initial object-format scope.
 `pack/` is created as part of the conventional layout, but packed-object
 behavior is future work. The initial `config` fields follow Git's repository
-format. The index is not created until staging is implemented. Other Git
-interoperability requirements remain future work. A CommitVerse-specific
-extension must be explicit and must not change the serialization of Git
-objects.
+format. The Git-compatible v2 index is created on the first staging update.
+Bare repositories and linked-worktree `.git` files remain unsupported. Other
+Git interoperability requirements remain future work. A CommitVerse-specific
+extension must be explicit and must not change Git object or index formats.
 
 ## Object database and object relationships
 
@@ -166,23 +173,42 @@ are not Git objects.
 Loose-object reads must validate decompression, object header, declared payload
 size, object type, and the SHA-1 ID against the canonical bytes before exposing
 the object. Corrupt or mismatched data is an error, not a cache miss or a
-success-shaped fallback. The implemented storage layer performs these
-envelope and integrity checks but does not parse tree or commit payloads.
+success-shaped fallback. The object storage layer performs envelope and
+integrity checks. The tree layer parses and validates supported tree entries;
+commit payload parsing remains future work.
 
 ## Index and staging
 
-The index is the planned boundary between a working tree and the next
-committed tree. It represents the staged snapshot by repository-relative paths,
-file modes, blob IDs, and the metadata needed to detect working-tree changes.
-The exact index encoding, version policy, stat-cache behavior, and extension
-support remain to be decided before implementation. For Git index
-interoperability, use the documented Git index format; do not invent a
-Git-object-compatible-looking but incompatible binary format.
+The index is the boundary between the working tree and the next committed
+tree. The current implementation reads and writes Git index version 2 with
+`DIRC`, ten stat fields, object IDs, path/stage flags, NUL-terminated paths,
+eight-byte entry padding, and a trailing SHA-1 checksum. It preserves stage
+and stat fields, validates pathname ordering and the checksum, and atomically
+replaces the index file. A missing index reads as empty.
 
-`add` reads selected working-tree files, writes/reuses blobs, and updates the
-index. Tree writing converts the index's staged paths into nested tree objects.
-Removal and rename behavior should be explicit command behavior, not inferred
-from missing files unless the user requests it.
+The only supported index extension is `TREE`, stored opaquely and discarded
+when an entry change invalidates cached tree data. Other extensions, extended
+entry flags, and index versions other than 2 are rejected explicitly.
+Concurrent index writers and Git's lock-file protocol are not supported.
+
+`add <path>...` stages files and recursively visits directories, preserving
+regular/executable/symlink modes and filesystem path bytes where supported.
+`add -A` stages visible additions and modifications and removes deleted tracked
+paths. Neither form stages the repository's `.git` directory. Paths that
+resolve outside the worktree are rejected. Nested repositories are skipped
+during `-A` traversal and cannot be explicitly staged; gitlinks are not
+implemented. Empty directories are not staged.
+`write-tree` turns stage-zero index entries into nested Git tree objects and
+rejects unmerged or conflicting paths. `ls-files` lists each staged path once
+in deterministic order.
+
+Ignore handling reads only the worktree-root `.gitignore`, which must be a
+regular file. The implemented subset supports blank/comment lines, simple
+`fnmatch` patterns, leading `/`, trailing `/`, and `!` negation in rule order.
+It does not implement nested
+ignore files, Git's full wildmatch/escape rules, global excludes, or all parent
+directory negation rules. Ignored untracked paths are not staged; already
+tracked paths remain tracked and are refreshed by `add -A`.
 
 ## Refs and `HEAD`
 
@@ -210,11 +236,13 @@ command follows this flow:
 5. Return a result for the CLI to format; translate expected domain errors to
    concise diagnostics and meaningful nonzero exit codes.
 
-Example `add` flow: select paths, validate that they are inside the worktree,
-read file bytes and mode, write or reuse blobs, and update the index. Example
-`commit` flow: write trees from the index, construct and write a commit
-referencing the root tree and current parent, then advance the current branch
-ref (or handle detached `HEAD` according to an explicitly defined policy).
+Implemented `add` flow: select paths, validate that they are inside the
+worktree, read file bytes and mode, write or reuse blobs, and update the index.
+Implemented `write-tree` flow: validate stage-zero index entries, construct
+nested tree objects, and print the root tree ID. Example `commit` flow:
+construct and write a commit referencing the root tree and current parent, then
+advance the current branch ref (or handle detached `HEAD` according to an
+explicitly defined policy).
 
 Storage code returns typed values or raises typed errors; it does not print to
 the terminal. The CLI handles arguments, output, and process exit status; it
@@ -231,9 +259,10 @@ unexpected failures should retain their cause and be observable.
 
 Validate paths against repository boundaries and handle symlinks deliberately.
 Never follow a user-controlled path outside the worktree as an implicit
-repository operation. For multi-step mutations, define the order and recovery
-behavior; use temporary files and atomic replacement where supported. Do not
-claim crash consistency or concurrent-writer safety until tested.
+repository operation. Index replacement uses a temporary file and atomic
+rename; object creation is content-addressed. Concurrent-writer locking,
+crash consistency across object and index updates, and resource limits for
+untrusted input are not claimed.
 
 ## Separation of concerns
 

@@ -5,10 +5,11 @@
 This roadmap describes the planned sequence and current progress. The Core
 package foundation, canonical object serialization, SHA-1 hashing,
 zlib-compressed loose-object storage with integrity validation, non-bare
-repository initialization/discovery, and initial CLI commands are implemented.
-Unit, integration, and external Git compatibility tests cover these behaviors.
-Type-specific tree and commit payload parsing, index/staging, commits and refs
-as repository operations, branching, merging, and transport remain future work.
+repository initialization/discovery, Git-compatible trees, index-v2 staging,
+and initial CLI commands are implemented. Unit, integration, and external Git
+compatibility tests cover these behaviors. Commit payload parsing/creation,
+refs as repository operations, branching, checkout, merging, and transport
+remain future work.
 Each milestone depends on the earlier milestones listed below. Acceptance
 criteria are testable gates; passing them does not by itself imply full Git
 compatibility.
@@ -56,6 +57,10 @@ The initial commands are:
 .venv/bin/cv cat-file -t <object-id>
 .venv/bin/cv cat-file -s <object-id>
 .venv/bin/cv cat-file -p <object-id>
+.venv/bin/cv add <path> [<path> ...]
+.venv/bin/cv add -A
+.venv/bin/cv write-tree
+.venv/bin/cv ls-files
 ```
 
 `cat-file -p` writes payload bytes directly to standard output. Object commands
@@ -84,8 +89,8 @@ non-bare SHA-1 repositories, and provides `cv init`, `cv hash-object -w`, and
 `cv cat-file -t/-s/-p`. Canonical serialization, hashing, loose-object storage,
 and envelope integrity checks support blob, tree, and commit payload bytes.
 Unit/integration tests and external Git compatibility tests verify this scope.
-Tree and commit payload parsing and full repository workflows remain future
-work.
+Structured commit payload parsing and full repository workflows remain future
+work; Git tree parsing and staging are covered by Milestone 2 below.
 
 **Objective**
 
@@ -142,6 +147,13 @@ refs, or other repository workflows.
 
 ## Milestone 2 — Trees and staging
 
+**Status: Implemented and externally verified for the documented subset.**
+Tree entries use Git's raw 20-byte object IDs and directory-aware ordering.
+The staging index reads and writes Git index v2, and the CLI supports explicit
+path/directory staging, `-A`, `write-tree`, and `ls-files`. Git and CommitVerse
+read each other's indexes and generate identical trees in isolated test
+repositories.
+
 **Objective**
 
 Represent staged paths in an index, store tree objects with Git's raw binary
@@ -149,10 +161,11 @@ child IDs, and construct nested trees from staged entries.
 
 **Modules**
 
-- Tree serializer/parser and tree ordering.
-- Index model and persistence.
-- Worktree path/mode inspection.
-- Staging application service and CLI adapter.
+- Tree serializer/parser and tree ordering. **Implemented and tested.**
+- Index v2 model, validation, checksum, and atomic persistence.
+  **Implemented and tested.**
+- Worktree path/mode inspection. **Implemented for regular files and symlinks.**
+- Staging application service and CLI adapter. **Implemented and tested.**
 
 **CLI commands**
 
@@ -161,8 +174,9 @@ child IDs, and construct nested trees from staged entries.
 - `cv write-tree`
 - `cv ls-files`
 
-These are proposed command forms. Index file format and compatibility scope
-must be decided before its persistence implementation.
+These command forms are implemented. `add -A` stages additions, modifications,
+and deletions. A root `.gitignore` subset is documented in the architecture
+guide; full Git ignore semantics are not claimed.
 
 **Tests**
 
@@ -174,8 +188,12 @@ must be decided before its persistence implementation.
   preserves supported path and file content semantics.
 - Updating and removing staged paths follows explicit `add` behavior and does
   not mutate previously written objects.
-- Index reload, malformed-index errors, and staged-vs-worktree comparisons
-  behave as specified.
+- Index reload, malformed-index errors, checksum validation, and stat-field
+  preservation behave as specified.
+- Git can read CommitVerse-generated trees and indexes; CommitVerse can read a
+  Git-staged index, and both produce the same root tree ID.
+- Index versions other than 2, unsupported extensions/extended flags, gitlinks,
+  and concurrent index writers fail or remain unsupported as documented.
 
 **Acceptance criteria**
 
@@ -184,6 +202,8 @@ must be decided before its persistence implementation.
 - The index is documented, validated, and not confused with an object.
 - Staging writes/reuses blobs and updates index entries without direct CLI
   storage logic.
+- `ls-files` is deterministic, and `write-tree` rejects conflicts and writes an
+  empty tree for an empty index.
 
 **Dependencies**
 

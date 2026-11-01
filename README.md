@@ -21,10 +21,9 @@ is planned versus what is implemented.
 - **CommitVerse AI** — a future AI developer assistant.
 
 These are project goals, not descriptions of complete working products. The
-Core package foundation and initial Git-compatible object operations are
-implemented and tested. Core now also supports local non-bare repository
-initialization and discovery, plus initial `cv` commands for writing and
-inspecting loose objects.
+Core package foundation, Git-compatible loose objects and trees, index-v2
+staging, non-bare repository initialization/discovery, and initial `cv`
+commands are implemented and tested.
 
 ## Technology direction
 
@@ -53,19 +52,22 @@ initially need to run in Docker.
 
 ## Status
 
-**Core repository and loose-object foundation.** The independently installable
-Python package provides `cv init`, parent-walking repository discovery,
-`cv hash-object -w`, and `cv cat-file -t`, `-s`, and `-p`. Core implements
-canonical serialization for blob, tree, and commit object bytes; SHA-1 object
-IDs; and zlib-compressed loose-object writes and reads with header, size, type,
-and hash validation. Unit, integration, and external Git compatibility tests
-cover these operations, including Git recognizing initialized repositories and
-reading blobs written through the CLI.
+**Core repository, tree, and staging foundation.** The independently
+installable Python package provides `cv init`, `cv hash-object -w`,
+`cv cat-file -t/-s/-p`, `cv add [<path> ...]`, `cv add -A`, `cv write-tree`,
+and `cv ls-files`. It implements canonical blob/tree/commit envelopes and
+SHA-1 IDs, zlib loose-object storage with integrity validation, Git-compatible
+tree serialization/parsing, and Git index version 2 read/write and staging.
+Unit, integration, and isolated external Git compatibility tests cover these
+operations, including reading each other's indexes and matching generated
+tree IDs.
 
-This is a limited foundation, not a complete Git replacement. Index and
-staging, tree and commit payload parsing, commits and refs as repository
-operations, branching, merging, and transport are not implemented. Hub,
-frontend, database integration, and AI functionality are also future work.
+This is a limited foundation, not a complete Git replacement. Commit payload
+parsing and creation, refs as repository operations, branching, checkout,
+merging, remotes, and transport are not implemented. Index extensions other
+than `TREE`, advanced Git ignore semantics, and non-v2 indexes are unsupported.
+Hub, frontend, database integration, and AI functionality are also future
+work.
 
 See [PROJECT_CONTEXT.md](./PROJECT_CONTEXT.md) for the project-wide engineering
 and contribution guidelines, and [the architecture overview](./docs/architecture/overview.md)

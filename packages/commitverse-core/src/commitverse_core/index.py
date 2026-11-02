@@ -99,12 +99,12 @@ def _validate_entry(entry: IndexEntry) -> None:
         or _OBJECT_ID_PATTERN.fullmatch(entry.object_id) is None
     ):
         raise IndexFormatError("index object IDs must be 40 lowercase hexadecimal characters")
-    if entry.stage not in (0, 1, 2, 3):
+    if type(entry.stage) is not int or entry.stage not in (0, 1, 2, 3):
         raise IndexFormatError(f"invalid index stage: {entry.stage!r}")
     if entry.mode not in ("100644", "100755", "120000"):
         raise IndexFormatError(f"unsupported index mode: {entry.mode!r}")
     if len(entry.stat.fields()) != 10 or any(
-        not isinstance(value, int) or value < 0 or value > _UINT32_MAX
+        type(value) is not int or value < 0 or value > _UINT32_MAX
         for value in entry.stat.fields()
     ):
         raise IndexFormatError("index stat fields must be unsigned 32-bit integers")

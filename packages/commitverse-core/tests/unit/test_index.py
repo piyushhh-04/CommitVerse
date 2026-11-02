@@ -98,6 +98,27 @@ def test_index_rejects_invalid_path_and_duplicate_entries():
         serialize_index(Index((_entry(b"a"), _entry(b"a", stage=2))))
 
 
+@pytest.mark.parametrize("kwargs", [{"uid": True}, {"size": False}, {"ctime_seconds": True}])
+def test_index_rejects_boolean_stat_values(kwargs):
+    with pytest.raises(IndexFormatError, match="unsigned 32-bit"):
+        serialize_index(
+            Index(
+                (
+                    IndexEntry(
+                        b"file",
+                        "a" * 40,
+                        stat=IndexStat(mode=0o100644, **kwargs),
+                    ),
+                )
+            )
+        )
+
+
+def test_index_rejects_boolean_stage():
+    with pytest.raises(IndexFormatError, match="invalid index stage"):
+        serialize_index(Index((IndexEntry(b"file", "a" * 40, stage=True),)))
+
+
 def test_index_rejects_unsupported_extensions_and_extended_flags():
     unsupported = b"DIRC" + struct.pack(">II", 2, 0) + b"UNKN" + struct.pack(">I", 0)
     unsupported += hashlib.sha1(unsupported).digest()

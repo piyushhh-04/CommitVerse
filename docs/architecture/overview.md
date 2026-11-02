@@ -2,95 +2,177 @@
 
 ## Status
 
-This document describes the intended architecture, not a deployed or
-implemented system. Core has an initial Python package scaffold, but there are
-no implemented engine features, APIs, schemas, or runtime integrations.
+This document describes the current implemented architecture of CommitVerse
+Core and the intended future shape of the broader platform. It is a current
+engineering reference, not a promise of a complete Git replacement or completed
+Hub/AI product work.
 
 ## System shape
 
-CommitVerse is planned as a modular monorepo with three product components:
+CommitVerse is organized as a modular monorepo with three product areas:
 
-1. **CommitVerse Core** owns the custom Git-like version control engine and
-   repository operations.
-2. **CommitVerse Hub** provides repository hosting and collaboration. Its
-   backend is planned with Python, FastAPI, PostgreSQL, SQLAlchemy, and Pydantic;
-   its frontend is planned with React and Tailwind CSS.
-3. **CommitVerse AI** is a future developer assistant. PyTorch and Hugging Face
-   Transformers are planned for this area, but no AI functionality exists yet.
+1. **CommitVerse Core** implements the Git-like version control engine and
+   repository operations in Python.
+2. **CommitVerse Hub** is the planned repository hosting and collaboration
+   platform.
+3. **CommitVerse AI** is the planned AI-powered developer assistant layer.
 
-The components should have explicit interfaces and independently understandable
-responsibilities. The exact process boundaries and deployment topology remain
-open until implementation requirements are known.
+The implemented work is in Core. Hub and AI are future-facing architecture
+plans and do not yet contain working runtime integrations.
 
-Core is planned as an independently installable Python package under
+Core is an independently installable Python package under
 `packages/commitverse-core/`, with source in
 `packages/commitverse-core/src/commitverse_core/` and tests in
-`packages/commitverse-core/tests/{unit,integration,compatibility}/`. This
-package boundary follows the modular monorepo decision. The package currently
-contains only `src/commitverse_core/__init__.py`; `tests/unit/` contains two
-initial package tests, and `tests/integration/` and `tests/compatibility/` are
-empty. Both initial package tests have passed. No Core engine functionality
-has been implemented.
+`packages/commitverse-core/tests/{unit,integration,compatibility}/`.
 
-## Communication
+## Current Core architecture
 
-Hub is expected to coordinate user-facing hosting and collaboration workflows
-with Core's repository operations through defined interfaces. The concrete
-protocol, API endpoints, and execution model have not been selected.
+The current implementation is responsible for repository metadata, object
+storage, index management, tree serialization, staging, commits, refs, history,
+status diffing, and the `cv` CLI surface.
 
-AI is a future component. Its integration points, data access, and communication
-with Core or Hub are not yet defined. Do not assume it can read repositories or
-perform actions.
+### Repository and object model
+
+- `repository.py` initializes and discovers non-bare repositories.
+- `objects/format.py` defines canonical Git-compatible object serialization and
+  SHA-1 hashing.
+- `objects/store.py` reads and writes verified loose objects in the `.git/objects`
+  directory using zlib-compressed canonical payloads.
+
+These modules define the underlying object database and repository root layout.
+
+### Index, tree, and staging
+
+- `index.py` provides Git index-v2 parsing and serialization, checksum
+  validation, path validation, stage handling, duplicate detection, and atomic
+  replacement.
+- `trees.py` serializes and parses Git tree objects and rebuilds nested tree
+  structures from stage-zero index entries.
+- `staging.py` stages files and directories from the working tree into the index,
+  including basic `.gitignore` handling, symlink support, and safe repository
+  scans.
+
+This layer converts the working tree into a Git-like staged snapshot stored in
+`.git/index`.
+
+### Commits, refs, and history
+
+- `commits.py` defines commit payload structure, serialization, validation, and
+  parse logic.
+- `refs.py` manages loose branch refs, `HEAD`, and branch validation.
+- `commit_service.py` creates commits from the current index and advances HEAD.
+- `history.py` traverses reachable parent history and formats commit metadata.
+
+This layer turns staged tree snapshots into commit objects and valid branch
+state.
+
+### Status and diff
+
+- `status.py` compares HEAD, index, and working tree snapshots and reports
+  staged, unstaged, and untracked state.
+- `diff.py` generates deterministic unified diffs for staged or working-tree
+  changes without mutating repository data.
+
+This is a read-only comparison layer, not a complete Git status/diff clone.
+
+### CLI
+
+- `cli.py` is the `cv` command entrypoint.
+
+Supported commands in the current implementation:
+
+- `cv init [path]`
+- `cv hash-object -w <file>`
+- `cv cat-file -t <object_id>`
+- `cv cat-file -s <object_id>`
+- `cv cat-file -p <object_id>`
+- `cv add [-A] [paths ...]`
+- `cv write-tree`
+- `cv ls-files`
+- `cv commit -m "message"`
+- `cv branch [--list] [name]`
+- `cv rev-parse <revision>`
+- `cv log`
+- `cv status`
+- `cv diff [--cached]`
+
+## Communication boundaries
+
+Hub is expected to coordinate hosting and collaboration workflows with Core
+through defined repository interfaces, but no Hub API or integration is present
+in this repository.
+
+AI is a future product capability. It has no implemented data access model,
+repository API, or runtime integration in the current codebase.
 
 ## Storage separation
 
-- **Version control data:** Core owns repository objects and other data needed
-  for version control. The object format and model are documented as proposed
-  designs, but have not yet been implemented.
-- **Application metadata:** Hub will own platform metadata such as accounts,
-  access control, and collaboration records. PostgreSQL is planned for this
-  metadata.
-- **Separation boundary:** Do not store Git objects as Hub database metadata or
-  treat database records as a replacement for the repository object store.
-  Define explicit references and interfaces between them when implementation
-  begins.
-- **AI data:** No AI data store or retention policy has been chosen.
+- **Version control data:** Core owns repository objects, refs, index, and tree
+  data.
+- **Application metadata:** Hub owns repository hosting metadata such as users,
+  permissions, and collaboration records.
+- **Separation boundary:** Do not treat database metadata as a substitute for
+  the repository object store.
+- **AI data:** No AI persistence or retention model is implemented.
 
 ## Planned technology boundaries
 
-- Python standard library wherever practical for Core; implement Git internals
-  within CommitVerse rather than wrapping an existing Git engine.
-- FastAPI, SQLAlchemy, Pydantic, and PostgreSQL for the planned Hub backend.
-- React and Tailwind CSS for the planned frontend.
-- Docker is mandatory infrastructure for reproducible environments and
-  containerized application services. Pytest is installed as a Core development
-  dependency.
-- PyTorch and Hugging Face Transformers for future AI work only.
+- **Core:** Python standard library wherever practical.
+- **Hub:** Python, FastAPI, PostgreSQL, SQLAlchemy, and Pydantic are planned.
+- **Frontend:** React and Tailwind CSS are planned.
+- **Infrastructure:** Docker is mandatory infrastructure for reproducible
+  environments and later service composition, but the standalone Core engine
+  remains usable without Docker.
+- **AI:** PyTorch and Hugging Face Transformers are planned for future work only.
 
-These choices do not indicate that the corresponding dependencies, services,
-or components have been created, except for Pytest in Core's development
-environment.
+These technology choices are not a claim that the referenced services are
+configured or running.
 
 ## Development environment and deployment
 
-Python development uses the existing root-level `.venv`, which is excluded
-from Git. Core's project configuration and dependency management are in
-`packages/commitverse-core/pyproject.toml`, with production dependencies
-separate from development dependencies. Core is installed in editable mode in
-the local development environment. Project packages must not be installed
-globally. Whether to add a root-level `pyproject.toml` for workspace-wide
-configuration remains undecided; it does not replace Core's package-level
-configuration.
+Python development uses the repository-root `.venv`, which is excluded from Git.
+Core configuration lives in `packages/commitverse-core/pyproject.toml` and the
+package is installed in editable mode for local development. Project packages must
+not be installed globally.
 
-Core must be usable and testable locally through `.venv`; Docker complements
-that workflow and is not a requirement for running the standalone Core engine
-during initial development. Docker remains mandatory infrastructure for
-reproducible environments and containerized application services. When Hub's
-FastAPI backend, PostgreSQL, and frontend are integrated, use Docker Compose.
-Keep Docker configuration modular and avoid coupling container definitions to
-Core's storage or product logic.
+Local Core development and tests work without Docker. Docker is infrastructure,
+not a prerequisite for the Engine in its current form.
 
-No Docker or Compose configuration or service integration is present yet. The
-Python environment and Core dependency manifest are in place. Setup and
-execution commands should be documented alongside the implementation they
-support; see the Core workflow in [the Core roadmap](../core/implementation-roadmap.md).
+## Current architectural limitations
+
+The current Core implementation is intentionally limited and does not claim full
+Git compatibility.
+
+Known limitations include:
+
+- no checkout or branch switching
+- no merge support
+- no packed refs or reflog support
+- no remote transport or repository hosting workflows
+- no packfile handling
+- no rename detection in status or diff
+- partial `.gitignore` semantics
+- no support for index extensions beyond the documented `TREE` subset
+- no concurrent index lock protocol
+- no complete Git ignore/status/diff compatibility
+- tracked file content is buffered in memory for status/diff operations
+
+## Future capabilities
+
+Planned work beyond the implemented Core scope includes:
+
+- Hub repository hosting, permissions, and collaboration flows
+- database-backed application metadata and API integration
+- frontend interfaces for repository management
+- AI-assisted developer workflows and repository analysis
+- richer Git compatibility and advanced VCS operations
+
+These are future capabilities and are not implemented in the current repository.
+
+## Summary
+
+CommitVerse Core is currently a Git-like version-control engine with a working
+object database, Git index, tree and staging logic, commit/ref handling, history
+traversal, read-only status/diff, and a CLI. Hub and AI remain future product
+layers. The Core does not claim full Git compatibility and intentionally keeps its
+scope bounded to the implemented Milestones 1–4.

@@ -136,6 +136,22 @@ repository API, or runtime integration in the current codebase.
 These technology choices are not a claim that the referenced services are
 configured or running.
 
+### Strict zero-cost infrastructure policy
+
+CommitVerse must not require or incur any payment. The permanent policy is
+defined in [`docs/infrastructure/zero-cost-policy.md`](../infrastructure/zero-cost-policy.md).
+The approved planned infrastructure is Cloudflare Pages Free for the frontend,
+Cloudflare Workers Free for lightweight API endpoints only, Neon PostgreSQL
+Free for application data, local filesystem storage for Core repository data
+during development, and GitHub for source and collaboration.
+
+Cloudflare Workers must not run the full Python Git engine. Cloudflare R2 is
+deferred unless a genuinely no-billing setup becomes possible. AWS, Render,
+Fly.io, Railway, and Supabase are excluded; Neon is the selected PostgreSQL
+service. Hosting, deployment, database provisioning, and cloud storage remain
+planned rather than implemented. If a free quota is exhausted, a feature must
+pause, degrade gracefully, or migrate without incurring charges.
+
 ## Development environment and deployment
 
 Python development uses the repository-root `.venv`, which is excluded from Git.

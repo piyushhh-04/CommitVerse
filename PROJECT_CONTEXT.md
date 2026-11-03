@@ -41,6 +41,14 @@ their tests exist.
 - Define explicit interfaces between components. Do not make one component's
   internal storage format an accidental dependency of another.
 - Keep deployment and infrastructure concerns distinct from product logic.
+- CommitVerse follows the permanent strict zero-cost policy in
+  `docs/infrastructure/zero-cost-policy.md`: it must not require or incur
+  payment. Approved planned services are Cloudflare Pages Free, Cloudflare
+  Workers Free for lightweight endpoints only, and Neon PostgreSQL Free.
+  Core repository data remains on the local filesystem during development.
+  AWS, Render, Fly.io, Railway, Supabase, and paid or quota-overrun usage are
+  excluded. Free-quota exhaustion must pause, degrade, or migrate a feature
+  without incurring charges.
 - Docker is mandatory infrastructure for reproducible environments and
   containerized application services. Keep Docker configuration modular and
   use Docker Compose when integrating FastAPI, PostgreSQL, and frontend
@@ -103,6 +111,9 @@ technologies without a clear project need and an explicit decision.
   Hub's FastAPI backend, PostgreSQL, and frontend services; do not make a
   containerized Core a prerequisite for its initial development.
 - Document setup and execution commands as project workflows are established.
+- Hosting, deployment, database provisioning, and cloud storage remain
+  deliberately deferred until their appropriate development stage. Planned
+  infrastructure is not implemented infrastructure.
 
 ## Engineering conventions
 

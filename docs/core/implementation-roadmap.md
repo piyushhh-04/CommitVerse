@@ -12,9 +12,9 @@ are implemented. Read-only status and tracked-file diff comparisons, safe
 checkout/switching, merged-only branch deletion, merge-base discovery, and
 basic fast-forward/three-way merges are implemented for the documented subset.
 Unit, integration, and external Git compatibility tests cover these behaviors.
-Conflict resolution, recursive/octopus merges, clone, and network transport
-remain future work. Local fast-forward-only push is implemented in Milestone
-6A.6. Milestone 6A.2 adds validated,
+Conflict resolution, recursive/octopus merges, and network transport remain
+future work. Local fast-forward-only push and clone are implemented in
+Milestones 6A.6 and 6A.7. Milestone 6A.2 adds validated,
 formatting-preserving repository
 configuration reads and lock-based atomic updates for bare and non-bare
 repositories; remote management remains future work.
@@ -422,8 +422,8 @@ Exchange refs and objects with local bare or non-bare repositories through a
 local filesystem transport and Git-compatible SHA-1 loose objects. Repository
 capability modeling and bare initialization are implemented in Milestone 6A.1;
 configuration, CAS refs, local advertisement, and bounded local fetch are
-implemented through Milestone 6A.6. Remote management and clone remain
-planned. Fetch may read bare or non-bare repositories; local push targets bare
+implemented through Milestone 6A.7. Remote management remains planned. Fetch
+and clone may read bare or non-bare repositories; local push targets bare
 repositories only.
 
 **Modules**
@@ -440,7 +440,7 @@ repositories only.
 - Fast-forward-only local push to bare repositories using lock-based
   compare-and-swap ref updates. **Implemented in Milestone 6A.6.**
 - Clone through a temporary sibling directory, published only after setup and
-  checkout succeed.
+  checkout succeed. **Implemented in Milestone 6A.7.**
 
 Single-ref updates use an exclusively created lock file, expected-old-value
 checking while the lock is held, write and `fsync`, and atomic replacement.
@@ -525,7 +525,7 @@ silently discards refs or rewrites unrelated configuration.
 4. **6A.4 Local transport and remote advertisement** (implemented)
 5. **6A.5 Reachability traversal and fetch** (implemented)
 6. **6A.6 Fast-forward-only push to bare repositories** (implemented)
-7. **6A.7 Clone**
+7. **6A.7 Clone** (implemented)
 8. **6A.8 Git interoperability, documentation, and final validation**
 
 Packfiles, packed refs, smart HTTP, SSH, Git wire protocols, remote hosting,

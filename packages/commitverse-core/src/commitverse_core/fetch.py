@@ -82,12 +82,15 @@ def fetch_from_local(
     remote_name: str = "origin",
     ref_mapping: Mapping[str, str] | None = None,
     limits: TransferLimits | None = None,
+    allow_unresolved_head: bool = False,
 ) -> FetchResult:
     """Fetch selected local branch closures into remote-tracking refs."""
     selected_limits = limits or TransferLimits()
     _validate_limits(selected_limits)
     try:
-        advertisement = LocalFilesystemTransport.open(remote_path, base=base).advertise()
+        advertisement = LocalFilesystemTransport.open(
+            remote_path, base=base
+        ).advertise(allow_unresolved_head=allow_unresolved_head)
         selected = _select_references(
             advertisement,
             branches=branches,

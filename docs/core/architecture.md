@@ -27,7 +27,8 @@ commands for object inspection, staging, tree writing, commits, local branch
 listing/creation, revision resolution, history display, status, and diff are
 implemented. Safe checkout/switching, merged-only branch deletion, merge-base
 discovery, and basic merging are also implemented. Conflict resolution,
-recursive/octopus merges, clone, and network transport are not implemented.
+recursive/octopus merges, and network transport are not implemented. Local
+clone is implemented as described below.
 Read-only local transport, bounded local fetch, and local fast-forward-only
 push are implemented as described below.
 
@@ -353,8 +354,8 @@ The object, index, tree, commit, ref, history, status, and diff flows are
 implemented for the documented subset. Local loose-object fetch validates and
 stores objects before publishing remote-tracking refs. Local push is limited to
 bare repositories and is fast-forward-only, using individually locked
-compare-and-swap ref updates; clone, remote management, and network push remain
-future work.
+compare-and-swap ref updates. Local clone is implemented for the documented
+loose-object sources; remote management and network push remain future work.
 
 Loose reference compare-and-swap is implemented in `refs.py` for bare and
 non-bare repositories. It validates ref names and commit targets, creates the
@@ -374,8 +375,8 @@ non-bare repository at the supplied root; relative paths require the explicit
 base directory. Its advertisement validates loose local branches, supported
 loose tags, symbolic or detached `HEAD`, object IDs, and referenced objects,
 then returns deterministic branch/tag records without creating locks or
-modifying the remote. Packed refs, clone, remote configuration, and network
-transports remain unsupported by this local transport.
+modifying the remote. Packed refs and network transports remain unsupported by
+this local transport.
 
 Milestone 6A.5 adds bounded local fetch in `fetch.py`. The iterative
 reachability walker validates commit, tree, and blob closures without Python
@@ -397,8 +398,19 @@ published through compare-and-swap with the observed old value. Transfer
 failures publish no ref; a concurrent CAS conflict leaves the destination ref
 unchanged but may leave validated unreachable objects. Push does not modify
 source branches, `HEAD`, index, worktree, destination `HEAD`, or unrelated
-branches. Force push, tags, packed refs, clone, multi-ref atomicity, and
-network transports remain unsupported.
+branches. Force push, tags, packed refs, multi-ref atomicity, and network
+transports remain unsupported.
+
+Milestone 6A.7 adds `clone_from_local()` in `clone.py`. It selects the
+advertised symbolic `HEAD` branch by default or accepts an explicit branch,
+transfers its bounded closure into a temporary sibling directory, creates the
+local branch, symbolic `HEAD`, index, worktree, and `origin` configuration,
+validates a clean result, and publishes the directory only after completion.
+Existing destinations are rejected and failures clean up only the temporary
+directory. Detached, invalid, missing, or unborn default heads require an
+explicit valid branch where the source branch has a complete commit closure.
+Clone supports local bare and non-bare loose-object repositories only; it does
+not clone tags, packed refs, submodules, shallow histories, or network sources.
 
 ## Status and diff
 

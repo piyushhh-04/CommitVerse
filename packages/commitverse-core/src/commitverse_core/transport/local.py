@@ -81,7 +81,7 @@ class LocalFilesystemTransport:
             )
         return cls(repository)
 
-    def advertise(self) -> RemoteAdvertisement:
+    def advertise(self, *, allow_unresolved_head: bool = False) -> RemoteAdvertisement:
         """Validate and return the remote's loose refs and HEAD without writes."""
         packed_refs = self.repository.git_dir / "packed-refs"
         if packed_refs.exists():
@@ -93,6 +93,11 @@ class LocalFilesystemTransport:
         try:
             head = read_head(self.repository)
             head_target = resolve_head(self.repository)
+        except ReferenceNotFoundError:
+            if not allow_unresolved_head:
+                raise
+            head = read_head(self.repository)
+            head_target = None
         except (ReferenceError, OSError, ValueError) as error:
             raise TransportError(f"invalid remote HEAD: {error}") from error
         return RemoteAdvertisement(

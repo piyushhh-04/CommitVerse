@@ -164,8 +164,12 @@ Only loose object storage is implemented in the initial object-format scope.
 `pack/` is created as part of the conventional layout, but packed-object
 behavior is future work. The initial `config` fields follow Git's repository
 format. The Git-compatible v2 index is created on the first staging update.
-Bare repositories and linked-worktree `.git` files remain unsupported. Other
-Git interoperability requirements remain future work. A CommitVerse-specific
+Bare repositories and linked-worktree `.git` files remain unsupported by the
+current implementation. Milestone 6A plans a shared Git-directory capability
+model for bare and non-bare local repositories: fetch may read either kind,
+but push targets must be bare and non-bare push targets must be rejected with
+an actionable error. Worktree operations remain unavailable for bare
+repositories. Other Git interoperability requirements remain future work. A CommitVerse-specific
 extension must be explicit and must not change Git object or index formats.
 
 ## Object database and object relationships
@@ -321,8 +325,11 @@ working tree
 ```
 
 The object, index, tree, commit, ref, history, status, and diff flows are
-implemented for the documented subset. Remote operations remain future work;
-remotes would exchange refs and objects through a transport boundary.
+implemented for the documented subset. Remote operations remain future work.
+Milestone 6A plans local loose-object transport, with fetch validating and
+storing objects before publishing remote-tracking refs. Push is limited to
+bare repositories and is fast-forward-only, using individually locked
+compare-and-swap ref updates.
 
 ## Status and diff
 

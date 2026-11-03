@@ -409,28 +409,37 @@ the forms are proposed.
 - Milestone 3 for refs and commits.
 - Milestone 4's comparison/diff model is recommended for safe change analysis.
 
-## Milestone 6 — Remotes, fetch, push, and clone
+## Milestone 6A — Local remotes, fetch, push, and clone
 
 **Objective**
 
-Exchange refs and objects with remote repositories through a defined
-Git-compatible transport and support clone, fetch, and push without invoking a
-system Git executable.
+Exchange refs and objects with local bare or non-bare repositories through a
+local filesystem transport and Git-compatible SHA-1 loose objects. This is a
+planning boundary, not an implemented feature. Fetch may read bare or non-bare
+repositories; push initially targets bare repositories only.
 
 **Modules**
 
-- Remote configuration and validation.
-- Transport/protocol implementation.
-- Packfile creation, parsing, and object transfer as required by the selected
-  protocol.
-- Ref negotiation/update and clone repository initialization.
-- Authentication boundary, with credentials supplied by a safe external
-  configuration mechanism when selected.
+- Shared Git-directory/repository capability abstraction for bare and non-bare
+  repositories; worktree operations remain unavailable for bare repositories.
+- Formatting-preserving remote configuration with atomic writes and no
+  credentials.
+- Local filesystem transport and validated remote ref advertisement.
+- Bounded iterative reachability traversal over commit, tree, and blob
+  objects.
+- Fetch that validates and stores all required objects before publishing
+  remote-tracking refs.
+- Fast-forward-only push to bare repositories using lock-based compare-and-swap
+  ref updates.
+- Clone through a temporary sibling directory, published only after setup and
+  checkout succeed.
 
-The transport protocol, supported schemes, authentication approach, packfile
-scope, and server-side push behavior are unresolved design decisions. Select
-and document them before implementation; do not imply loose-object copying
-alone is Git remote compatibility.
+Single-ref updates use an exclusively created lock file, expected-old-value
+checking while the lock is held, write and `fsync`, and atomic replacement.
+Failures before replacement preserve the old ref; after replacement, rollback
+is not claimed or guaranteed. Multi-ref fetch publication is individually
+atomic, not one atomic transaction. Valid copied objects may remain
+unreachable after a failed transfer.
 
 **CLI commands**
 
@@ -439,22 +448,48 @@ alone is Git remote compatibility.
 - `cv fetch [<remote>]`
 - `cv push [<remote> [<branch>]]`
 
-These are proposed command forms, not available commands.
+These are proposed command forms, not available commands. Bare repositories
+support object and ref operations, remote advertisement, fetch, and push
+endpoints; staging, status, diff, checkout, switch, and worktree merge
+operations require a non-bare repository. A non-bare push target must be
+rejected with an actionable error.
+
+Relative local remote paths are resolved against the source repository's stable
+location before clone creates its temporary sibling directory. The resolved
+remote must remain valid after the temporary clone is renamed to its final
+destination.
+
+Remote removal deletes only that remote's configuration and does not silently
+delete its remote-tracking refs. Remote rename preflights all source refs,
+destination refs, configuration sections, and upstream references. It rejects
+destination collisions before changes, then performs individually locked and
+validated ref operations plus configuration updates. This is not a
+multi-ref atomic transaction: if it fails after some refs move, it reports
+exactly which refs moved and which did not, does not claim rollback, and never
+silently discards refs or rewrites unrelated configuration.
 
 **Tests**
 
 - Clone creates a repository with expected objects, refs, `HEAD`, and working
   tree for the supported transport and repository cases.
+- Relative local remotes are resolved correctly before temporary-sibling clone
+  setup, the completed clone is published by rename, and fetching from the
+  published clone still reaches the configured remote.
+- Clone failure cleanup never deletes an existing destination.
 - Fetch transfers required history and objects, validates received object IDs,
   and updates only the intended remote-tracking refs.
 - Push sends the intended objects/ref updates and rejects non-fast-forward or
-  unauthorized updates according to the selected contract.
+  unauthorized updates according to the selected contract; non-bare push
+  targets are rejected.
 - Interrupted, malformed, corrupt, and rejected transfers do not leave refs
   pointing at missing or invalid objects.
 - Transport tests use controlled local fixtures; external Git compatibility
   tests may verify interoperability without making Git a production runtime
   dependency.
 - Credentials do not appear in logs, command output, or committed files.
+- Failure-injection tests cover ref-lock creation, expected-old mismatches,
+  failures before and after ref replacement, partial remote rename progress,
+  relative URL resolution, clone publication, and destination cleanup.
 
 **Acceptance criteria**
 
@@ -465,10 +500,27 @@ These are proposed command forms, not available commands.
   success-shaped partial completion.
 - Support claims list tested protocols and limitations; full Git compatibility
   is not inferred from passing a narrow interoperability test.
+- Transfer-time limits bound decompressed object size, total bytes, object
+  count, and commit traversal. Existing unrestricted local object behavior is
+  not changed implicitly.
 
 **Dependencies**
 
 - Milestones 1–3 for objects, refs, and commits.
-- Milestone 5 for the planned branch and merge behavior relevant to push
-  policies; fetch/clone may be implemented earlier only if dependency scope is
-  documented.
+- Milestone 5 for branch and merge behavior relevant to push policies.
+
+### Final phase sequence
+
+1. **6A.1 Repository capability model and bare initialization**
+2. **6A.2 Shared configuration abstraction**
+3. **6A.3 Compare-and-swap reference updates**
+4. **6A.4 Local transport and remote advertisement**
+5. **6A.5 Reachability traversal and fetch**
+6. **6A.6 Fast-forward-only push to bare repositories**
+7. **6A.7 Clone**
+8. **6A.8 Git interoperability, documentation, and final validation**
+
+Packfiles, packed refs, smart HTTP, SSH, Git wire protocols, remote hosting,
+credentials, authentication, force push, multi-ref atomic push, shallow
+history, tags, submodules, SHA-256 repositories, and cloud storage are
+explicitly deferred.

@@ -70,8 +70,13 @@ and diff behavior.
 This is a limited foundation, not a complete Git replacement. Merge conflict
 resolution, recursive/octopus merges, rebase, remotes, transport, and packfiles
 are not implemented. Checkout supports `HEAD`, local branch names, and full
-40-character commit IDs; commit-ID checkout detaches `HEAD`. Conflicting merges
-fail without creating a merge commit. Commit creation requires configured identity and `-m`; an empty
+40-character commit IDs; commit-ID checkout detaches `HEAD`. Checkout uses a
+temporary, type-aware transaction backup to restore tracked files, directories,
+symlinks, modes, the index, and refs after an injected or operational failure;
+rollback errors are reported explicitly. Conflicting merges fail without
+creating a merge commit. Merge commits resolve author and committer identities
+using configured values and the documented environment overrides. Commit
+creation requires configured identity and `-m`; an empty
 initial commit or unchanged tree is rejected. Optional commit headers and
 signatures, packed refs, index extensions other than `TREE`, advanced Git
 ignore semantics, and non-v2 indexes are unsupported. Status/diff do not

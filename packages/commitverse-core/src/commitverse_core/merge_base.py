@@ -11,24 +11,27 @@ class MergeBaseError(ValueError):
 def _ancestors(repository: Repository, start: str) -> dict[str, int]:
     distances: dict[str, int] = {}
     active: set[str] = set()
-    def visit(object_id: str, distance: int) -> None:
+    stack: list[tuple[str, int, bool]] = [(start, 0, False)]
+    while stack:
+        object_id, distance, leaving = stack.pop()
+        if leaving:
+            active.remove(object_id)
+            continue
         if object_id in active:
             raise MergeBaseError(f"cyclic commit history at {object_id}")
         if object_id in distances and distances[object_id] <= distance:
-            return
+            continue
         distances[object_id] = distance
         active.add(object_id)
         try:
             commit = read_commit(repository.objects_dir, object_id)
         except (OSError, ValueError) as error:
             raise MergeBaseError(f"cannot read commit {object_id}: {error}") from error
-        try:
-            for parent in commit.parent_ids:
-                visit(parent, distance + 1)
-        finally:
-            active.remove(object_id)
-
-    visit(start, 0)
+        stack.append((object_id, distance, True))
+        stack.extend(
+            (parent, distance + 1, False)
+            for parent in reversed(commit.parent_ids)
+        )
     return distances
 
 

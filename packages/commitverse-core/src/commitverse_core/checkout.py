@@ -4,6 +4,7 @@ import os
 import shutil
 import stat
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 from commitverse_core.commits import read_commit
@@ -26,6 +27,34 @@ from commitverse_core.trees import read_tree
 
 class CheckoutError(ValueError):
     """Raised when a checkout would be unsafe or cannot be completed."""
+
+
+@dataclass(frozen=True)
+class _BackupEntry:
+    path: bytes
+    kind: str
+    backup_path: Path | None
+    mode: int
+    link_target: str | None = None
+
+
+def _ancestors(path: bytes) -> tuple[bytes, ...]:
+    parts = path.split(b"/")
+    return tuple(b"/".join(parts[:index]) for index in range(1, len(parts)))
+
+
+def _transaction_paths(paths: set[bytes]) -> set[bytes]:
+    result = set(paths)
+    for path in paths:
+        result.update(_ancestors(path))
+    return {path for path in result if path}
+
+
+def _ancestors_for_paths(paths: set[bytes]) -> set[bytes]:
+    result: set[bytes] = set()
+    for path in paths:
+        result.update(_ancestors(path))
+    return result
 
 
 def _tree_files(repository: Repository, tree_id: str) -> dict[bytes, tuple[str, str]]:
@@ -122,37 +151,60 @@ def _write_target(root: Path, path: bytes, mode: str, payload: bytes) -> None:
         raise CheckoutError(f"cannot write worktree path {path!r}: {error}") from error
 
 
-def _backup_path(root: Path, path: bytes, backup_root: Path) -> None:
+def _backup_path(
+    root: Path, path: bytes, backup_root: Path, sequence: int
+) -> _BackupEntry | None:
     source = root / os.fsdecode(path)
     try:
         metadata = source.lstat()
     except FileNotFoundError:
-        return
-    destination = backup_root / os.fsdecode(path)
-    destination.parent.mkdir(parents=True, exist_ok=True)
+        return None
+    except NotADirectoryError:
+        return None
+    mode = stat.S_IMODE(metadata.st_mode)
     if stat.S_ISLNK(metadata.st_mode):
-        os.symlink(os.readlink(source), destination)
-    elif stat.S_ISREG(metadata.st_mode):
+        return _BackupEntry(path, "symlink", None, mode, os.readlink(source))
+    destination = backup_root / f"entry-{sequence}"
+    if stat.S_ISREG(metadata.st_mode):
         shutil.copy2(source, destination, follow_symlinks=False)
+        return _BackupEntry(path, "file", destination, mode)
+    elif stat.S_ISDIR(metadata.st_mode):
+        return _BackupEntry(path, "directory", None, mode)
     else:
         raise CheckoutError(f"unsupported worktree entry: {path!r}")
 
 
-def _restore_backup(root: Path, backup_root: Path, paths: set[bytes]) -> None:
-    for path in sorted(paths, key=lambda value: (value.count(b"/"), value)):
+def _remove_transaction_paths(root: Path, paths: set[bytes]) -> None:
+    for path in sorted(paths, key=lambda value: (value.count(b"/"), value), reverse=True):
         target = root / os.fsdecode(path)
         if target.is_symlink() or target.is_file():
             target.unlink()
-    for path in sorted(paths, key=lambda value: (value.count(b"/"), value)):
-        source = backup_root / os.fsdecode(path)
-        if not source.exists() and not source.is_symlink():
-            continue
-        parent = _safe_parent(root, path)
-        target = parent / os.fsdecode(path.split(b"/")[-1])
-        if source.is_symlink():
-            os.symlink(os.readlink(source), target)
+        elif target.is_dir() and not target.is_symlink():
+            try:
+                target.rmdir()
+            except OSError as error:
+                raise CheckoutError(
+                    f"cannot remove transaction directory during rollback: {path!r}"
+                ) from error
+
+
+def _restore_backup(
+    root: Path, entries: tuple[_BackupEntry, ...], paths: set[bytes]
+) -> None:
+    _remove_transaction_paths(root, paths)
+    for entry in sorted(entries, key=lambda value: (value.path.count(b"/"), value.path)):
+        target = root / os.fsdecode(entry.path)
+        parent = _safe_parent(root, entry.path)
+        if entry.kind == "directory":
+            target.mkdir()
+            os.chmod(target, entry.mode)
+        elif entry.kind == "symlink":
+            os.symlink(os.fsdecode(entry.link_target or b""), target)
         else:
-            shutil.copy2(source, target, follow_symlinks=False)
+            if entry.backup_path is None:
+                raise CheckoutError(f"missing backup for {entry.path!r}")
+            shutil.copy2(entry.backup_path, target, follow_symlinks=False)
+            os.chmod(target, entry.mode)
 
 
 def checkout_commit(
@@ -185,7 +237,7 @@ def checkout_commit(
         ):
             raise CheckoutError(f"untracked path would be overwritten: {untracked!r}")
 
-    affected = current_files | target_paths
+    affected = _transaction_paths(current_files | target_paths)
     backup_directory = Path(tempfile.mkdtemp(prefix=".cv-checkout-backup-", dir=repository.root))
     old_index = (repository.git_dir / "index").read_bytes() if (repository.git_dir / "index").exists() else None
     old_head = (repository.git_dir / "HEAD").read_bytes()
@@ -197,9 +249,13 @@ def checkout_commit(
             old_ref = read_ref(repository, head.symbolic_ref)
         except ReferenceError:
             old_ref = None
+    worktree_changed = False
     try:
-        for path in affected:
-            _backup_path(repository.root, path, backup_directory)
+        backups: list[_BackupEntry] = []
+        for sequence, path in enumerate(sorted(affected)):
+            entry = _backup_path(repository.root, path, backup_directory, sequence)
+            if entry is not None:
+                backups.append(entry)
         obsolete = {
             path
             for path in current_files
@@ -210,8 +266,19 @@ def checkout_commit(
             )
         }
         for path in sorted(obsolete, key=lambda value: value.count(b"/"), reverse=True):
+            worktree_changed = True
             _remove_path(repository.root, path)
+        for path in sorted(
+            _ancestors_for_paths(obsolete), key=lambda value: value.count(b"/"), reverse=True
+        ):
+            target = repository.root / os.fsdecode(path)
+            if target.is_dir() and not target.is_symlink():
+                try:
+                    target.rmdir()
+                except OSError:
+                    pass
         for path, (mode, target_object_id) in sorted(target_files.items()):
+            worktree_changed = True
             object_type, payload = read_object(repository.objects_dir, target_object_id)
             if object_type != "blob":
                 raise CheckoutError(f"tree file {path!r} does not reference a blob")
@@ -227,7 +294,8 @@ def checkout_commit(
             set_head_detached(repository, object_id)
     except (OSError, ValueError) as error:
         try:
-            _restore_backup(repository.root, backup_directory, affected)
+            if worktree_changed:
+                _restore_backup(repository.root, tuple(backups), affected)
             if old_index is None:
                 (repository.git_dir / "index").unlink(missing_ok=True)
             else:

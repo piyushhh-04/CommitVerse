@@ -56,3 +56,26 @@ def test_find_merge_base_detects_cycles(tmp_path, monkeypatch):
     monkeypatch.setattr("commitverse_core.merge_base.read_commit", cyclic)
     with pytest.raises(MergeBaseError, match="cyclic"):
         find_merge_base(repository, commit_id, commit_id)
+
+
+def test_find_merge_base_handles_deep_history_without_recursion(tmp_path):
+    repository = initialize_repository(tmp_path / "repo")
+    identity = CommitIdentity("Test", "test@example.test", 1, 0)
+    tree = write_tree(repository.objects_dir, [])
+    current = write_commit(
+        repository.objects_dir,
+        Commit(tree, (), identity, identity, b"root\n"),
+    )
+    for index in range(1100):
+        current = write_commit(
+            repository.objects_dir,
+            Commit(
+                tree,
+                (current,),
+                identity,
+                identity,
+                f"commit {index}\n".encode(),
+            ),
+        )
+
+    assert find_merge_base(repository, current, current) == current

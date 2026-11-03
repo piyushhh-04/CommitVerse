@@ -88,6 +88,22 @@ def _resolve_identity(
     return CommitIdentity(name, email, timestamp, offset)
 
 
+def resolve_identities(
+    repository: Repository,
+    *,
+    environment: dict[str, str] | None = None,
+    now: datetime | None = None,
+) -> tuple[CommitIdentity, CommitIdentity]:
+    """Resolve author and committer identities using repository conventions."""
+    environment_values = dict(os.environ if environment is None else environment)
+    configured = _configured_identity(repository)
+    current_time = datetime.now().astimezone() if now is None else now
+    return (
+        _resolve_identity("author", configured, environment_values, current_time),
+        _resolve_identity("committer", configured, environment_values, current_time),
+    )
+
+
 def create_commit(
     repository: Repository,
     message: str,
@@ -102,14 +118,8 @@ def create_commit(
     if not message_bytes.endswith(b"\n"):
         message_bytes += b"\n"
 
-    environment_values = dict(os.environ if environment is None else environment)
-    configured = _configured_identity(repository)
-    current_time = datetime.now().astimezone() if now is None else now
-    author = _resolve_identity(
-        "author", configured, environment_values, current_time
-    )
-    committer = _resolve_identity(
-        "committer", configured, environment_values, current_time
+    author, committer = resolve_identities(
+        repository, environment=environment, now=now
     )
 
     index = read_index(repository.git_dir / "index")

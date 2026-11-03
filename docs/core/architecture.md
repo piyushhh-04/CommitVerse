@@ -57,9 +57,9 @@ boundaries even if implementation uses a different internal naming scheme.
 | `history` | Implemented deterministic depth-first traversal of all parents with cycle/error detection and date/message formatting. |
 | `status` | Implemented read-only comparison of commit trees, index entries, and filesystem state; reports staged, unstaged, and untracked paths. |
 | `diff` | Implemented deterministic unified text diffs for staged or unstaged tracked-file changes, with binary and mode-change reporting. |
-| `checkout` | Implemented preflighted worktree/index transitions for local branches, HEAD, and full commit IDs, with detached HEAD support. |
-| `merge_base` | Implemented deterministic common-ancestor traversal with malformed/cyclic graph detection. |
-| `merge` | Implemented fast-forward and basic three-way merges with content, add/add, modify/delete, and mode conflict reporting. |
+| `checkout` | Implemented preflighted worktree/index transitions for local branches, HEAD, and full commit IDs, with detached HEAD support. Mutations use type-aware temporary backups for tracked files, directories, symlinks, and modes; index, HEAD, and applicable branch refs are restored on failure, and rollback failures are surfaced. |
+| `merge_base` | Implemented deterministic iterative common-ancestor traversal with malformed/cyclic graph detection; selection retains the distance-based heuristic and is not full Git merge-base dominance. |
+| `merge` | Implemented fast-forward and basic three-way merges with content, add/add, modify/delete, and mode conflict reporting. Merge commits resolve author and committer identities using repository configuration and environment overrides. |
 | `worktree` | Inspect paths and file modes in the checked-out working tree; apply checkout changes safely. |
 | `merge` | Find merge bases, combine tree changes, and report conflicts without silently overwriting user data. |
 | `transport` (future) | Exchange objects and refs with remotes through an explicitly selected protocol; must not shell out to Git. |

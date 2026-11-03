@@ -91,8 +91,11 @@ technologies without a clear project need and an explicit decision.
   `cv` entry point. `objects/format.py` and `objects/store.py` provide
   canonical object bytes, hashing, and verified loose-object storage.
   Compatibility tests invoke Git only in isolated temporary repositories.
-  `checkout.py`, `merge_base.py`, and `merge.py` provide safe transitions,
-  ancestry, and basic merges; remote transport is not implemented.
+  `checkout.py`, `merge_base.py`, and `merge.py` provide type-aware rollback
+  for checkout transitions, iterative ancestry, and basic merges; remote
+  transport is not implemented. Checkout rollback covers tracked filesystem
+  entries, the index, and refs, while reporting rollback failures rather than
+  suppressing them.
 - Local Core development and tests must work without Docker. Docker complements
   this workflow and is mandatory infrastructure for reproducible environments
   and containerized application services.

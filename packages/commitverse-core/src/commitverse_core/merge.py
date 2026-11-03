@@ -1,9 +1,12 @@
 """Basic safe three-way merges."""
 
 import difflib
+import os
+from datetime import datetime
 from dataclasses import dataclass
 
 from commitverse_core.checkout import _tree_files, checkout_commit
+from commitverse_core.commit_service import resolve_identities
 from commitverse_core.commits import Commit, read_commit, write_commit
 from commitverse_core.merge_base import MergeBaseError, find_merge_base, is_ancestor
 from commitverse_core.objects.store import read_object, write_object
@@ -131,11 +134,14 @@ def merge_branch(repository: Repository, branch_name: str) -> tuple[str, str]:
     tree_id = _tree_from_files(repository, merged)
     current_commit = read_commit(repository.objects_dir, current)
     other_commit = read_commit(repository.objects_dir, other)
+    author, committer = resolve_identities(
+        repository, environment=dict(os.environ), now=datetime.now().astimezone()
+    )
     commit = Commit(
         tree_id,
         (current, other),
-        current_commit.committer,
-        current_commit.committer,
+        author,
+        committer,
         f"Merge branch '{branch_name}'\n".encode(),
     )
     merge_id = write_commit(repository.objects_dir, commit)

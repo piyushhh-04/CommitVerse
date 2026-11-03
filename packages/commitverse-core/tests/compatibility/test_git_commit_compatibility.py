@@ -246,3 +246,47 @@ def test_commitverse_reads_git_generated_commit_history_and_refs(
     assert "Git child" in output
     assert "Git root \N{SNOWMAN}" in output
     assert f"Parents: {root_id}" in output
+
+
+def test_git_inspects_commitverse_merge_commit(tmp_path, git_executable):
+    repository = initialize_repository(tmp_path / "repository")
+    home = tmp_path / "home"
+    home.mkdir()
+    _run_git(git_executable, repository.root, home, "config", "user.name", "Configured User")
+    _run_git(
+        git_executable,
+        repository.root,
+        home,
+        "config",
+        "user.email",
+        "configured@example.test",
+    )
+    (repository.root / "base").write_text("base\n")
+    _run_cv(repository.root, "add", "base")
+    base_result = _run_cv(repository.root, "commit", "-m", "base", dates=True)
+    base_id = _object_id_from_output(base_result.stdout)
+    _run_cv(repository.root, "branch", "feature")
+    (repository.root / "main").write_text("main\n")
+    _run_cv(repository.root, "add", "main")
+    main_result = _run_cv(repository.root, "commit", "-m", "main", dates=True)
+    main_id = _object_id_from_output(main_result.stdout)
+    _run_cv(repository.root, "switch", "feature")
+    (repository.root / "feature").write_text("feature\n")
+    _run_cv(repository.root, "add", "feature")
+    feature_result = _run_cv(repository.root, "commit", "-m", "feature", dates=True)
+    feature_id = _object_id_from_output(feature_result.stdout)
+    _run_cv(repository.root, "switch", "main")
+    merge_result = _run_cv(repository.root, "merge", "feature", dates=True)
+    merge_id = merge_result.stdout.decode().split()[-1]
+
+    raw_commit = _run_git(
+        git_executable, repository.root, home, "cat-file", "-p", merge_id
+    ).stdout.decode()
+    assert f"parent {main_id}\n" in raw_commit
+    assert f"parent {feature_id}\n" in raw_commit
+    assert "author Compatibility Author <author@example.test> 1700000000 +0000" in raw_commit
+    assert "committer Compatibility Committer <committer@example.test> 1700000001 +0000" in raw_commit
+    assert _run_git(
+        git_executable, repository.root, home, "rev-parse", "HEAD"
+    ).stdout == f"{merge_id}\n".encode()
+    assert base_id != merge_id

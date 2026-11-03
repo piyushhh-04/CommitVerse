@@ -23,8 +23,8 @@ is planned versus what is implemented.
 These are project goals, not descriptions of complete working products. The
 Core package foundation, Git-compatible loose objects and trees, index-v2
 staging, non-bare repository initialization/discovery, commit objects and
-history, loose branch refs, read-only status/diff, and initial `cv` commands
-are implemented and tested.
+history, loose branch refs, safe branch switching/checkout, basic merging,
+read-only status/diff, and `cv` commands are implemented and tested.
 
 ## Technology direction
 
@@ -53,7 +53,7 @@ initially need to run in Docker.
 
 ## Status
 
-**Core repository, tree, staging, and commit foundation.** The independently
+**Core repository, tree, staging, commit, checkout, and merge foundation.** The independently
 installable Python package provides `cv init`, object writing/inspection,
 `cv add [<path> ...]`, `cv add -A`, `cv write-tree`, `cv ls-files`,
 `cv commit -m`, `cv branch [--list|<name>]`, `cv rev-parse <revision>`, and
@@ -64,12 +64,14 @@ index-v2 staging, commit parsing/creation, loose branch refs, symbolic and
 detached `HEAD`, branch listing/creation, revision resolution, deterministic
 parent-history traversal, and read-only comparison of `HEAD`, index, and
 worktree state. Unit, integration, and isolated external Git compatibility
-tests cover object, tree, index, commit, ref, history, status, and diff
-behavior.
+tests cover object, tree, index, commit, ref, history, checkout, merge, status,
+and diff behavior.
 
-This is a limited foundation, not a complete Git replacement. Branch
-deletion/switching, checkout, merge, remotes, transport, and packfiles are not
-implemented. Commit creation requires configured identity and `-m`; an empty
+This is a limited foundation, not a complete Git replacement. Merge conflict
+resolution, recursive/octopus merges, rebase, remotes, transport, and packfiles
+are not implemented. Checkout supports `HEAD`, local branch names, and full
+40-character commit IDs; commit-ID checkout detaches `HEAD`. Conflicting merges
+fail without creating a merge commit. Commit creation requires configured identity and `-m`; an empty
 initial commit or unchanged tree is rejected. Optional commit headers and
 signatures, packed refs, index extensions other than `TREE`, advanced Git
 ignore semantics, and non-v2 indexes are unsupported. Status/diff do not

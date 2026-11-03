@@ -25,8 +25,9 @@ and validated separately; supported commit payloads are parsed and validated
 separately. Non-bare repository initialization/discovery and the `cv`
 commands for object inspection, staging, tree writing, commits, local branch
 listing/creation, revision resolution, history display, status, and diff are
-implemented. Branch switching, checkout, merging, and transport are not
-implemented.
+implemented. Safe checkout/switching, merged-only branch deletion, merge-base
+discovery, and basic merging are also implemented. Conflict resolution,
+recursive/octopus merges, and transport are not implemented.
 
 Core is a custom Git-like version control engine. Production implementation is
 planned for Python's standard library wherever practical; Pytest is the test
@@ -56,6 +57,9 @@ boundaries even if implementation uses a different internal naming scheme.
 | `history` | Implemented deterministic depth-first traversal of all parents with cycle/error detection and date/message formatting. |
 | `status` | Implemented read-only comparison of commit trees, index entries, and filesystem state; reports staged, unstaged, and untracked paths. |
 | `diff` | Implemented deterministic unified text diffs for staged or unstaged tracked-file changes, with binary and mode-change reporting. |
+| `checkout` | Implemented preflighted worktree/index transitions for local branches, HEAD, and full commit IDs, with detached HEAD support. |
+| `merge_base` | Implemented deterministic common-ancestor traversal with malformed/cyclic graph detection. |
+| `merge` | Implemented fast-forward and basic three-way merges with content, add/add, modify/delete, and mode conflict reporting. |
 | `worktree` | Inspect paths and file modes in the checked-out working tree; apply checkout changes safely. |
 | `merge` | Find merge bases, combine tree changes, and report conflicts without silently overwriting user data. |
 | `transport` (future) | Exchange objects and refs with remotes through an explicitly selected protocol; must not shell out to Git. |

@@ -8,6 +8,7 @@ from typing import Sequence
 
 from commitverse_core.commit_service import create_commit
 from commitverse_core.commits import read_commit
+from commitverse_core.checkout import CheckoutError, checkout_commit, switch_branch
 from commitverse_core.diff import generate_diff
 from commitverse_core.history import (
     format_commit_date,
@@ -15,12 +16,17 @@ from commitverse_core.history import (
     walk_history,
 )
 from commitverse_core.index import read_index
+from commitverse_core.merge import MergeError, merge_branch
+from commitverse_core.merge_base import is_ancestor
 from commitverse_core.objects import read_object, write_object
 from commitverse_core.refs import (
+    Head,
     ReferenceError,
     create_branch,
+    delete_branch,
     current_branch,
     list_branches,
+    read_head,
     resolve_branch,
     resolve_head,
 )
@@ -76,7 +82,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
     branch_parser = commands.add_parser("branch", help="list or create local branches")
     branch_parser.add_argument("--list", action="store_true", help="list local branches")
+    branch_parser.add_argument("-d", "--delete", action="store_true", help="delete a merged branch")
     branch_parser.add_argument("name", nargs="?", help="new local branch name")
+
+    switch_parser = commands.add_parser("switch", help="switch to a local branch")
+    switch_parser.add_argument("branch", help="local branch name")
+    checkout_parser = commands.add_parser("checkout", help="checkout a branch or full commit ID")
+    checkout_parser.add_argument("revision", help="HEAD, local branch, or full commit ID")
+    merge_parser = commands.add_parser("merge", help="merge a local branch")
+    merge_parser.add_argument("branch", help="local branch name")
 
     rev_parse_parser = commands.add_parser(
         "rev-parse", help="resolve HEAD, a local branch, or a full commit ID"
@@ -153,15 +167,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         if arguments.command == "branch":
             repository = discover_repository()
             if arguments.name is not None:
-                if arguments.list:
+                if arguments.list and not arguments.delete:
                     raise ReferenceError("cv branch --list does not accept a branch name")
+                if arguments.delete:
+                    current = resolve_head(repository)
+                    if current is None:
+                        raise ReferenceError("cannot delete a branch before the first commit")
+                    target = resolve_branch(repository, arguments.name)
+                    if not is_ancestor(repository, target, current):
+                        raise ReferenceError(
+                            f"branch {arguments.name!r} is not fully merged into the current branch"
+                        )
+                    delete_branch(repository, arguments.name)
+                    print(f"Deleted branch {arguments.name}")
+                    return 0
                 object_id = resolve_head(repository)
                 if object_id is None:
                     raise ReferenceError("cannot create a branch before the first commit")
                 create_branch(repository, arguments.name, object_id)
                 print(f"Created branch {arguments.name} at {object_id}")
                 return 0
-
             branches = {
                 branch.name: branch.object_id for branch in list_branches(repository)
             }
@@ -173,6 +198,45 @@ def main(argv: Sequence[str] | None = None) -> int:
             for name in sorted(branches, key=lambda value: value.encode("utf-8")):
                 marker = "* " if name == current else "  "
                 print(f"{marker}{name}")
+            return 0
+
+        if arguments.command == "switch":
+            repository = discover_repository()
+            object_id = resolve_branch(repository, arguments.branch)
+            switch_branch(repository, arguments.branch, object_id)
+            print(f"Switched to branch {arguments.branch}")
+            return 0
+
+        if arguments.command == "checkout":
+            repository = discover_repository()
+            revision = arguments.revision
+            if revision == "HEAD":
+                object_id = resolve_head(repository)
+                if object_id is None:
+                    raise ReferenceError("HEAD is unborn and does not resolve to a commit")
+                head = read_head(repository)
+            elif re.fullmatch(r"[0-9a-f]{40}", revision):
+                read_commit(repository.objects_dir, revision)
+                object_id = revision
+                head = None
+            else:
+                object_id = resolve_branch(repository, revision)
+                head = Head(
+                    symbolic_ref=f"refs/heads/{revision}"
+                )
+            checkout_commit(repository, object_id, head=head)
+            print(f"Checked out {revision}")
+            return 0
+
+        if arguments.command == "merge":
+            repository = discover_repository()
+            result, object_id = merge_branch(repository, arguments.branch)
+            if result == "already-up-to-date":
+                print("Already up to date.")
+            elif result == "fast-forward":
+                print(f"Fast-forwarded to {object_id}")
+            else:
+                print(f"Merge made by CommitVerse: {object_id}")
             return 0
 
         if arguments.command == "rev-parse":
@@ -239,7 +303,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             sys.stdout.buffer.write(payload)
             sys.stdout.buffer.flush()
         return 0
-    except (OSError, RepositoryError, ValueError) as error:
+    except (OSError, RepositoryError, CheckoutError, MergeError, ValueError) as error:
         print(f"cv: error: {error}", file=sys.stderr)
         return 1
 

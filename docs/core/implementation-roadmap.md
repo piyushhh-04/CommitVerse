@@ -8,10 +8,12 @@ zlib-compressed loose-object storage with integrity validation, non-bare
 repository initialization/discovery, Git-compatible trees, index-v2 staging,
 commit objects, loose branch refs, symbolic/detached `HEAD`, initial branch
 operations, revision resolution, history traversal, and their CLI commands
-are implemented. Read-only status and tracked-file diff comparisons are also
-implemented for the documented subset. Unit, integration, and external Git
-compatibility tests cover these behaviors. Branch switching, checkout,
-merging, and transport remain future work.
+are implemented. Read-only status and tracked-file diff comparisons, safe
+checkout/switching, merged-only branch deletion, merge-base discovery, and
+basic fast-forward/three-way merges are implemented for the documented subset.
+Unit, integration, and external Git compatibility tests cover these behaviors.
+Conflict resolution, recursive/octopus merges, and transport remain future
+work.
 Each milestone depends on the earlier milestones listed below. Acceptance
 criteria are testable gates; passing them does not by itself imply full Git
 compatibility.
@@ -70,6 +72,10 @@ The initial commands are:
 .venv/bin/cv status
 .venv/bin/cv diff
 .venv/bin/cv diff --cached
+.venv/bin/cv switch <branch>
+.venv/bin/cv checkout <HEAD|branch|full-commit-id>
+.venv/bin/cv branch -d <merged-branch>
+.venv/bin/cv merge <branch>
 ```
 
 `cat-file -p` writes payload bytes directly to standard output. Object commands

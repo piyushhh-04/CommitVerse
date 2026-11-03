@@ -18,13 +18,15 @@ SHA-1 hashing, zlib-compressed loose-object storage, non-bare repository
 initialization/discovery, Git-compatible tree serialization/parsing, a
 version-2 Git index, staging, commit object parsing/creation, loose branch
 references, symbolic and detached `HEAD`, branch listing/creation, revision
-resolution, initial commit history traversal, and read-only status/diff
-comparison. The `cv` CLI exposes these tested operations. Unit, integration,
+resolution, initial commit history traversal, safe checkout/switching, merged-only branch
+deletion, merge-base discovery, basic three-way merging, and read-only
+status/diff comparison. The `cv` CLI exposes these tested operations. Unit, integration,
 and isolated external Git compatibility tests cover the implemented scope.
-This is not a complete version control engine: checkout/switching, merge,
-remotes, transport, packfiles, rename detection, and full Git compatibility
-remain unimplemented. Treat Hub, AI, and other unimplemented Core functionality
-as plans until working implementations and their tests exist.
+This is not a complete version control engine: conflict resolution,
+recursive/octopus merge, remotes, transport, packfiles, rename detection, and
+full Git compatibility remain unimplemented. Treat Hub, AI, and other
+unimplemented Core functionality as plans until working implementations and
+their tests exist.
 
 ## Architecture
 
@@ -89,7 +91,8 @@ technologies without a clear project need and an explicit decision.
   `cv` entry point. `objects/format.py` and `objects/store.py` provide
   canonical object bytes, hashing, and verified loose-object storage.
   Compatibility tests invoke Git only in isolated temporary repositories.
-  Checkout/switching, merging, and remote transport are not implemented.
+  `checkout.py`, `merge_base.py`, and `merge.py` provide safe transitions,
+  ancestry, and basic merges; remote transport is not implemented.
 - Local Core development and tests must work without Docker. Docker complements
   this workflow and is mandatory infrastructure for reproducible environments
   and containerized application services.

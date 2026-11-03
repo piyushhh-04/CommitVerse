@@ -29,7 +29,8 @@ Core is an independently installable Python package under
 
 The current implementation is responsible for repository metadata, object
 storage, index management, tree serialization, staging, commits, refs, history,
-status diffing, and the `cv` CLI surface.
+status diffing, safe checkout/switching, merge-base discovery, basic merging,
+and the `cv` CLI surface.
 
 ### Repository and object model
 
@@ -62,6 +63,9 @@ This layer converts the working tree into a Git-like staged snapshot stored in
 - `refs.py` manages loose branch refs, `HEAD`, and branch validation.
 - `commit_service.py` creates commits from the current index and advances HEAD.
 - `history.py` traverses reachable parent history and formats commit metadata.
+- `checkout.py` preflights and applies safe worktree/index/HEAD transitions.
+- `merge_base.py` finds deterministic common ancestors and detects graph cycles.
+- `merge.py` performs fast-forward and basic three-way merges.
 
 This layer turns staged tree snapshots into commit objects and valid branch
 state.
@@ -95,6 +99,10 @@ Supported commands in the current implementation:
 - `cv log`
 - `cv status`
 - `cv diff [--cached]`
+- `cv switch <branch>`
+- `cv checkout <HEAD|branch|full-commit-id>`
+- `cv branch -d <merged-branch>`
+- `cv merge <branch>`
 
 ## Communication boundaries
 
@@ -145,8 +153,7 @@ Git compatibility.
 
 Known limitations include:
 
-- no checkout or branch switching
-- no merge support
+- no conflict-resolution workflow or recursive/octopus merges
 - no packed refs or reflog support
 - no remote transport or repository hosting workflows
 - no packfile handling

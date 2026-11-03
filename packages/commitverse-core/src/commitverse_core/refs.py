@@ -184,6 +184,38 @@ def create_branch(repository: Repository, branch_name: str, object_id: str) -> N
     write_ref(repository, ref_name, object_id, create_only=True)
 
 
+def delete_branch(repository: Repository, branch_name: str) -> None:
+    """Delete an existing local branch ref without touching its objects."""
+    ref_name = branch_ref_name(branch_name)
+    if current_branch(repository) == branch_name:
+        raise ReferenceError("cannot delete the currently checked-out branch")
+    target = resolve_branch(repository, branch_name)
+    current = resolve_head(repository)
+    if current is None:
+        raise ReferenceError("cannot delete a branch before the first commit")
+    from commitverse_core.merge_base import is_ancestor
+
+    if not is_ancestor(repository, target, current):
+        raise ReferenceError(
+            f"branch {branch_name!r} is not fully merged into the current branch"
+        )
+    path = _safe_ref_path(repository, ref_name, create=False)
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError as error:
+        raise ReferenceNotFoundError(f"reference does not exist: {ref_name}") from error
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise ReferenceError(f"reference is not a regular file: {ref_name}")
+    path.unlink()
+    parent = path.parent
+    while parent != repository.git_dir / "refs" / "heads":
+        try:
+            parent.rmdir()
+        except OSError:
+            break
+        parent = parent.parent
+
+
 def read_head(repository: Repository) -> Head:
     """Read and validate symbolic or detached HEAD."""
     head_path = repository.git_dir / "HEAD"
@@ -241,6 +273,30 @@ def update_head(repository: Repository, object_id: str) -> None:
     if head.symbolic_ref is not None:
         write_ref(repository, head.symbolic_ref, object_id)
         return
+    _atomic_write(
+        repository.git_dir / "HEAD",
+        f"{object_id}\n".encode("ascii"),
+        create_only=False,
+    )
+
+
+def set_head_symbolic(repository: Repository, ref_name: str) -> None:
+    """Make HEAD symbolically point at a validated local or other ref."""
+    validate_ref_name(ref_name)
+    _atomic_write(
+        repository.git_dir / "HEAD",
+        f"ref: {ref_name}\n".encode("ascii"),
+        create_only=False,
+    )
+
+
+def set_head_detached(repository: Repository, object_id: str) -> None:
+    """Make HEAD directly point at a validated commit."""
+    _validate_object_id(object_id)
+    try:
+        read_commit(repository.objects_dir, object_id)
+    except (OSError, ValueError) as error:
+        raise ReferenceError(f"HEAD target is not a valid commit: {object_id}") from error
     _atomic_write(
         repository.git_dir / "HEAD",
         f"{object_id}\n".encode("ascii"),

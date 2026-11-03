@@ -27,9 +27,9 @@ commands for object inspection, staging, tree writing, commits, local branch
 listing/creation, revision resolution, history display, status, and diff are
 implemented. Safe checkout/switching, merged-only branch deletion, merge-base
 discovery, and basic merging are also implemented. Conflict resolution,
-recursive/octopus merges, push, clone, and network transport are not
-implemented. Read-only local transport and bounded local fetch are implemented
-as described below.
+recursive/octopus merges, clone, and network transport are not implemented.
+Read-only local transport, bounded local fetch, and local fast-forward-only
+push are implemented as described below.
 
 Core is a custom Git-like version control engine. Production implementation is
 planned for Python's standard library wherever practical; Pytest is the test
@@ -351,9 +351,9 @@ working tree
 
 The object, index, tree, commit, ref, history, status, and diff flows are
 implemented for the documented subset. Local loose-object fetch validates and
-stores objects before publishing remote-tracking refs. Push is limited to bare
-repositories and is fast-forward-only, using individually locked
-compare-and-swap ref updates; push, clone, and remote management remain
+stores objects before publishing remote-tracking refs. Local push is limited to
+bare repositories and is fast-forward-only, using individually locked
+compare-and-swap ref updates; clone, remote management, and network push remain
 future work.
 
 Loose reference compare-and-swap is implemented in `refs.py` for bare and
@@ -374,8 +374,8 @@ non-bare repository at the supplied root; relative paths require the explicit
 base directory. Its advertisement validates loose local branches, supported
 loose tags, symbolic or detached `HEAD`, object IDs, and referenced objects,
 then returns deterministic branch/tag records without creating locks or
-modifying the remote. Packed refs, fetch, push, clone, remote configuration,
-and network transports remain unsupported.
+modifying the remote. Packed refs, clone, remote configuration, and network
+transports remain unsupported by this local transport.
 
 Milestone 6A.5 adds bounded local fetch in `fetch.py`. The iterative
 reachability walker validates commit, tree, and blob closures without Python
@@ -386,7 +386,19 @@ decompressed missing-object transfer limit, 1,000,000 object limit, and
 closure before publishing deterministic remote-tracking refs through
 compare-and-swap. A failed publication can leave earlier refs published and
 validated objects unreachable; local branches, `HEAD`, index, and worktree
-are not modified. Push remains a separate future milestone.
+are not modified.
+
+Milestone 6A.6 adds `push_to_local()` in `push.py`. It requires an explicit
+non-bare source branch and a valid bare destination, supports initial branch
+creation and explicit destination branch mapping, and proves fast-forward
+status from the commit parent graph using iterative closure validation. Missing
+objects are transferred and revalidated before the destination ref is
+published through compare-and-swap with the observed old value. Transfer
+failures publish no ref; a concurrent CAS conflict leaves the destination ref
+unchanged but may leave validated unreachable objects. Push does not modify
+source branches, `HEAD`, index, worktree, destination `HEAD`, or unrelated
+branches. Force push, tags, packed refs, clone, multi-ref atomicity, and
+network transports remain unsupported.
 
 ## Status and diff
 

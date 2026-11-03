@@ -12,8 +12,9 @@ are implemented. Read-only status and tracked-file diff comparisons, safe
 checkout/switching, merged-only branch deletion, merge-base discovery, and
 basic fast-forward/three-way merges are implemented for the documented subset.
 Unit, integration, and external Git compatibility tests cover these behaviors.
-Conflict resolution, recursive/octopus merges, and transport remain future
-work. Milestone 6A.2 adds validated, formatting-preserving repository
+Conflict resolution, recursive/octopus merges, push, clone, and network
+transport remain future work. Milestone 6A.2 adds validated,
+formatting-preserving repository
 configuration reads and lock-based atomic updates for bare and non-bare
 repositories; remote management remains future work.
 Each milestone depends on the earlier milestones listed below. Acceptance
@@ -419,8 +420,10 @@ the forms are proposed.
 Exchange refs and objects with local bare or non-bare repositories through a
 local filesystem transport and Git-compatible SHA-1 loose objects. Repository
 capability modeling and bare initialization are implemented in Milestone 6A.1;
-remote management, fetch, push, and clone remain planned. Fetch may read bare
-or non-bare repositories; push initially targets bare repositories only.
+configuration, CAS refs, local advertisement, and bounded local fetch are
+implemented through Milestone 6A.5. Remote management, push, and clone remain
+planned. Fetch may read bare or non-bare repositories; push initially targets
+bare repositories only.
 
 **Modules**
 
@@ -519,7 +522,7 @@ silently discards refs or rewrites unrelated configuration.
 2. **6A.2 Shared configuration abstraction** (implemented)
 3. **6A.3 Compare-and-swap reference updates** (implemented)
 4. **6A.4 Local transport and remote advertisement** (implemented)
-5. **6A.5 Reachability traversal and fetch**
+5. **6A.5 Reachability traversal and fetch** (implemented)
 6. **6A.6 Fast-forward-only push to bare repositories**
 7. **6A.7 Clone**
 8. **6A.8 Git interoperability, documentation, and final validation**

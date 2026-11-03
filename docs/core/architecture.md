@@ -27,7 +27,9 @@ commands for object inspection, staging, tree writing, commits, local branch
 listing/creation, revision resolution, history display, status, and diff are
 implemented. Safe checkout/switching, merged-only branch deletion, merge-base
 discovery, and basic merging are also implemented. Conflict resolution,
-recursive/octopus merges, and transport are not implemented.
+recursive/octopus merges, push, clone, and network transport are not
+implemented. Read-only local transport and bounded local fetch are implemented
+as described below.
 
 Core is a custom Git-like version control engine. Production implementation is
 planned for Python's standard library wherever practical; Pytest is the test
@@ -63,7 +65,7 @@ boundaries even if implementation uses a different internal naming scheme.
 | `merge` | Implemented fast-forward and basic three-way merges with content, add/add, modify/delete, and mode conflict reporting. Merge commits resolve author and committer identities using repository configuration and environment overrides. |
 | `worktree` | Inspect paths and file modes in the checked-out working tree; apply checkout changes safely. |
 | `merge` | Find merge bases, combine tree changes, and report conflicts without silently overwriting user data. |
-| `transport` (future) | Exchange objects and refs with remotes through an explicitly selected protocol; must not shell out to Git. |
+| `transport` | Implemented read-only local filesystem advertisement and bounded local fetch; network protocols remain future work. |
 | `errors` | Provide typed, actionable domain errors shared by application services and translated at the CLI boundary. |
 
 Tests should be organized around public behavior and storage invariants, not
@@ -348,11 +350,11 @@ working tree
 ```
 
 The object, index, tree, commit, ref, history, status, and diff flows are
-implemented for the documented subset. Remote operations remain future work.
-Milestone 6A plans local loose-object transport, with fetch validating and
-storing objects before publishing remote-tracking refs. Push is limited to
-bare repositories and is fast-forward-only, using individually locked
-compare-and-swap ref updates.
+implemented for the documented subset. Local loose-object fetch validates and
+stores objects before publishing remote-tracking refs. Push is limited to bare
+repositories and is fast-forward-only, using individually locked
+compare-and-swap ref updates; push, clone, and remote management remain
+future work.
 
 Loose reference compare-and-swap is implemented in `refs.py` for bare and
 non-bare repositories. It validates ref names and commit targets, creates the
@@ -374,6 +376,17 @@ loose tags, symbolic or detached `HEAD`, object IDs, and referenced objects,
 then returns deterministic branch/tag records without creating locks or
 modifying the remote. Packed refs, fetch, push, clone, remote configuration,
 and network transports remain unsupported.
+
+Milestone 6A.5 adds bounded local fetch in `fetch.py`. The iterative
+reachability walker validates commit, tree, and blob closures without Python
+recursion, detects cycles and malformed or missing objects, and enforces a
+64 MiB compressed-object limit, 64 MiB decompressed-object limit, 1 GiB
+decompressed missing-object transfer limit, 1,000,000 object limit, and
+1,000,000 commit traversal limit. Fetch validates and stores the complete
+closure before publishing deterministic remote-tracking refs through
+compare-and-swap. A failed publication can leave earlier refs published and
+validated objects unreachable; local branches, `HEAD`, index, and worktree
+are not modified. Push remains a separate future milestone.
 
 ## Status and diff
 

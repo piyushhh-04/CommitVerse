@@ -24,7 +24,8 @@ These are project goals, not descriptions of complete working products. The
 Core package foundation, Git-compatible loose objects and trees, index-v2
 staging, bare and non-bare repository initialization/discovery, commit objects and
 history, loose branch refs, safe branch switching/checkout, basic merging,
-read-only status/diff, and `cv` commands are implemented and tested.
+read-only status/diff, local advertisement, bounded fetch, fast-forward-only
+push, safe local clone, and `cv` commands are implemented and tested.
 
 ## Technology direction
 
@@ -70,8 +71,10 @@ and diff behavior.
 This is a limited foundation, not a complete Git replacement. Core supports
 bare repositories for object and reference operations; staging, status, diff,
 checkout, switch, and worktree merge operations require a non-bare repository.
-Merge conflict resolution, recursive/octopus merges, rebase, remotes, transport, and packfiles
-are not implemented. Checkout supports `HEAD`, local branch names, and full
+Merge conflict resolution, recursive/octopus merges, rebase, remote management,
+network transport, and packfiles are not implemented. Local loose-object fetch,
+fast-forward-only push to bare repositories, and temporary-directory clone are
+implemented without claiming full Git compatibility. Checkout supports `HEAD`, local branch names, and full
 40-character commit IDs; commit-ID checkout detaches `HEAD`. Checkout uses a
 temporary, type-aware transaction backup to restore tracked files, directories,
 symlinks, modes, the index, and refs after an injected or operational failure;
@@ -86,9 +89,9 @@ detect renames; diff excludes untracked files, treats non-UTF-8 or NUL-bearing
 content as binary, and buffers tracked file contents in memory. Full Git
 ignore semantics, color/porcelain output, and complete Git status/diff
 compatibility are not claimed. `cv init --bare <path>` initializes a bare
-repository. Remote management, fetch, push, and clone remain planned
-Milestone 6A work and are not implemented. Hub, frontend, database integration, and AI
-functionality are also future work.
+repository. Remote management, network transport, and later hosting integration remain
+planned. Hub, frontend, database integration, and AI functionality are also
+future work.
 
 See [PROJECT_CONTEXT.md](./PROJECT_CONTEXT.md) for the project-wide engineering
 and contribution guidelines, and [the architecture overview](./docs/architecture/overview.md)

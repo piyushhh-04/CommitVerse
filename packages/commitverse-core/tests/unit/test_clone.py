@@ -114,3 +114,19 @@ def test_clone_rejects_invalid_destination_parent(tmp_path):
 
     with pytest.raises(CloneError, match="destination parent"):
         clone_from_local(source.root, tmp_path / "missing" / "clone")
+
+
+def test_clone_rejects_symlinked_destination_parent(tmp_path):
+    source = initialize_repository(tmp_path / "source.git", bare=True)
+    commit_id = _commit(source)
+    compare_and_swap_ref(source, "refs/heads/main", None, commit_id)
+    real_parent = tmp_path / "real-parent"
+    real_parent.mkdir()
+    link_parent = tmp_path / "link-parent"
+    try:
+        link_parent.symlink_to(real_parent, target_is_directory=True)
+    except OSError:
+        pytest.skip("filesystem does not support directory symlinks")
+
+    with pytest.raises(CloneError, match="safe directory"):
+        clone_from_local(source.root, link_parent / "clone")

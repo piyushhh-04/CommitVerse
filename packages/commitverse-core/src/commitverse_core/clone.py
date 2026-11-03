@@ -138,12 +138,24 @@ def _select_branch(
 
 
 def _validate_destination(parent: Path, destination: Path) -> None:
-    try:
-        metadata = parent.lstat()
-    except OSError as error:
-        raise CloneError(f"invalid destination parent {parent}: {error}") from error
-    if not metadata or not parent.is_dir() or parent.is_symlink():
-        raise CloneError(f"destination parent is not a safe directory: {parent}")
+    current = parent
+    missing: list[Path] = []
+    while True:
+        try:
+            metadata = current.lstat()
+        except FileNotFoundError:
+            missing.append(current)
+            current = current.parent
+            continue
+        except OSError as error:
+            raise CloneError(f"invalid destination parent {parent}: {error}") from error
+        if missing:
+            raise CloneError(f"invalid destination parent {parent}: a component is missing")
+        if current.is_symlink() or not current.is_dir():
+            raise CloneError(f"destination parent is not a safe directory: {current}")
+        if current == current.parent:
+            break
+        current = current.parent
     if destination.exists() or destination.is_symlink():
         raise CloneError(f"destination already exists: {destination}")
 

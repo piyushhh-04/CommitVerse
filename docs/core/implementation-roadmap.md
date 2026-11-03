@@ -422,7 +422,7 @@ Exchange refs and objects with local bare or non-bare repositories through a
 local filesystem transport and Git-compatible SHA-1 loose objects. Repository
 capability modeling and bare initialization are implemented in Milestone 6A.1;
 configuration, CAS refs, local advertisement, and bounded local fetch are
-implemented through Milestone 6A.7. Remote management remains planned. Fetch
+implemented through Milestone 6A.8. Remote management remains planned. Fetch
 and clone may read bare or non-bare repositories; local push targets bare
 repositories only.
 
@@ -526,9 +526,11 @@ silently discards refs or rewrites unrelated configuration.
 5. **6A.5 Reachability traversal and fetch** (implemented)
 6. **6A.6 Fast-forward-only push to bare repositories** (implemented)
 7. **6A.7 Clone** (implemented)
-8. **6A.8 Git interoperability, documentation, and final validation**
+8. **6A.8 Git interoperability, documentation, and final validation** (implemented)
 
 Packfiles, packed refs, smart HTTP, SSH, Git wire protocols, remote hosting,
 credentials, authentication, force push, multi-ref atomic push, shallow
 history, tags, submodules, SHA-256 repositories, and cloud storage are
-explicitly deferred.
+explicitly deferred. Milestone 6A.8 confirms the supported local-remotes scope
+through regression and compatibility validation; it does not add a new
+transport or hosting phase.

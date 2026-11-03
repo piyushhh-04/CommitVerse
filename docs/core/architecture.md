@@ -49,7 +49,7 @@ boundaries even if implementation uses a different internal naming scheme.
 | `cli` | Implemented repository/object, staging/tree, commit, branch, revision-resolution, history, status, and diff commands; parse arguments, map expected errors to diagnostics and exit codes, and delegate repository/object operations. |
 | `commands` | Adapt each user command to application services; validate command-specific options and format output. |
 | `repository` | Implemented initialization and parent-walking discovery for bare and non-bare SHA-1 repositories; provide shared Git-directory paths and capabilities without depending on the CLI or Hub. |
-| `config` | Implemented validated, line-preserving repository configuration reads and locked atomic mutations for bare and non-bare Git directories. Remote management and URL resolution are future work. |
+| `config` | Implemented validated, line-preserving repository configuration reads and locked atomic mutations for bare and non-bare Git directories. Clone writes the supported `origin` URL; remote management and URL resolution are future work. |
 | `objects` | Implemented canonical object-byte serialization and hashing. |
 | `object_store` | Implemented by `objects.store`: write, read, locate, and verify content-addressed loose objects. |
 | `trees` | Implemented Git-compatible tree entry serialization, parsing, ordering, type validation, and nested tree construction from index entries. |
@@ -66,7 +66,7 @@ boundaries even if implementation uses a different internal naming scheme.
 | `merge` | Implemented fast-forward and basic three-way merges with content, add/add, modify/delete, and mode conflict reporting. Merge commits resolve author and committer identities using repository configuration and environment overrides. |
 | `worktree` | Inspect paths and file modes in the checked-out working tree; apply checkout changes safely. |
 | `merge` | Find merge bases, combine tree changes, and report conflicts without silently overwriting user data. |
-| `transport` | Implemented read-only local filesystem advertisement and bounded local fetch; network protocols remain future work. |
+| `transport` | Implemented read-only local filesystem advertisement and bounded local fetch; local push and clone orchestrate this transport; network protocols remain future work. |
 | `errors` | Provide typed, actionable domain errors shared by application services and translated at the CLI boundary. |
 
 Tests should be organized around public behavior and storage invariants, not
@@ -181,11 +181,12 @@ Only loose object storage is implemented in the initial object-format scope.
 `pack/` is created as part of the conventional layout, but packed-object
 behavior is future work. The initial `config` fields follow Git's repository
 format. The Git-compatible v2 index is created on the first staging update.
-Milestone 6A.1 implements the shared Git-directory capability model and bare
-initialization. Remote management, fetch, push, and clone remain planned:
-fetch may read either kind, but push targets must be bare and non-bare push
-targets must be rejected with an actionable error. Other Git interoperability
-requirements remain future work. A CommitVerse-specific
+Milestones 6A.1 through 6A.7 implement the shared Git-directory capability
+model, bare initialization, local advertisement, bounded fetch, local
+fast-forward-only push, and safe local clone. Fetch and clone may read either
+repository kind; push targets must be bare and non-bare push targets must be
+rejected with an actionable error. Other Git interoperability requirements
+remain future work. A CommitVerse-specific
 extension must be explicit and must not change Git object or index formats.
 
 Repository configuration is handled by `config.py`. It supports section

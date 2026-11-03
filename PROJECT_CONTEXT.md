@@ -23,8 +23,10 @@ deletion, merge-base discovery, basic three-way merging, and read-only
 status/diff comparison. The `cv` CLI exposes these tested operations. Unit, integration,
 and isolated external Git compatibility tests cover the implemented scope.
 This is not a complete version control engine: conflict resolution,
-recursive/octopus merge, remotes, transport, packfiles, rename detection, and
-full Git compatibility remain unimplemented. Treat Hub, AI, and other
+recursive/octopus merge, remote management, network transport, packfiles,
+rename detection, and full Git compatibility remain unimplemented. Local
+advertisement, bounded loose-object fetch, fast-forward-only push to bare
+repositories, and safe local clone are implemented. Treat Hub, AI, and other
 unimplemented Core functionality as plans until working implementations and
 their tests exist.
 
@@ -100,10 +102,11 @@ technologies without a clear project need and an explicit decision.
   canonical object bytes, hashing, and verified loose-object storage. Repository
   capability modeling supports bare repositories for object and reference
   operations; worktree operations require a non-bare repository. Remote
+  local transport, bounded fetch, push, and clone are implemented; network
   transport is not implemented.
   Compatibility tests invoke Git only in isolated temporary repositories.
   `checkout.py`, `merge_base.py`, and `merge.py` provide type-aware rollback
-  for checkout transitions, iterative ancestry, and basic merges; remote
+  for checkout transitions, iterative ancestry, and basic merges; network
   transport is not implemented. Checkout rollback covers tracked filesystem
   entries, the index, and refs, while reporting rollback failures rather than
   suppressing them.

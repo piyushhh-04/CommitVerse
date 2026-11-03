@@ -1,10 +1,16 @@
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 
 from commitverse_core.commits import Commit, CommitIdentity, write_commit
 from commitverse_core.objects import write_object
 from commitverse_core.refs import (
     ReferenceError,
+    ReferenceExpectationError,
+    ReferenceLockError,
     ReferenceNotFoundError,
+    ReferenceUpdateError,
+    compare_and_swap_ref,
     create_branch,
     current_branch,
     list_branches,
@@ -75,6 +81,127 @@ def test_bare_repository_supports_objects_refs_and_head(tmp_path):
     assert read_ref(repository, "refs/heads/main") == commit_id
     assert resolve_head(repository) == commit_id
     assert repository.head_path.read_text() == "ref: refs/heads/main\n"
+
+
+def test_compare_and_swap_publishes_expected_update(repository_with_commit):
+    repository, first_id = repository_with_commit
+    identity = CommitIdentity("Second", "second@example.test", 1_700_000_001, 0)
+    second_id = write_commit(
+        repository.objects_dir,
+        Commit(write_tree(repository.objects_dir, []), (first_id,), identity, identity, b"second\n"),
+    )
+    compare_and_swap_ref(repository, "refs/heads/main", None, first_id)
+    compare_and_swap_ref(repository, "refs/heads/main", first_id, second_id)
+
+    assert read_ref(repository, "refs/heads/main") == second_id
+    assert not (repository.git_dir / "refs/heads/main.lock").exists()
+
+
+def test_compare_and_swap_expected_mismatch_does_not_modify_ref(repository_with_commit):
+    repository, first_id = repository_with_commit
+    compare_and_swap_ref(repository, "refs/heads/main", None, first_id)
+
+    with pytest.raises(ReferenceExpectationError, match="changed"):
+        compare_and_swap_ref(repository, "refs/heads/main", None, first_id)
+
+    assert read_ref(repository, "refs/heads/main") == first_id
+    assert not (repository.git_dir / "refs/heads/main.lock").exists()
+
+
+def test_compare_and_swap_rejects_existing_lock(repository_with_commit):
+    repository, first_id = repository_with_commit
+    lock_path = repository.git_dir / "refs/heads/main.lock"
+    lock_path.write_text("owned\n", encoding="ascii")
+
+    with pytest.raises(ReferenceLockError):
+        compare_and_swap_ref(repository, "refs/heads/main", None, first_id)
+
+    assert lock_path.read_text(encoding="ascii") == "owned\n"
+
+
+def test_compare_and_swap_deletes_expected_ref(repository_with_commit):
+    repository, first_id = repository_with_commit
+    compare_and_swap_ref(repository, "refs/heads/main", None, first_id)
+    compare_and_swap_ref(repository, "refs/heads/main", first_id, None)
+
+    with pytest.raises(ReferenceNotFoundError):
+        read_ref(repository, "refs/heads/main")
+
+
+def test_compare_and_swap_supports_bare_repository(repository_with_commit, tmp_path):
+    _, first_id = repository_with_commit
+    repository = initialize_repository(tmp_path / "server.git", bare=True)
+    tree_id = write_tree(repository.objects_dir, [])
+    identity = CommitIdentity("Bare", "bare@example.test", 1_700_000_000, 0)
+    bare_id = write_commit(
+        repository.objects_dir,
+        Commit(tree_id, (), identity, identity, b"bare\n"),
+    )
+
+    compare_and_swap_ref(repository, "refs/heads/main", None, bare_id)
+
+    assert read_ref(repository, "refs/heads/main") == bare_id
+
+
+def test_compare_and_swap_allows_independent_refs_concurrently(repository_with_commit):
+    repository, first_id = repository_with_commit
+
+    def update(ref_name):
+        compare_and_swap_ref(repository, ref_name, None, first_id)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        list(
+            executor.map(
+                update,
+                ("refs/heads/one", "refs/heads/two"),
+            )
+        )
+
+    assert read_ref(repository, "refs/heads/one") == first_id
+    assert read_ref(repository, "refs/heads/two") == first_id
+
+
+def test_compare_and_swap_failure_before_replacement_preserves_old_value(
+    repository_with_commit, monkeypatch
+):
+    repository, first_id = repository_with_commit
+    compare_and_swap_ref(repository, "refs/heads/main", None, first_id)
+    lock_path = repository.git_dir / "refs/heads/main.lock"
+
+    def fail_replace(source, destination):
+        raise OSError("replacement failed")
+
+    monkeypatch.setattr("commitverse_core.refs.os.replace", fail_replace)
+    with pytest.raises(ReferenceUpdateError, match="before publication") as error:
+        compare_and_swap_ref(repository, "refs/heads/main", first_id, first_id)
+
+    assert not error.value.published
+    assert read_ref(repository, "refs/heads/main") == first_id
+    assert not lock_path.exists()
+
+
+def test_compare_and_swap_reports_post_publication_durability_failure(
+    repository_with_commit, monkeypatch
+):
+    repository, first_id = repository_with_commit
+    lock_path = repository.git_dir / "refs/heads/main.lock"
+    real_fsync = __import__("os").fsync
+    calls = 0
+
+    def fail_directory_fsync(file_descriptor):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("directory sync failed")
+        real_fsync(file_descriptor)
+
+    monkeypatch.setattr("commitverse_core.refs.os.fsync", fail_directory_fsync)
+    with pytest.raises(ReferenceUpdateError) as error:
+        compare_and_swap_ref(repository, "refs/heads/main", None, first_id)
+
+    assert error.value.published
+    assert read_ref(repository, "refs/heads/main") == first_id
+    assert not lock_path.exists()
 
 
 def test_create_read_update_and_list_branches(repository_with_commit):

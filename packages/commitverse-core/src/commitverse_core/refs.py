@@ -22,6 +22,22 @@ class ReferenceNotFoundError(ReferenceError):
     """Raised when a loose reference does not exist."""
 
 
+class ReferenceLockError(ReferenceError):
+    """Raised when a reference lock is already owned by another process."""
+
+
+class ReferenceUpdateError(ReferenceError):
+    """Raised when a CAS update fails, with publication state available."""
+
+    def __init__(self, message: str, *, published: bool = False) -> None:
+        super().__init__(message)
+        self.published = published
+
+
+class ReferenceExpectationError(ReferenceUpdateError):
+    """Raised when the current reference differs from the expected value."""
+
+
 @dataclass(frozen=True)
 class Head:
     """A symbolic HEAD target or a detached commit object ID."""
@@ -149,6 +165,96 @@ def read_ref(repository: Repository, ref_name: str) -> str:
     except FileNotFoundError as error:
         raise ReferenceNotFoundError(f"reference does not exist: {ref_name}") from error
     return _read_ref_text(path, ref_name)
+
+
+def compare_and_swap_ref(
+    repository: Repository,
+    ref_name: str,
+    expected_old: str | None,
+    new_object_id: str | None,
+) -> None:
+    """Conditionally publish or delete one loose ref using its lock file.
+
+    ``None`` means absence for either expected or new values. A successful
+    update is durable to the lock file and atomically published; a directory
+    fsync failure raises with ``published=True``.
+    """
+    validate_ref_name(ref_name)
+    if expected_old is not None:
+        _validate_object_id(expected_old)
+    if new_object_id is not None:
+        _validate_object_id(new_object_id)
+        try:
+            read_commit(repository.objects_dir, new_object_id)
+        except (OSError, ValueError) as error:
+            raise ReferenceError(
+                f"reference target is not a valid commit object: {new_object_id}"
+            ) from error
+
+    path = _safe_ref_path(repository, ref_name, create=True)
+    lock_path = Path(f"{path}.lock")
+    if path.exists() or path.is_symlink():
+        metadata = path.lstat()
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+            raise ReferenceError(f"reference is not a regular file: {ref_name}")
+    try:
+        lock_fd = os.open(lock_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+    except FileExistsError as error:
+        raise ReferenceLockError(f"reference lock already exists: {ref_name}") from error
+    except OSError as error:
+        raise ReferenceError(f"cannot create reference lock: {error}") from error
+
+    replaced = False
+    try:
+        try:
+            current = _read_ref_text(path, ref_name)
+        except ReferenceNotFoundError:
+            current = None
+        if current != expected_old:
+            raise ReferenceExpectationError(
+                f"reference {ref_name} changed: expected {expected_old or 'absence'}, "
+                f"found {current or 'absence'}"
+            )
+        if new_object_id is None:
+            if current is not None:
+                os.unlink(path)
+        else:
+            with os.fdopen(lock_fd, "wb") as lock:
+                lock_fd = -1
+                lock.write(f"{new_object_id}\n".encode("ascii"))
+                lock.flush()
+                os.fsync(lock.fileno())
+            os.replace(lock_path, path)
+        replaced = True
+        _fsync_reference_directory(path.parent)
+    except ReferenceUpdateError:
+        raise
+    except OSError as error:
+        raise ReferenceUpdateError(
+            f"reference update failed before publication: {error}"
+        ) from error
+    finally:
+        if not replaced:
+            try:
+                if lock_fd >= 0:
+                    os.close(lock_fd)
+                lock_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
+def _fsync_reference_directory(directory: Path) -> None:
+    try:
+        directory_fd = os.open(directory, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    except OSError as error:
+        raise ReferenceUpdateError(
+            f"reference was published but directory durability is uncertain: {error}",
+            published=True,
+        ) from error
 
 
 def write_ref(

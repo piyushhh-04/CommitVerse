@@ -7,9 +7,15 @@ from pathlib import Path
 
 import pytest
 
-from commitverse_core.commits import read_commit, serialize_commit
+from commitverse_core.commits import (
+    Commit,
+    CommitIdentity,
+    read_commit,
+    serialize_commit,
+    write_commit,
+)
 from commitverse_core.objects import hash_object
-from commitverse_core.refs import resolve_head
+from commitverse_core.refs import compare_and_swap_ref, read_ref, resolve_head
 from commitverse_core.repository import initialize_repository
 from commitverse_core.trees import write_tree
 
@@ -246,6 +252,48 @@ def test_commitverse_reads_git_generated_commit_history_and_refs(
     assert "Git child" in output
     assert "Git root \N{SNOWMAN}" in output
     assert f"Parents: {root_id}" in output
+
+
+def test_compare_and_swap_refs_interoperate_with_git(
+    git_executable, tmp_path
+):
+    home = tmp_path / "home"
+    home.mkdir()
+    repository = initialize_repository(tmp_path / "repository")
+    tree_id = write_tree(repository.objects_dir, [])
+    identity = CommitIdentity("Compat", "compat@example.test", 1_700_000_000, 0)
+    commit = Commit(
+        tree_id, (), identity, identity, b"compat\n"
+    )
+    object_id = write_commit(repository.objects_dir, commit)
+
+    compare_and_swap_ref(repository, "refs/heads/main", None, object_id)
+    assert _run_git(
+        git_executable, repository.root, home, "show-ref", "--verify", "refs/heads/main"
+    ).stdout.startswith(object_id.encode())
+
+    replacement_id = _run_git(
+        git_executable,
+        repository.root,
+        home,
+        "commit-tree",
+        tree_id,
+        "-p",
+        object_id,
+        "-m",
+        "git child",
+        dates=True,
+    ).stdout.decode().strip()
+    _run_git(
+        git_executable,
+        repository.root,
+        home,
+        "update-ref",
+        "refs/heads/main",
+        replacement_id,
+        object_id,
+    )
+    assert read_ref(repository, "refs/heads/main") == replacement_id
 
 
 def test_git_inspects_commitverse_merge_commit(tmp_path, git_executable):

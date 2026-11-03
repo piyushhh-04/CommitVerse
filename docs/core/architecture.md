@@ -354,6 +354,18 @@ storing objects before publishing remote-tracking refs. Push is limited to
 bare repositories and is fast-forward-only, using individually locked
 compare-and-swap ref updates.
 
+Loose reference compare-and-swap is implemented in `refs.py` for bare and
+non-bare repositories. It validates ref names and commit targets, creates the
+exact `<ref>.lock` path exclusively, re-reads the current value while holding
+the lock, checks the expected object ID or absence, fsyncs the lock contents,
+and atomically publishes the new value. Deletion uses the same lock and
+validation protocol. Failures before replacement preserve the old ref and
+remove only the operation's lock; after replacement, callers receive a
+publication-state-bearing error if parent-directory fsync fails. This
+guarantees no lost updates among cooperating CommitVerse processes for one
+loose ref, but does not provide multi-ref atomicity, stale-lock recovery,
+packed-ref concurrency, or rollback after publication.
+
 ## Status and diff
 
 `status.py` compares three independent snapshots: the current commit tree

@@ -518,7 +518,7 @@ silently discards refs or rewrites unrelated configuration.
 1. **6A.1 Repository capability model and bare initialization**
 2. **6A.2 Shared configuration abstraction** (implemented)
 3. **6A.3 Compare-and-swap reference updates** (implemented)
-4. **6A.4 Local transport and remote advertisement**
+4. **6A.4 Local transport and remote advertisement** (implemented)
 5. **6A.5 Reachability traversal and fetch**
 6. **6A.6 Fast-forward-only push to bare repositories**
 7. **6A.7 Clone**

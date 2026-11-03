@@ -366,6 +366,15 @@ guarantees no lost updates among cooperating CommitVerse processes for one
 loose ref, but does not provide multi-ref atomicity, stale-lock recovery,
 packed-ref concurrency, or rollback after publication.
 
+Milestone 6A.4 adds a read-only local filesystem transport under
+`transport/`. `LocalFilesystemTransport.open(path, base=...)` opens a bare or
+non-bare repository at the supplied root; relative paths require the explicit
+base directory. Its advertisement validates loose local branches, supported
+loose tags, symbolic or detached `HEAD`, object IDs, and referenced objects,
+then returns deterministic branch/tag records without creating locks or
+modifying the remote. Packed refs, fetch, push, clone, remote configuration,
+and network transports remain unsupported.
+
 ## Status and diff
 
 `status.py` compares three independent snapshots: the current commit tree

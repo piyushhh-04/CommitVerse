@@ -48,6 +48,46 @@ def test_initialize_repository_rejects_file_path(tmp_path):
         initialize_repository(path)
 
 
+def test_initialize_and_reinitialize_bare_repository(tmp_path):
+    repository = initialize_repository(tmp_path / "server.git", bare=True)
+
+    assert repository.created
+    assert repository.bare
+    assert repository.work_tree is None
+    assert repository.root == repository.git_dir
+    assert repository.refs_dir == repository.git_dir / "refs"
+    assert repository.head_path.read_text() == "ref: refs/heads/main\n"
+    assert "bare = true" in repository.config_path.read_text()
+    marker = repository.git_dir / "custom-data"
+    marker.write_bytes(b"preserve me")
+
+    existing = initialize_repository(repository.root, bare=True)
+
+    assert not existing.created
+    assert existing.bare
+    assert marker.read_bytes() == b"preserve me"
+
+
+def test_bare_repository_rejects_nonempty_unrelated_directory(tmp_path):
+    path = tmp_path / "server.git"
+    path.mkdir()
+    (path / "user-data").write_text("preserve")
+
+    with pytest.raises(RepositoryError, match="existing repository metadata"):
+        initialize_repository(path, bare=True)
+
+    assert (path / "user-data").read_text() == "preserve"
+
+
+def test_worktree_capability_is_explicit(tmp_path):
+    non_bare = initialize_repository(tmp_path / "project")
+    bare = initialize_repository(tmp_path / "server.git", bare=True)
+
+    assert non_bare.require_worktree() == non_bare.root
+    with pytest.raises(RepositoryError, match="requires a working tree"):
+        bare.require_worktree()
+
+
 def test_initialize_repository_rejects_invalid_existing_git_directory(tmp_path):
     repository_path = tmp_path / "project"
     invalid_git_dir = repository_path / ".git"
@@ -70,6 +110,18 @@ def test_discover_repository_from_root_and_nested_directory(tmp_path):
     assert discovered.root == repository.root
     assert discovered.git_dir == repository.git_dir
     assert discovered.objects_dir == repository.objects_dir
+
+
+def test_discover_bare_repository_from_root_and_nested_directory(tmp_path):
+    repository = initialize_repository(tmp_path / "server.git", bare=True)
+    nested = repository.root / "nested"
+    nested.mkdir()
+
+    assert discover_repository(repository.root).bare
+    discovered = discover_repository(nested)
+    assert discovered.bare
+    assert discovered.git_dir == repository.git_dir
+    assert discovered.work_tree is None
 
 
 def test_discover_repository_from_file_path(tmp_path):

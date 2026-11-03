@@ -51,6 +51,9 @@ def _build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument(
         "path", nargs="?", help="repository path (default: current directory)"
     )
+    init_parser.add_argument(
+        "--bare", action="store_true", help="initialize without a working tree"
+    )
 
     hash_parser = commands.add_parser("hash-object", help="write a blob object")
     hash_parser.add_argument(
@@ -117,9 +120,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if arguments.command == "init":
             repository_path = Path.cwd() if arguments.path is None else arguments.path
-            repository = initialize_repository(repository_path)
+            repository = initialize_repository(repository_path, bare=arguments.bare)
             action = "Initialized" if repository.created else "Reinitialized"
-            print(f"{action} CommitVerse repository in {repository.root}")
+            kind = "bare " if repository.bare else ""
+            print(f"{action} {kind}CommitVerse repository in {repository.root}")
             return 0
 
         if arguments.command == "hash-object":

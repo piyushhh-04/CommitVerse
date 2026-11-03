@@ -8,7 +8,7 @@ import pytest
 
 from commitverse_core.cli import main
 from commitverse_core.objects import hash_object, read_object, write_object
-from commitverse_core.repository import initialize_repository
+from commitverse_core.repository import discover_repository, initialize_repository
 
 
 @pytest.fixture(scope="session")
@@ -64,6 +64,33 @@ def _run_cv(repository, *arguments):
         stderr=subprocess.PIPE,
         check=True,
     )
+
+
+def test_git_recognizes_commitverse_bare_repository(
+    git_executable, tmp_path
+):
+    repository = initialize_repository(tmp_path / "commitverse.git", bare=True)
+
+    result = _run_git(
+        git_executable,
+        repository.root,
+        "rev-parse",
+        "--is-bare-repository",
+    )
+
+    assert result.stdout == b"true\n"
+
+
+def test_commitverse_discovers_git_bare_repository(git_executable, tmp_path):
+    repository = tmp_path / "git.git"
+    repository.mkdir()
+    _run_git(git_executable, repository, "init", "--bare", "--quiet")
+
+    discovered = discover_repository(repository)
+
+    assert discovered.bare
+    assert discovered.git_dir == repository
+    assert discovered.work_tree is None
 
 
 @pytest.mark.parametrize(

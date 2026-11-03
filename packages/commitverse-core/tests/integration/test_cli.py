@@ -32,6 +32,34 @@ def test_init_command_defaults_to_current_directory(tmp_path, monkeypatch, capsy
     assert "Initialized CommitVerse repository" in capsys.readouterr().out
 
 
+def test_init_bare_command_supports_spaces_and_reinitialization(
+    tmp_path, capsys
+):
+    repository_path = tmp_path / "bare server.git"
+
+    assert main(["init", "--bare", str(repository_path)]) == 0
+    first_output = capsys.readouterr()
+    assert "Initialized bare CommitVerse repository" in first_output.out
+    assert (repository_path / "HEAD").read_text() == "ref: refs/heads/main\n"
+    assert not (repository_path / ".git").exists()
+
+    assert main(["init", "--bare", str(repository_path)]) == 0
+    second_output = capsys.readouterr()
+    assert "Reinitialized bare CommitVerse repository" in second_output.out
+
+
+def test_worktree_commands_reject_bare_repository(
+    tmp_path, monkeypatch, capsys
+):
+    repository = initialize_repository(tmp_path / "bare.git", bare=True)
+    monkeypatch.chdir(repository.root)
+
+    assert main(["add", "-A"]) == 1
+    assert "requires a working tree" in capsys.readouterr().err
+    assert main(["status"]) == 1
+    assert "requires a working tree" in capsys.readouterr().err
+
+
 def test_cv_console_script_initializes_repository(tmp_path):
     repository_path = tmp_path / "console-repository"
     executable = Path(sys.executable).with_name("cv")

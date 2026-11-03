@@ -34,13 +34,15 @@ and the `cv` CLI surface.
 
 ### Repository and object model
 
-- `repository.py` initializes and discovers non-bare repositories.
+- `repository.py` initializes and discovers bare and non-bare repositories.
 - `objects/format.py` defines canonical Git-compatible object serialization and
   SHA-1 hashing.
 - `objects/store.py` reads and writes verified loose objects in the `.git/objects`
   directory using zlib-compressed canonical payloads.
 
 These modules define the underlying object database and repository root layout.
+Bare repositories expose object and reference capabilities without a working
+tree; worktree operations remain non-bare capabilities.
 
 ### Index, tree, and staging
 
@@ -86,6 +88,7 @@ This is a read-only comparison layer, not a complete Git status/diff clone.
 Supported commands in the current implementation:
 
 - `cv init [path]`
+- `cv init --bare <path>`
 - `cv hash-object -w <file>`
 - `cv cat-file -t <object_id>`
 - `cv cat-file -s <object_id>`

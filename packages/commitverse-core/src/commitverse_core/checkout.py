@@ -215,6 +215,7 @@ def checkout_commit(
     advance_symbolic: bool = False,
 ) -> None:
     """Safely make the worktree and index match a commit, then update HEAD."""
+    repository.require_worktree()
     try:
         commit = read_commit(repository.objects_dir, object_id)
         target_files = _tree_files(repository, commit.tree_id)

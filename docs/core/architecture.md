@@ -22,7 +22,7 @@ unstaged tracked-file changes as unified diffs.
 
 The object store handles the common object envelope. Tree payloads are parsed
 and validated separately; supported commit payloads are parsed and validated
-separately. Non-bare repository initialization/discovery and the `cv`
+separately. Bare and non-bare repository initialization/discovery and the `cv`
 commands for object inspection, staging, tree writing, commits, local branch
 listing/creation, revision resolution, history display, status, and diff are
 implemented. Safe checkout/switching, merged-only branch deletion, merge-base
@@ -45,7 +45,7 @@ boundaries even if implementation uses a different internal naming scheme.
 |---|---|
 | `cli` | Implemented repository/object, staging/tree, commit, branch, revision-resolution, history, status, and diff commands; parse arguments, map expected errors to diagnostics and exit codes, and delegate repository/object operations. |
 | `commands` | Adapt each user command to application services; validate command-specific options and format output. |
-| `repository` | Implemented initialization and parent-walking discovery for non-bare SHA-1 repositories; provide repository paths without depending on the CLI or Hub. |
+| `repository` | Implemented initialization and parent-walking discovery for bare and non-bare SHA-1 repositories; provide shared Git-directory paths and capabilities without depending on the CLI or Hub. |
 | `objects` | Implemented canonical object-byte serialization and hashing. |
 | `object_store` | Implemented by `objects.store`: write, read, locate, and verify content-addressed loose objects. |
 | `trees` | Implemented Git-compatible tree entry serialization, parsing, ordering, type validation, and nested tree construction from index entries. |
@@ -136,15 +136,18 @@ configuration and commands not listed as implemented there remain future work.
 
 ## Repository and administrative layout
 
-The implemented initial repository format uses the conventional `.git`
-administrative directory for a non-bare worktree. Initialization creates
+The implemented initial repository format supports both the conventional `.git`
+administrative directory for a non-bare worktree and a Git-compatible bare
+repository directory. Initialization creates
 `objects/info`, `objects/pack`, `refs/heads`, and `refs/tags`, writes a Git
 compatible SHA-1 `config`, and sets `HEAD` to `refs/heads/main`. Reinitializing
 a valid repository preserves its existing data; malformed or unsupported
 metadata is rejected. Discovery walks parent directories, validates the
 repository structure/configuration and `HEAD`, and reports failure when no
-supported repository is found. Bare repositories and linked-worktree `.git`
-files are not supported.
+supported repository is found. Bare repositories expose object and reference
+operations without a working tree; staging, status, diff, checkout, switch,
+and worktree merge operations explicitly require a non-bare repository.
+Linked-worktree `.git` files are not supported.
 
 The initialized repository contains:
 
@@ -160,16 +163,25 @@ The initialized repository contains:
         tags/
 ```
 
+A bare repository uses the same administrative contents directly at its root:
+
+```text
+repository.git/
+    HEAD
+    config
+    objects/
+    refs/
+```
+
 Only loose object storage is implemented in the initial object-format scope.
 `pack/` is created as part of the conventional layout, but packed-object
 behavior is future work. The initial `config` fields follow Git's repository
 format. The Git-compatible v2 index is created on the first staging update.
-Bare repositories and linked-worktree `.git` files remain unsupported by the
-current implementation. Milestone 6A plans a shared Git-directory capability
-model for bare and non-bare local repositories: fetch may read either kind,
-but push targets must be bare and non-bare push targets must be rejected with
-an actionable error. Worktree operations remain unavailable for bare
-repositories. Other Git interoperability requirements remain future work. A CommitVerse-specific
+Milestone 6A.1 implements the shared Git-directory capability model and bare
+initialization. Remote management, fetch, push, and clone remain planned:
+fetch may read either kind, but push targets must be bare and non-bare push
+targets must be rejected with an actionable error. Other Git interoperability
+requirements remain future work. A CommitVerse-specific
 extension must be explicit and must not change Git object or index formats.
 
 ## Object database and object relationships

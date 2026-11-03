@@ -22,7 +22,7 @@ is planned versus what is implemented.
 
 These are project goals, not descriptions of complete working products. The
 Core package foundation, Git-compatible loose objects and trees, index-v2
-staging, non-bare repository initialization/discovery, commit objects and
+staging, bare and non-bare repository initialization/discovery, commit objects and
 history, loose branch refs, safe branch switching/checkout, basic merging,
 read-only status/diff, and `cv` commands are implemented and tested.
 
@@ -67,8 +67,10 @@ worktree state. Unit, integration, and isolated external Git compatibility
 tests cover object, tree, index, commit, ref, history, checkout, merge, status,
 and diff behavior.
 
-This is a limited foundation, not a complete Git replacement. Merge conflict
-resolution, recursive/octopus merges, rebase, remotes, transport, and packfiles
+This is a limited foundation, not a complete Git replacement. Core supports
+bare repositories for object and reference operations; staging, status, diff,
+checkout, switch, and worktree merge operations require a non-bare repository.
+Merge conflict resolution, recursive/octopus merges, rebase, remotes, transport, and packfiles
 are not implemented. Checkout supports `HEAD`, local branch names, and full
 40-character commit IDs; commit-ID checkout detaches `HEAD`. Checkout uses a
 temporary, type-aware transaction backup to restore tracked files, directories,
@@ -83,7 +85,9 @@ ignore semantics, and non-v2 indexes are unsupported. Status/diff do not
 detect renames; diff excludes untracked files, treats non-UTF-8 or NUL-bearing
 content as binary, and buffers tracked file contents in memory. Full Git
 ignore semantics, color/porcelain output, and complete Git status/diff
-compatibility are not claimed. Hub, frontend, database integration, and AI
+compatibility are not claimed. `cv init --bare <path>` initializes a bare
+repository. Remote management, fetch, push, and clone remain planned
+Milestone 6A work and are not implemented. Hub, frontend, database integration, and AI
 functionality are also future work.
 
 See [PROJECT_CONTEXT.md](./PROJECT_CONTEXT.md) for the project-wide engineering

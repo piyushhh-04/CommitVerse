@@ -112,6 +112,7 @@ def create_commit(
     now: datetime | None = None,
 ) -> CommitResult:
     """Write a commit for the index and atomically advance current HEAD."""
+    repository.require_worktree()
     if not isinstance(message, str) or not message.strip():
         raise CommitServiceError("commit message must not be empty")
     message_bytes = message.encode("utf-8")

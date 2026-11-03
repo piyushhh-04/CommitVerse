@@ -133,7 +133,7 @@ def _relative_bytes(path: Path, root: Path) -> bytes:
 def _resolve_requested_path(
     repository: Repository, value: str | Path, cwd: Path
 ) -> Path:
-    root = repository.root.resolve(strict=True)
+    root = repository.require_worktree().resolve(strict=True)
     requested = Path(value).expanduser()
     candidate = Path(
         os.path.abspath(requested if requested.is_absolute() else cwd / requested)
@@ -208,7 +208,7 @@ def add_paths(
     cwd: Path | None = None,
 ) -> int:
     """Stage selected paths or the whole working tree; return changed entry count."""
-    root = repository.root.resolve(strict=True)
+    root = repository.require_worktree().resolve(strict=True)
     working_directory = (Path.cwd() if cwd is None else cwd).resolve(strict=True)
     try:
         working_directory.relative_to(root)

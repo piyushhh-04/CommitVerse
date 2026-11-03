@@ -14,7 +14,7 @@ collaboration platform:
 - **CommitVerse AI:** a future AI developer assistant.
 
 Core has an installable Python package with canonical object serialization,
-SHA-1 hashing, zlib-compressed loose-object storage, non-bare repository
+SHA-1 hashing, zlib-compressed loose-object storage, bare and non-bare repository
 initialization/discovery, Git-compatible tree serialization/parsing, a
 version-2 Git index, staging, commit object parsing/creation, loose branch
 references, symbolic and detached `HEAD`, branch listing/creation, revision
@@ -97,7 +97,10 @@ technologies without a clear project need and an explicit decision.
   creation, `history.py` for parent traversal, `status.py` for read-only
   snapshot comparison, `diff.py` for unified text diffs, and `cli.py` for the
   `cv` entry point. `objects/format.py` and `objects/store.py` provide
-  canonical object bytes, hashing, and verified loose-object storage.
+  canonical object bytes, hashing, and verified loose-object storage. Repository
+  capability modeling supports bare repositories for object and reference
+  operations; worktree operations require a non-bare repository. Remote
+  transport is not implemented.
   Compatibility tests invoke Git only in isolated temporary repositories.
   `checkout.py`, `merge_base.py`, and `merge.py` provide type-aware rollback
   for checkout transitions, iterative ancestry, and basic merges; remote

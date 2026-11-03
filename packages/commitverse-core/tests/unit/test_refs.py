@@ -61,6 +61,22 @@ def test_symbolic_unborn_head_resolves_to_no_commit(tmp_path):
     assert list_branches(repository) == ()
 
 
+def test_bare_repository_supports_objects_refs_and_head(tmp_path):
+    repository = initialize_repository(tmp_path / "server.git", bare=True)
+    tree_id = write_tree(repository.objects_dir, [])
+    identity = CommitIdentity("Test User", "test@example.test", 1_700_000_000, 0)
+    commit_id = write_commit(
+        repository.objects_dir,
+        Commit(tree_id, (), identity, identity, b"initial\n"),
+    )
+
+    write_ref(repository, "refs/heads/main", commit_id)
+
+    assert read_ref(repository, "refs/heads/main") == commit_id
+    assert resolve_head(repository) == commit_id
+    assert repository.head_path.read_text() == "ref: refs/heads/main\n"
+
+
 def test_create_read_update_and_list_branches(repository_with_commit):
     repository, commit_id = repository_with_commit
     create_branch(repository, "feature/topic", commit_id)

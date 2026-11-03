@@ -4,8 +4,8 @@
 
 This roadmap describes the planned sequence and current progress. The Core
 package foundation, canonical object serialization, SHA-1 hashing,
-zlib-compressed loose-object storage with integrity validation, non-bare
-repository initialization/discovery, Git-compatible trees, index-v2 staging,
+zlib-compressed loose-object storage with integrity validation, bare and
+non-bare repository initialization/discovery, Git-compatible trees, index-v2 staging,
 commit objects, loose branch refs, symbolic/detached `HEAD`, initial branch
 operations, revision resolution, history traversal, and their CLI commands
 are implemented. Read-only status and tracked-file diff comparisons, safe
@@ -57,6 +57,7 @@ The initial commands are:
 
 ```sh
 .venv/bin/cv init [path]
+.venv/bin/cv init --bare <path>
 .venv/bin/cv hash-object -w <file>
 .venv/bin/cv cat-file -t <object-id>
 .venv/bin/cv cat-file -s <object-id>
@@ -414,9 +415,10 @@ the forms are proposed.
 **Objective**
 
 Exchange refs and objects with local bare or non-bare repositories through a
-local filesystem transport and Git-compatible SHA-1 loose objects. This is a
-planning boundary, not an implemented feature. Fetch may read bare or non-bare
-repositories; push initially targets bare repositories only.
+local filesystem transport and Git-compatible SHA-1 loose objects. Repository
+capability modeling and bare initialization are implemented in Milestone 6A.1;
+remote management, fetch, push, and clone remain planned. Fetch may read bare
+or non-bare repositories; push initially targets bare repositories only.
 
 **Modules**
 

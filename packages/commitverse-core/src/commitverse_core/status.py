@@ -381,12 +381,13 @@ def collect_snapshot(
     repository: Repository, *, include_untracked: bool = True
 ) -> StatusSnapshot:
     """Read HEAD, index, and tracked worktree states without writing objects."""
+    repository.require_worktree()
     head, head_id = _head_snapshot(repository)
     index = _index_snapshot(repository)
     tracked_paths = set(head) | set(index)
     working_tree: dict[bytes, FileState] = {}
     working_payloads: dict[bytes, bytes] = {}
-    root = repository.root.resolve(strict=True)
+    root = repository.require_worktree().resolve(strict=True)
 
     for path in sorted(tracked_paths):
         result = _read_worktree_file(root, path)

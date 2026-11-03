@@ -1,6 +1,5 @@
 """Coordinate index, commit objects, identity configuration, and HEAD updates."""
 
-import configparser
 import os
 import re
 from dataclasses import dataclass
@@ -12,6 +11,7 @@ from commitverse_core.commits import (
     read_commit,
     write_commit,
 )
+from commitverse_core.config import ConfigurationError, ConfigurationDocument
 from commitverse_core.index import read_index
 from commitverse_core.refs import current_branch, resolve_head, update_head
 from commitverse_core.repository import Repository
@@ -36,14 +36,11 @@ class CommitResult:
 
 
 def _configured_identity(repository: Repository) -> tuple[str, str]:
-    config = configparser.ConfigParser(interpolation=None, strict=False)
     try:
-        config.read_string(
-            (repository.git_dir / "config").read_text(encoding="utf-8")
-        )
-        name = config.get("user", "name", fallback="")
-        email = config.get("user", "email", fallback="")
-    except (OSError, UnicodeError, configparser.Error) as error:
+        config = ConfigurationDocument.read(repository.config_path)
+        name = config.get("user", "name", default="") or ""
+        email = config.get("user", "email", default="") or ""
+    except ConfigurationError as error:
         raise CommitServiceError(f"cannot read repository identity configuration: {error}") from error
     return name, email
 

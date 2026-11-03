@@ -46,6 +46,7 @@ boundaries even if implementation uses a different internal naming scheme.
 | `cli` | Implemented repository/object, staging/tree, commit, branch, revision-resolution, history, status, and diff commands; parse arguments, map expected errors to diagnostics and exit codes, and delegate repository/object operations. |
 | `commands` | Adapt each user command to application services; validate command-specific options and format output. |
 | `repository` | Implemented initialization and parent-walking discovery for bare and non-bare SHA-1 repositories; provide shared Git-directory paths and capabilities without depending on the CLI or Hub. |
+| `config` | Implemented validated, line-preserving repository configuration reads and locked atomic mutations for bare and non-bare Git directories. Remote management and URL resolution are future work. |
 | `objects` | Implemented canonical object-byte serialization and hashing. |
 | `object_store` | Implemented by `objects.store`: write, read, locate, and verify content-addressed loose objects. |
 | `trees` | Implemented Git-compatible tree entry serialization, parsing, ordering, type validation, and nested tree construction from index entries. |
@@ -183,6 +184,16 @@ fetch may read either kind, but push targets must be bare and non-bare push
 targets must be rejected with an actionable error. Other Git interoperability
 requirements remain future work. A CommitVerse-specific
 extension must be explicit and must not change Git object or index formats.
+
+Repository configuration is handled by `config.py`. It supports section
+headers, quoted subsections, comments, blank lines, scalar keys, and repeated
+keys, while retaining unrelated line formatting and ordering. Mutations use
+an exclusively-created `config.lock`, validate the complete resulting
+document, fsync the lock contents, atomically replace the config, and fsync
+the parent directory. Unsupported syntax, malformed UTF-8, existing locks,
+and durability failures are reported; stale locks are never removed
+automatically. Remote management, credential handling, and relative URL
+resolution are not implemented.
 
 ## Object database and object relationships
 

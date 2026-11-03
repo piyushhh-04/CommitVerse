@@ -1,10 +1,11 @@
 """Initialize and discover bare and non-bare CommitVerse repositories."""
 
-import configparser
 import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+
+from commitverse_core.config import ConfigurationDocument
 
 _OBJECT_ID_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
 
@@ -150,11 +151,13 @@ def _repository_at(root: Path, git_dir: Path, *, created: bool) -> Repository:
 
 
 def _read_bare_config(config_path: Path) -> bool:
-    config = configparser.ConfigParser(interpolation=None, strict=False)
-    config.read_string(config_path.read_text(encoding="utf-8"))
-    if config.getint("core", "repositoryformatversion") != 0:
+    config = ConfigurationDocument.read(config_path)
+    if config.get("core", "repositoryformatversion") != "0":
         raise ValueError("unsupported repository format version")
-    return config.getboolean("core", "bare")
+    bare = config.get("core", "bare")
+    if bare not in {"true", "false"}:
+        raise ValueError("repository core.bare must be true or false")
+    return bare == "true"
 
 
 def _initialize_git_directory(git_dir: Path, *, bare: bool) -> None:
@@ -193,15 +196,13 @@ def _is_valid_git_directory(git_dir: Path, *, bare: bool) -> bool:
 
     try:
         head = head_path.read_text(encoding="ascii").strip()
-        config_text = config_path.read_text(encoding="utf-8")
-        config = configparser.ConfigParser(interpolation=None, strict=False)
-        config.read_string(config_text)
-        format_version = config.getint("core", "repositoryformatversion")
-        is_bare = config.getboolean("core", "bare")
-    except (OSError, UnicodeError, configparser.Error, ValueError):
+        config = ConfigurationDocument.read(config_path)
+        format_version = config.get("core", "repositoryformatversion")
+        is_bare = config.get("core", "bare")
+    except (OSError, UnicodeError, ValueError):
         return False
 
-    return format_version == 0 and is_bare == bare and _is_valid_head(head)
+    return format_version == "0" and is_bare == str(bare).lower() and _is_valid_head(head)
 
 
 def _is_valid_head(head: str) -> bool:

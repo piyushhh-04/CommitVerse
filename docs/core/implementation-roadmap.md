@@ -13,7 +13,9 @@ checkout/switching, merged-only branch deletion, merge-base discovery, and
 basic fast-forward/three-way merges are implemented for the documented subset.
 Unit, integration, and external Git compatibility tests cover these behaviors.
 Conflict resolution, recursive/octopus merges, and transport remain future
-work.
+work. Milestone 6A.2 adds validated, formatting-preserving repository
+configuration reads and lock-based atomic updates for bare and non-bare
+repositories; remote management remains future work.
 Each milestone depends on the earlier milestones listed below. Acceptance
 criteria are testable gates; passing them does not by itself imply full Git
 compatibility.
@@ -514,7 +516,7 @@ silently discards refs or rewrites unrelated configuration.
 ### Final phase sequence
 
 1. **6A.1 Repository capability model and bare initialization**
-2. **6A.2 Shared configuration abstraction**
+2. **6A.2 Shared configuration abstraction** (implemented)
 3. **6A.3 Compare-and-swap reference updates**
 4. **6A.4 Local transport and remote advertisement**
 5. **6A.5 Reachability traversal and fetch**

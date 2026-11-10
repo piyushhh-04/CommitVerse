@@ -72,11 +72,13 @@ tests exist.
   endpoints, and Neon PostgreSQL Free are planned only; they are not provisioned.
   Workers must not run the Python Git engine. Deployment requires separate
   verification of a compliant Python runtime and repository-storage solution.
-- Docker is mandatory infrastructure for reproducible environments and
-  containerized application services. Keep Docker configuration modular and
-  use Docker Compose when integrating FastAPI, PostgreSQL, and frontend
-  services. Docker complements local Core development; the standalone Python
-  engine does not need to run in Docker during initial development.
+- Local Hub database development and migration validation use a native
+  Homebrew PostgreSQL 17.11 installation on macOS/Apple Silicon. The verified
+  local service runs through `brew services`; database `commitverse` is owned
+  by role `commitverse_app` on `localhost:5432`, using Psycopg 3 and SQLAlchemy
+  2.x. This local setup does not imply a hosted deployment or change the strict
+  ₹0 policy. Docker is not required for current local development; it remains
+  an optional future tool for reproducible or containerized environments.
 - Record significant architectural choices in `docs/decisions/`.
 
 The architecture overview is in `docs/architecture/overview.md`.
@@ -89,18 +91,20 @@ Planned stack:
 - Core engine: Python standard library wherever practical; implement Git
   internals in CommitVerse.
 - Frontend: React and Tailwind CSS.
-- Infrastructure and tests: Docker and Pytest. Pytest is installed in Core's
-  development extra; Core's unit, integration, and external Git compatibility
-  suites cover the implemented object, tree, index, commit, ref, status, diff,
-  and CLI behavior.
+- Infrastructure and tests: Pytest; Docker remains an optional future tool.
+  Pytest is installed in Core's development extra; Core's unit, integration,
+  and external Git compatibility suites cover the implemented object, tree,
+  index, commit, ref, status, diff, and CLI behavior.
 - Future AI: PyTorch and Hugging Face Transformers.
 
 These are technology choices, not a declaration that planned application
 services or features are configured. FastAPI, Uvicorn, SQLAlchemy, Alembic,
-and Psycopg are dependencies of the Hub API foundation; the PostgreSQL server
-and frontend remain unprovisioned or planned. The initial schema revision is
-`40037b3edad7`; live PostgreSQL migration validation is pending. Pytest is
-installed as Core's and Hub API's development dependency. Do not introduce
+and Psycopg are dependencies of the Hub API foundation. PostgreSQL 17.11 has
+been verified as a local development database; the frontend and hosted
+infrastructure remain planned. Initial schema revision `40037b3edad7` was
+validated against this PostgreSQL server through upgrade, downgrade,
+re-upgrade, and current-revision checks. Pytest is installed as Core's and Hub
+API's development dependency. Do not introduce
 additional technologies without a clear project need and an explicit
 decision.
 
@@ -118,8 +122,8 @@ decision.
   `HUB_DATABASE_URL` is optional for startup and tests. Alembic loads that same
   variable only when a migration command is invoked. The shared declarative
   metadata and initial Alembic revision define nine Hub metadata tables.
-  Application workflows do not yet use these models; the local PostgreSQL
-  server has not been provisioned or verified.
+  Application workflows do not yet use these models. Local PostgreSQL 17.11
+  migration validation is complete; hosted database provisioning is not.
 - The scope of any future root-level `pyproject.toml` is undecided. It may
   configure workspace-wide tooling if needed, but must not replace the Core
   package's independently installable configuration.
@@ -142,16 +146,13 @@ decision.
   transport is not implemented. Checkout rollback covers tracked filesystem
   entries, the index, and refs, while reporting rollback failures rather than
   suppressing them.
-- Local Core development and tests must work without Docker. Docker complements
-  this workflow and is mandatory infrastructure for reproducible environments
-  and containerized application services.
-- Use modular Docker configuration. Use Docker Compose when integrating the
-  Hub's FastAPI backend, PostgreSQL, and frontend services; do not make a
-  containerized Core a prerequisite for its initial development.
+- Local Core and Hub development and tests do not require Docker. Docker and
+  Docker Compose remain optional future infrastructure tools; do not make a
+  containerized Core or Hub a prerequisite for current local development.
 - Document setup and execution commands as project workflows are established.
-- Hosting, deployment, PostgreSQL server provisioning, and cloud storage remain
-  deliberately deferred until their appropriate development stage. Database
-  connection and migration infrastructure do not provision a database or make
+- Hosted deployment and cloud storage remain deferred until their appropriate
+  development stage. Local PostgreSQL 17.11 is verified; database connection
+  and migration infrastructure do not provision hosted services or make the
   planned infrastructure available.
 
 ## Engineering conventions

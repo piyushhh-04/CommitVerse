@@ -48,7 +48,7 @@ work; this roadmap does not imply implementation.
 |---|---|---|---|---|
 | 1 | Architecture and policy approval; no code dependency | Preserve the accepted modular monolith, ownership/permission model, session design, Core boundary, lifecycle, and ₹0 constraints in docs. | Review diagrams, permission rules, deployment blocker, and Core capability claims. | Application scaffolding or deployment. |
 | 2 | Local backend foundation; depends on 1 — **implemented** | Hub API package, FastAPI application factory, validated configuration, `/api/v1/health`, request IDs, safe error mapping, and structured logging. | App construction, invalid config, health route, error redaction, and request logging tests pass. | Auth, database schema, Core operations. |
-| 3 | Database foundation and approved schema; depends on 2 — **implemented** | Add optional PostgreSQL settings, bounded SQLAlchemy engine/session utilities, lifecycle management, database diagnostic, nine approved metadata models, and initial Alembic revision `40037b3edad7`. | URL validation/redaction, constraints and relationships, migration discovery, temporary-database upgrade/downgrade/re-upgrade, metadata comparison, no startup migration, and full Hub/Core suites. SQLite validation passed; live PostgreSQL migration and autogenerate verification remain pending. | Authentication/authorization workflows, application APIs, cloud provisioning, or Git object storage in PostgreSQL. |
+| 3 | Database foundation and approved schema; depends on 2 — **implemented and locally PostgreSQL-verified** | Add optional PostgreSQL settings, bounded SQLAlchemy engine/session utilities, lifecycle management, database diagnostic, nine approved metadata models, and initial Alembic revision `40037b3edad7`. | URL validation/redaction, constraints and relationships, migration discovery, SQLite test-database upgrade/downgrade/re-upgrade and metadata comparison, no startup migration, and full Hub/Core suites passed. Against native Homebrew PostgreSQL 17.11 on macOS/Apple Silicon M2, verified SQLAlchemy connectivity to `commitverse` as `commitverse_app`, all nine application tables plus `alembic_version`, upgrade, downgrade to base, re-upgrade, and `alembic current` at `40037b3edad7 (head)`. | Authentication/authorization workflows, application APIs, cloud provisioning, or Git object storage in PostgreSQL. |
 | 4 | Accounts and authentication; depends on 3 | Add users, password hashing, opaque session issue/lookup/revoke, login/logout, CSRF and auth dependencies. | Password verification/upgrade, expiry/revocation, cookie flags, CSRF, rate-limit, and generic-error tests. | OAuth, JWT, social login. |
 | 5 | Profiles; depends on 4 | Add profile model/service/API and username rules. | Case-insensitive uniqueness, validation, privacy, and authorization tests. | Avatar storage service. |
 | 6 | Organizations and repository metadata; depends on 3–5 | Add organizations/memberships, repositories, exclusive owner constraint, visibility, opaque storage key, and lifecycle states. | FK/CHECK/unique/index tests; state-transition and ownership tests. | Teams and complex inherited permissions. |
@@ -89,6 +89,10 @@ work; this roadmap does not imply implementation.
 - **Deployment blocker:** no verified, approved zero-cost host currently
   supports the complete Python FastAPI application and filesystem-backed Core
   repositories. This blocks deployment readiness, not local development.
+- **Local database verification:** PostgreSQL 17.11 is validated for local
+  development via native Homebrew installation on macOS/Apple Silicon. Docker
+  is not required for this setup and remains an optional future infrastructure
+  tool.
 - **Protocol gap:** local transport and library operations are not network Git
   protocols. Normal Git clients cannot yet clone/fetch/push to Hub.
 - **Cross-store lifecycle:** database and filesystem partial failure requires

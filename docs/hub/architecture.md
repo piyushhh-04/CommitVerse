@@ -12,9 +12,10 @@ The initial architecture is a **modular monolith**: one Python/FastAPI
 application, one PostgreSQL metadata database, a separately stored repository
 filesystem, and a React/Tailwind web client. REST endpoints are versioned under
 `/api/v1`. The API package and optional SQLAlchemy/Psycopg/Alembic foundation
-and initial metadata models/migration exist. These choices do not imply that a
-PostgreSQL server, application workflows, runtime services, or deployment
-configuration exist.
+and initial metadata models/migration exist. Local PostgreSQL 17.11 migration
+validation has been completed against a native Homebrew installation on
+macOS/Apple Silicon M2. Application workflows, hosted runtime services, and
+deployment configuration remain unimplemented or unverified.
 
 ## Goals and boundaries
 
@@ -218,8 +219,10 @@ incurring charges. AWS, Render, Fly.io, Railway, and other excluded providers
 must not be recommended; Cloudflare R2 remains deferred unless a genuinely
 no-billing arrangement is possible.
 
-Docker/Compose may support reproducible local development when introduced; it
-does not solve the hosting blocker and no deployment configuration is implied.
+Docker is not required for the current local development setup, which uses
+native Homebrew PostgreSQL. Docker/Compose remain optional future tools for
+reproducible or containerized environments; they do not solve the hosting
+blocker and no deployment configuration is implied.
 
 ## Decisions and limitations
 
@@ -229,8 +232,8 @@ does not solve the hosting blocker and no deployment configuration is implied.
   adapter.
 - **Not implemented:** authentication and authorization workflows, frontend,
   deployment, and repository lifecycle orchestration. The API foundation,
-  metadata models, and initial schema migration exist; no live PostgreSQL
-  server has been verified.
+  metadata models, and initial schema migration exist. Local PostgreSQL 17.11
+  migration validation is complete; no hosted deployment has been verified.
 - **Not available from Core:** network Git protocols, packfiles, and ordinary
   remote-client interoperability.
 - **Operational limitations to solve:** DB/filesystem partial failure,

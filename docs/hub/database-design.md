@@ -6,16 +6,50 @@ This approved initial Hub PostgreSQL schema is implemented in SQLAlchemy
 models and Alembic revision `40037b3edad7`
 ([initial migration](../../apps/hub-api/migrations/versions/40037b3edad7_create_initial_hub_schema.py)).
 It defines metadata only; PostgreSQL owns no CommitVerse Core repository
-objects, refs, or bare repository files. A live PostgreSQL server and
-application workflows have not been verified or implemented.
+objects, refs, or bare repository files. Live PostgreSQL migration validation
+is complete against the local PostgreSQL 17.11 development server. Application
+workflows have not been implemented.
 
 The migration creates `users`, `user_profiles`, `organizations`,
 `organization_memberships`, `repositories`,
 `repository_user_permissions`, `invitations`, `sessions`, and `audit_events`.
 The models share `Base.metadata`; invitations are represented for schema
 consistency, but invitation workflows remain post-MVP. The migration was
-upgraded, downgraded, re-upgraded, and compared to metadata on a temporary
-SQLite database. PostgreSQL-specific migration execution remains pending.
+successfully upgraded, downgraded to `base`, and upgraded again against
+PostgreSQL 17.11; `alembic current` confirmed `40037b3edad7 (head)`. The schema
+was also exercised on a temporary SQLite database for isolated tests; that
+test coverage is distinct from, and does not replace, the completed live
+PostgreSQL verification.
+
+## Verified local PostgreSQL setup
+
+The verified development environment is macOS on Apple Silicon M2, with
+PostgreSQL 17.11 installed natively through Homebrew and managed by
+`brew services`. The database is `commitverse`, owned by `commitverse_app`,
+at `localhost:5432`, accessed through Psycopg 3 and SQLAlchemy 2.x. Docker is
+not required for this local setup; it remains an optional future infrastructure
+tool. This verification does not imply cloud deployment readiness.
+
+Configure `HUB_DATABASE_URL` in the local shell using a locally managed,
+URL-encoded password; never store the real URL in documentation, source
+control, or an `.env` file. A placeholder example is:
+
+```sh
+export HUB_DATABASE_URL='postgresql+psycopg://commitverse_app:<URL-encoded-password>@localhost:5432/commitverse'
+```
+
+Run migration commands from `apps/hub-api/`:
+
+```sh
+../../.venv/bin/alembic -c alembic.ini upgrade head
+../../.venv/bin/alembic -c alembic.ini downgrade base
+../../.venv/bin/alembic -c alembic.ini upgrade head
+../../.venv/bin/alembic -c alembic.ini current
+```
+
+The verified current revision is `40037b3edad7 (head)`. Never commit
+credentials or change PostgreSQL authentication settings as part of this
+documentation.
 
 Use SQLAlchemy for persistence and Alembic for versioned schema migrations.
 Use UUID primary keys for externally addressable entities. Use database

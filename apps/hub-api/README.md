@@ -91,18 +91,34 @@ remain in server logs.
 
 ## Local PostgreSQL and migrations
 
-Use an installed local PostgreSQL server; no Docker or cloud database is
-required. Create a dedicated local development database and provide its URL
-only in your shell environment. For example, from the repository root:
+The verified local development setup uses PostgreSQL 17.11 installed natively
+with Homebrew on macOS/Apple Silicon M2. Start the Homebrew service and create
+a dedicated database and role if they do not already exist. For a standard
+versioned Homebrew formula:
 
 ```sh
-export HUB_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:5432/commitverse_hub'
+brew install postgresql@17
+brew services start postgresql@17
+createuser --pwprompt commitverse_app
+createdb --owner=commitverse_app commitverse
 ```
 
-Do not put real credentials in source control or `alembic.ini`. SQLAlchemy
-accepts URL-encoded credentials. The connection pool is limited to two
-connections with no overflow; connection, pool-wait, and statement timeouts
-bound the diagnostic query.
+The verified database is `commitverse`, owned by `commitverse_app`, at
+`localhost:5432`. Configure `HUB_DATABASE_URL` in the local shell with the
+URL-encoded password, for example:
+
+```sh
+export HUB_DATABASE_URL='postgresql+psycopg://commitverse_app:<URL-encoded-password>@localhost:5432/commitverse'
+```
+
+This is a placeholder only. Never put the real password or URL in source
+control, documentation, or an `.env` file. No PostgreSQL authentication
+settings were changed for this documentation. Docker is not required for the
+current local setup; it remains an optional future infrastructure tool. No
+cloud database is needed for local development.
+
+The connection pool is limited to two connections with no overflow;
+connection, pool-wait, and statement timeouts bound the diagnostic query.
 
 Run Alembic commands from `apps/hub-api/`:
 
@@ -121,7 +137,11 @@ application startup. The schema contains no authentication or authorization
 workflows. Future model changes require reviewed Alembic revisions; do not use
 `Base.metadata.create_all()` as a substitute.
 `alembic check` compares the connected schema with model metadata and requires
-the configured database URL.
+the configured database URL. Migration `40037b3edad7` was verified on
+PostgreSQL 17.11: SQLAlchemy connected to `commitverse` as `commitverse_app`,
+PostgreSQL reported all nine application tables plus `alembic_version`, and
+Alembic upgrade, downgrade to `base`, re-upgrade, and `current` succeeded.
+The verified revision is `40037b3edad7 (head)`.
 
 The engine and synchronous session factory are application-lifecycle
 resources. Use `transactional_session` only where the caller explicitly owns a
@@ -143,14 +163,15 @@ it requires neither a running PostgreSQL server nor external network access.
 Schema tests apply, downgrade, and re-apply the migration against a temporary
 SQLite database, then compare SQLAlchemy metadata and inspect indexes. This
 does not claim PostgreSQL interoperability. SQLite/Alembic cannot reflect
-expression-based indexes, so their created SQL is checked directly.
+expression-based indexes, so their created SQL is checked directly. These
+isolated SQLite tests complement, but do not substitute for, the completed
+PostgreSQL migration verification above.
 
 ## Current limitations
 
 The persistence schema does not implement registration/login, password
 hashing, session issuance or middleware, authorization workflows,
 organization management, repository operations, the Core adapter, network
-Git protocols, a frontend, or deployment. A live PostgreSQL server is not
-bundled or provisioned, so live PostgreSQL migration validation remains
-pending. Database provisioning remains local/deferred under the project's
-strict ₹0 policy; this package does not establish cloud deployment readiness.
+Git protocols, a frontend, or deployment. Local PostgreSQL migration
+verification does not establish cloud deployment readiness; hosting and
+repository storage remain subject to the project's strict ₹0 policy.

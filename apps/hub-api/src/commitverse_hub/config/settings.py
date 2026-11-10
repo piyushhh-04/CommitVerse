@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Mapping
 
 from sqlalchemy.engine import make_url
@@ -50,6 +51,9 @@ class Settings:
         "https://127.0.0.1:3000",
         "https://127.0.0.1:5173",
     )
+    repository_storage_root: Path = field(
+        default_factory=lambda: Path.home() / ".commitverse" / "repositories"
+    )
 
     def __post_init__(self) -> None:
         if not self.application_name.strip() or len(self.application_name) > 120:
@@ -89,8 +93,18 @@ class Settings:
         for origin in self.csrf_allowed_origins:
             if not isinstance(origin, str) or not validate_request_origin(origin, set(self.csrf_allowed_origins)):
                 raise ValueError(f"CSRF allow-list contains an invalid origin: {origin!r}.")
+        storage_root = Path(self.repository_storage_root).expanduser()
+        if (
+            not storage_root.is_absolute()
+            or ".." in storage_root.parts
+            or len(storage_root.parts) < 3
+        ):
+            raise ValueError(
+                "HUB_REPOSITORY_STORAGE_ROOT must be an absolute dedicated directory path."
+            )
         object.__setattr__(self, "application_name", self.application_name.strip())
         object.__setattr__(self, "log_level", normalized_log_level)
+        object.__setattr__(self, "repository_storage_root", storage_root)
 
     @classmethod
     def from_environment(
@@ -127,4 +141,10 @@ class Settings:
             database_url=values.get("HUB_DATABASE_URL"),
             auth_cookie=AuthCookieSettings.from_environment(values),
             csrf_allowed_origins=parsed_origins,
+            repository_storage_root=Path(
+                values.get(
+                    "HUB_REPOSITORY_STORAGE_ROOT",
+                    str(Path.home() / ".commitverse" / "repositories"),
+                )
+            ).expanduser(),
         )

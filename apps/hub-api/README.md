@@ -8,19 +8,24 @@ logging, an optional PostgreSQL persistence foundation, and secure browser
 session authentication for the first-party Hub client. The current API includes
 registration, login, logout, and current-user resolution flows, with
 server-side session tokens and an exact-origin allowlist for state-changing
-requests.
+requests. Authenticated users can create, list, inspect, update, and delete
+their own personal repositories; lifecycle operations initialize or remove
+bare repositories through CommitVerse Core.
 
 ## Requirements
 
 - Python 3.11 or newer
 - The repository-root `.venv`
-- A local PostgreSQL server only when using database diagnostics or migrations
+- The independently installed CommitVerse Core package for repository endpoints
+- A configured PostgreSQL database for authentication/repository routes,
+  database diagnostics, and migrations
 
 From the repository root, install the package and its test dependencies into
 the existing environment:
 
 ```sh
 .venv/bin/python -m pip install -e "./apps/hub-api[dev]"
+.venv/bin/python -m pip install -e "./packages/commitverse-core"
 ```
 
 ## Run locally
@@ -94,6 +99,7 @@ non-database tests.
 | `HUB_SESSION_COOKIE_PATH` | `/` | Cookie path. |
 | `HUB_SESSION_COOKIE_DOMAIN` | unset | Optional explicit host scope; wildcard domains are rejected. |
 | `HUB_SESSION_COOKIE_MAX_AGE` | `2592000` | Cookie lifetime in seconds, limited to one year. |
+| `HUB_REPOSITORY_STORAGE_ROOT` | `~/.commitverse/repositories` | Dedicated private directory for bare repositories; must be outside the source tree. |
 
 Invalid values fail application creation with a clear configuration error.
 Unexpected HTTP errors always return a generic response; exception details
@@ -143,9 +149,10 @@ Migration `40037b3edad7` (`create_initial_hub_schema`) creates the initial
 schema for users, profiles, organizations, organization memberships,
 repositories, direct repository permissions, invitations, sessions, and
 audit events. Migration `upgrade`/`downgrade` is explicit and is never run by
-application startup. The schema contains no authentication or authorization
-workflows. Future model changes require reviewed Alembic revisions; do not use
-`Base.metadata.create_all()` as a substitute.
+application startup. The schema defines metadata and constraints; the
+authentication and personal-repository workflows are implemented in Hub
+application code. Future model changes require reviewed Alembic revisions; do
+not use `Base.metadata.create_all()` as a substitute.
 `alembic check` compares the connected schema with model metadata and requires
 the configured database URL. Migration `40037b3edad7` was verified on
 PostgreSQL 17.11: SQLAlchemy connected to `commitverse` as `commitverse_app`,
@@ -170,12 +177,40 @@ schemas. Session persistence helpers participate in the caller's SQLAlchemy
 transaction and do not commit independently.
 
 The API now implements first-party browser registration, login, logout, and
-current-user resolution under `/api/v1/auth` and `/api/v1/me`. Auth routes
-require an allow-listed `Origin` and a valid `X-CSRF-Token` when a session is
-active; raw session tokens are stored only as hashed values in the database.
+current-user resolution under `/api/v1/auth` and `/api/v1/me`. Registration
+requires an allow-listed `Origin`; login and logout also require a valid
+session-bound `X-CSRF-Token` when a session cookie is present. Raw session
+tokens are stored only as hashes in the database.
 CORS configuration is not a substitute for CSRF validation. Active-session
 lookup rejects disabled accounts; account disable workflows must also revoke
 the account's existing sessions.
+
+## Personal repositories
+
+The current repository API is owner-only and stores metadata separately from
+Core repository contents:
+
+- `POST /api/v1/repositories` creates a personal bare repository.
+- `GET /api/v1/repositories` lists the authenticated user's ready repositories
+  (`limit` 1–100 and bounded `offset`).
+- `GET /api/v1/repositories/{repository_id}` returns owner-only metadata.
+- `PATCH /api/v1/repositories/{repository_id}` updates name, description, or
+  visibility.
+- `DELETE /api/v1/repositories/{repository_id}` removes the verified bare
+  repository and retains a metadata tombstone.
+
+Every route requires a valid active browser session. Mutations also require
+the exact allow-listed `Origin` and a session-bound `X-CSRF-Token`. Responses
+never include a filesystem path or storage key. `public` is currently only a
+metadata setting; anonymous reads and repository browsing are not implemented.
+
+The storage root is created with private permissions when needed. Repository
+creation publishes a verified Core bare repository from a temporary sibling
+directory. Deletion marks metadata `deleting` before removing storage; failed
+steps remain retryable. Database and filesystem operations are not atomic, and
+the lifecycle lock coordinates only one process. Do not run multiple Hub
+workers for repository lifecycle operations until cross-process locking and
+recovery are implemented and tested.
 
 ## Tests
 
@@ -189,15 +224,19 @@ PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest \
 The default test suite uses an in-process HTTP client and injected resources;
 it requires neither a running PostgreSQL server nor external network access.
 Authentication and session tests use isolated SQLite databases by default.
-Set `HUB_TEST_DATABASE_URL` to run the PostgreSQL session-lifecycle test; it
-creates a unique schema in a transaction and rolls the entire schema back.
-This test has been run against the verified local PostgreSQL 17.11 database.
+Set `HUB_TEST_DATABASE_URL` to run the PostgreSQL session-persistence test and
+repository lifecycle test against isolated schemas/resources. The repository
+integration test exercises create, list/detail, update, Core bare-repository
+verification, and delete, then rolls back its schema transaction. Duplicate
+names and retry behavior are covered by isolated SQLite tests. Do not claim
+PostgreSQL integration verification when these tests are skipped.
 For example, after configuring `HUB_DATABASE_URL` for the local server:
 
 ```sh
 HUB_TEST_DATABASE_URL="$HUB_DATABASE_URL" PYTHONDONTWRITEBYTECODE=1 \
   .venv/bin/python -m pytest -p no:cacheprovider \
-  apps/hub-api/tests/test_auth.py -q
+  apps/hub-api/tests/test_auth.py \
+  apps/hub-api/tests/test_repositories.py -q
 ```
 
 Schema tests apply, downgrade, and re-apply the migration against a temporary
@@ -208,10 +247,9 @@ substitute for, the completed PostgreSQL migration verification above.
 
 ## Current limitations
 
-The persistence schema and authentication utilities do not implement
-registration/login/logout, password-reset or email-verification workflows,
-session middleware or principal resolution, authorization workflows,
-organization management, repository operations, the Core adapter, network Git
-protocols, a frontend, or deployment. Local PostgreSQL validation does not
-establish cloud deployment readiness; hosting and repository storage remain
-subject to the project's strict ₹0 policy.
+Organization and collaborator workflows, anonymous public reads, repository
+browsing, automated reconciliation, cross-process repository coordination,
+network Git protocols, a frontend, and deployment are not implemented. There
+are no configured rate limits or production backup/restore procedures. Local
+PostgreSQL validation does not establish cloud deployment readiness; hosting
+and repository storage remain subject to the project's strict ₹0 policy.

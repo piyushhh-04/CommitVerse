@@ -14,14 +14,14 @@ collaboration platform:
   implemented under `apps/hub-api/`: a Python/FastAPI modular monolith with
   validated configuration, optional SQLAlchemy/Psycopg resources, Alembic
   infrastructure, nine approved metadata models and their initial migration,
-  health diagnostics, safe errors, request IDs, structured logging, and
-  authentication security primitives (Argon2id password hashing, opaque
-  session-token utilities, server-side session persistence, secure-cookie
-  configuration, and session-bound CSRF utilities). Registration/login/logout
-  APIs, authorization workflows, repository hosting, and collaboration
-  features remain unimplemented. Its accepted architecture plans a
-  React/Tailwind frontend, opaque server-side browser sessions, a filesystem
-  repository store during development, and a dedicated Core adapter.
+  health diagnostics, safe errors, request IDs, structured logging, account
+  registration/login/logout and current-user APIs using opaque server-side
+  sessions, plus authenticated owner-only personal repository metadata and
+  lifecycle APIs backed by real Core bare repositories on the local filesystem.
+  Organization, collaborator, invitation, browsing, and frontend workflows
+  remain unimplemented. The filesystem lifecycle is recoverable but uses only
+  process-local coordination; it is not ready for multi-worker or hosted
+  deployment.
 - **CommitVerse AI:** a future AI developer assistant.
 
 Core has an installable Python package with canonical object serialization,
@@ -40,9 +40,9 @@ filesystem advertisement, bounded loose-object fetch, fast-forward-only push
 to bare repositories, and safe local clone are implemented as library
 operations, not `cv` CLI commands. Git-over-HTTP, Git-over-SSH, and ordinary
 network-based Git client interoperability are not implemented. Treat Hub
-features beyond its implemented API/database foundation, AI, and other
-unimplemented functionality as plans until working implementations and their
-tests exist.
+features beyond its implemented API, authentication, and owner-only
+repository-management workflows, AI, and other unimplemented functionality as
+plans until working implementations and their tests exist.
 
 ## Architecture
 

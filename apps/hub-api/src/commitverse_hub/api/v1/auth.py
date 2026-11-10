@@ -9,7 +9,7 @@ from datetime import timedelta
 from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from commitverse_hub.auth.cookies import clear_session_cookie, set_session_cookie
 from commitverse_hub.auth.csrf import (
@@ -158,7 +158,8 @@ def _user_payload(user: User, profile: UserProfile | None = None) -> AuthUserRes
     )
 
 
-def _require_authenticated_session(request: Request) -> tuple[User, str]:
+def get_authenticated_user(request: Request) -> User:
+    """Resolve the current active user from the existing server-side session."""
     settings = _cookie_settings(request)
     token = request.cookies.get(settings.name)
     if not token:
@@ -174,7 +175,15 @@ def _require_authenticated_session(request: Request) -> tuple[User, str]:
         user = db_session.get(User, active_session.user_id)
         if user is None or user.account_state != "active":
             raise HubApplicationError(401, "authentication_failed", "Authentication failed.")
-        return user, token
+        return user
+
+
+def require_authenticated_csrf(request: Request) -> None:
+    """Require the current authenticated session's CSRF token and allow-listed origin."""
+    token = request.cookies.get(_cookie_settings(request).name)
+    if not token:
+        raise HubApplicationError(401, "authentication_required", "Authentication required.")
+    _require_origin(request, require_csrf_for_session=token)
 
 
 @router.post("/register", response_model=AuthUserResponse)
@@ -314,18 +323,8 @@ async def login_account(
 async def me(request: Request) -> AuthUserResponse:
     """Return the authenticated user identity from the current browser session."""
     factory = _session_factory(request)
-    settings = _cookie_settings(request)
-    token = request.cookies.get(settings.name)
-    if not token or not validate_session_token(token):
-        raise HubApplicationError(401, "authentication_failed", "Authentication failed.")
-
+    user = get_authenticated_user(request)
     with factory() as db_session:
-        active_session = get_active_session(db_session, token)
-        if active_session is None:
-            raise HubApplicationError(401, "authentication_failed", "Authentication failed.")
-        user = db_session.get(User, active_session.user_id)
-        if user is None or user.account_state != "active":
-            raise HubApplicationError(401, "authentication_failed", "Authentication failed.")
         profile = db_session.scalar(select(UserProfile).where(UserProfile.user_id == user.id))
         return _user_payload(user, profile)
 
@@ -339,15 +338,20 @@ async def logout_account(request: Request, response: Response) -> AuthStatusResp
         _require_origin(request, require_csrf_for_session=token)
     else:
         _require_origin(request)
-    clear_session_cookie(response, settings)
 
     if not token or not validate_session_token(token):
+        clear_session_cookie(response, settings)
         return AuthStatusResponse()
 
     factory = _session_factory(request)
     try:
         with transactional_session(factory) as db_session:
             revoke_session(db_session, token)
-    except Exception:
-        return AuthStatusResponse()
+    except SQLAlchemyError as exc:
+        raise HubApplicationError(
+            503,
+            "session_revocation_failed",
+            "The session could not be revoked.",
+        ) from exc
+    clear_session_cookie(response, settings)
     return AuthStatusResponse()

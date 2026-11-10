@@ -13,12 +13,12 @@ CommitVerse is organized as a modular monorepo with three product areas:
 
 1. **CommitVerse Core** implements the Git-like version control engine and
    repository operations in Python.
-2. **CommitVerse Hub** is the planned repository hosting and collaboration
-   platform.
+2. **CommitVerse Hub** provides a local-development FastAPI foundation,
+   browser-session authentication, and owner-only personal repository
+   management integrated with Core.
 3. **CommitVerse AI** is the planned AI-powered developer assistant layer.
 
-The implemented work is in Core. Hub has an accepted modular-monolith
-architecture plan but no working runtime integration or application code. AI
+Core and Hub API code are implemented within their documented limits. AI
 remains future scope.
 
 Core is an independently installable Python package under
@@ -110,17 +110,18 @@ Supported commands in the current implementation:
 
 ## Communication boundaries
 
-Hub is expected to coordinate hosting and collaboration workflows with Core
-through defined repository interfaces, but no Hub API or integration is present
-in this repository.
+Hub coordinates personal repository metadata and bare-repository lifecycle
+workflows with Core through a narrow in-process adapter. The current API is
+owner-only: organization/collaborator authorization, repository browsing, and
+network Git operations are not implemented.
 
-The accepted initial Hub design is a Python/FastAPI modular monolith with a
-React/Tailwind frontend, PostgreSQL application metadata, SQLAlchemy, Alembic,
-REST under `/api/v1`, opaque server-side browser sessions, local filesystem
-repository storage during development, and a dedicated Core adapter. The
-architecture is documented in [`../hub/architecture.md`](../hub/architecture.md),
-with proposed schema, security, and roadmap in the linked Hub documents. These
-documents describe plans; Hub remains unimplemented.
+The Hub design is a Python/FastAPI modular monolith with a React/Tailwind
+frontend, PostgreSQL application metadata, SQLAlchemy, Alembic, REST under
+`/api/v1`, opaque server-side browser sessions, local filesystem repository
+storage during development, and a dedicated Core adapter. The architecture is
+documented in [`../hub/architecture.md`](../hub/architecture.md), with schema,
+security, and roadmap details in the linked Hub documents. These documents
+distinguish the working local API from unimplemented product scope.
 
 AI is a future product capability. It has no implemented data access model,
 repository API, or runtime integration in the current codebase.
@@ -138,7 +139,8 @@ repository API, or runtime integration in the current codebase.
 ## Planned technology boundaries
 
 - **Core:** Python standard library wherever practical.
-- **Hub:** Python, FastAPI, PostgreSQL, SQLAlchemy, and Pydantic are planned.
+- **Hub:** Python, FastAPI, PostgreSQL, SQLAlchemy, and Pydantic are used by
+  the local API foundation.
 - **Frontend:** React and Tailwind CSS are planned.
 - **Infrastructure:** Docker is mandatory infrastructure for reproducible
   environments and later service composition, but the standalone Core engine

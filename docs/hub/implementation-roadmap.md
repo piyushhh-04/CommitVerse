@@ -3,11 +3,12 @@
 ## Status
 
 This roadmap sequences local Hub development without changing Core's completed
-scope. Milestones 2 and 3, the backend and database foundations, are
-implemented. Milestone 4's reusable authentication security primitives are
-implemented; authentication workflows and subsequent milestones remain
-planned. Each milestone should be independently reviewable and tested before
-the next dependent milestone begins.
+scope. Milestones 2–4 (backend, database, and authentication) and milestone 6
+(owner-only personal repository management integrated with Core) are
+implemented locally. Profile editing, organizations, collaborator
+authorization, repository browsing, frontend, and deployment remain planned.
+Each milestone should be independently reviewable and tested before the next
+dependent milestone begins.
 
 ## Release scope
 
@@ -15,12 +16,12 @@ the next dependent milestone begins.
 
 - Local FastAPI modular-monolith foundation and `/api/v1` REST structure.
 - PostgreSQL metadata schema with SQLAlchemy and Alembic.
-- Accounts, profiles, and revocable opaque browser sessions.
-- Personal repository metadata and organization-owned repository metadata.
-- Public/private visibility and direct collaborator grants.
-- Bare repository creation and lifecycle through the Core adapter.
-- Authorization before Core access.
-- Supported metadata and repository browsing APIs.
+- Account registration/login/logout and revocable opaque browser sessions.
+- Authenticated owner-only personal repository metadata and Core-backed
+  lifecycle operations.
+- Public/private metadata (public anonymous access is not implemented).
+- Organization-owned repositories, direct collaborator grants, repository
+  browsing, and frontend remain future work.
 - Basic React authentication, dashboard, repository list, and repository
   overview.
 
@@ -51,20 +52,19 @@ work; this roadmap does not imply implementation.
 | 1 | Architecture and policy approval; no code dependency | Preserve the accepted modular monolith, ownership/permission model, session design, Core boundary, lifecycle, and ₹0 constraints in docs. | Review diagrams, permission rules, deployment blocker, and Core capability claims. | Application scaffolding or deployment. |
 | 2 | Local backend foundation; depends on 1 — **implemented** | Hub API package, FastAPI application factory, validated configuration, `/api/v1/health`, request IDs, safe error mapping, and structured logging. | App construction, invalid config, health route, error redaction, and request logging tests pass. | Auth, database schema, Core operations. |
 | 3 | Database foundation and approved schema; depends on 2 — **implemented and locally PostgreSQL-verified** | Add optional PostgreSQL settings, bounded SQLAlchemy engine/session utilities, lifecycle management, database diagnostic, nine approved metadata models, and initial Alembic revision `40037b3edad7`. | URL validation/redaction, constraints and relationships, migration discovery, SQLite test-database upgrade/downgrade/re-upgrade and metadata comparison, no startup migration, and full Hub/Core suites passed. Against native Homebrew PostgreSQL 17.11 on macOS/Apple Silicon M2, verified SQLAlchemy connectivity to `commitverse` as `commitverse_app`, all nine application tables plus `alembic_version`, upgrade, downgrade to base, re-upgrade, and `alembic current` at `40037b3edad7 (head)`. | Authentication/authorization workflows, application APIs, cloud provisioning, or Git object storage in PostgreSQL. |
-| 4 | Authentication security foundation; depends on 3 — **primitives implemented, workflows planned** | Add reusable Argon2id password utilities, opaque 256-bit session-token helpers, server-side session create/lookup/revoke, validated secure-cookie settings, and session-bound CSRF/Origin utilities. | Password/rehash and malformed-hash tests; token entropy/hash-only persistence; session expiry/revocation and caller-owned transaction tests; production cookie constraints; CSRF binding and Origin rejection. SQLite tests and an isolated PostgreSQL 17.11 session-lifecycle test passed. | Registration/login/logout routes, password reset, email verification, OAuth, JWT, MFA, and authorization workflows. |
-| 5 | Profiles; depends on 4 | Add profile model/service/API and username rules. | Case-insensitive uniqueness, validation, privacy, and authorization tests. | Avatar storage service. |
-| 6 | Organizations and repository metadata; depends on 3–5 | Add organizations/memberships, repositories, exclusive owner constraint, visibility, opaque storage key, and lifecycle states. | FK/CHECK/unique/index tests; state-transition and ownership tests. | Teams and complex inherited permissions. |
-| 7 | Core adapter; depends on 6 and existing Core package | Add narrow in-process adapter, typed Hub outcomes, and Core exception mapping. | Adapter tests against temporary bare repos; assert Core imports without Hub dependencies. | System Git, GitPython, external Git engine, network protocol. |
-| 8 | Bare repository provisioning/lifecycle; depends on 6–7 | Implement `provisioning -> ready/error` and `deleting` workflows, safe publication, cleanup, and reconciliation. | Failure injection at each DB/filesystem step; path traversal/symlink tests; idempotency and recovery tests. | Atomic DB/filesystem transaction claims; cloud storage. |
-| 9 | Authorization and direct grants; depends on 4, 6, 8 | Add policy service, direct repository grants, and organization owner/admin/member rules. | Matrix tests for public/private, owner/admin/member, direct roles, revocation, and deny-before-adapter. | Invitation workflows, teams, and broad policy customization. |
-| 10 | Repository metadata/browse API; depends on 7–9 | Add authorized `/api/v1` repository list/detail and supported Core-backed browse operations. | API tests for status codes, redaction, authorization-first access, malformed objects, bounded work, and no event-loop blocking. | Git-over-HTTP/SSH, ordinary remote Git clients. |
-| 11 | Frontend foundation; depends on API contract from 2/10 | Add React/Tailwind app shell, routing, API client, accessible shared controls. | Production build, route checks, API client tests, accessibility and responsive checks. | Deployment configuration and excessive global state. |
-| 12 | Authentication/dashboard UI; depends on 4–5 and 11 | Implement sign-in/up, session bootstrap/logout, profile and dashboard. | Browser tests for session expiry, form errors, loading/empty/error states, keyboard navigation. | Social login and unrelated product screens. |
-| 13 | Repository UI; depends on 8–10 and 11 | Implement repository list, creation, and overview screens. | Browser/API integration tests for owner/visibility/permission combinations and lifecycle errors. | Network Git clone/fetch/push controls. |
-| 14 | MVP security/reliability audit; depends on 1–13 | Review threat model, authorization, concurrency, lifecycle recovery, logs, data retention and backup/restore. | Explicit path/symlink, contention, failure-injection, recovery, redaction, and restore exercises; resolve high-risk findings before release. | Unsupported security guarantees. |
-| 15 | Organization invitations; post-MVP, depends on 4, 6, 9 | Add scoped organization invitations and acceptance/revocation workflows using hashed tokens. | Expiry, replay, email match, authorization, duplicate pending invitation, and concurrent acceptance tests. | Teams and complex permission inheritance. |
-| 16 | Network Git protocol; separate post-MVP project | Design and implement authenticated network protocol support using Core, including pack/receive limits and isolation. | Protocol interoperability, auth-before-repository access, malformed input/resource exhaustion, concurrency and compatibility tests. | Delegating to GitPython/system Git or assuming local transport is network transport. |
-| 17 | Zero-cost deployment readiness; depends on verified MVP and hosting review | Verify a compliant full Python runtime and filesystem-backed repository storage solution, quotas, backups, and recovery before deployment. | Written evidence that no billing activation/payment/trials/pay-as-you-go are required; quota exhaustion safely pauses/degrades. | Deployment until the Python hosting/storage blocker is resolved. |
+| 4 | Authentication; depends on 3 — **implemented** | Implement Argon2id registration/login, opaque server-side sessions, current-user resolution, logout/revocation, secure cookies, and session-bound CSRF/Origin checks. | Password, hash-only persistence, session expiry/revocation, generic login failure, cookie, CSRF, SQLite, and PostgreSQL integration tests. | Password reset, email verification, OAuth, JWT, MFA, and rate limiting. |
+| 5 | Profile editing; depends on 4 | Add profile update service/API and username rules. | Case-insensitive uniqueness, validation, privacy, and authorization tests. | Avatar storage service. |
+| 6 | Personal repository management; depends on 3–4 and existing Core package — **implemented locally** | Add authenticated owner-only create/list/detail/update/delete, safe storage configuration, bare Core provisioning/deletion, lifecycle recovery, and audit events. | API ownership/CSRF/pagination tests; duplicate-name, Core validation, storage containment, symlink, concurrency, failure/retry, and PostgreSQL lifecycle tests. | Organization repositories, anonymous public reads, browsing, network Git, cross-process locking, automated reconciliation. |
+| 7 | Organizations and memberships; depends on 4–6 | Add organizations, memberships, and organization-owned repository metadata. | Owner/member constraints, membership transitions, and repository ownership tests. | Teams and complex inherited permissions. |
+| 8 | Authorization and direct grants; depends on 4, 6–7 | Add organization owner/admin/member policy and direct repository grants. | Matrix tests for public/private, owners, members, direct roles, revocation, and deny-before-Core. | Invitation workflows, teams, broad policy customization. |
+| 9 | Repository browsing API; depends on 6–8 | Add authorized supported Core-backed metadata/browsing operations. | Redaction, malformed objects, authorization-first access, bounded execution, and nonblocking tests. | Git-over-HTTP/SSH, ordinary remote Git clients. |
+| 10 | Frontend foundation; depends on API contract from 2/9 | Add React/Tailwind app shell, routing, API client, accessible shared controls. | Production build, route checks, API client tests, accessibility and responsive checks. | Deployment configuration and excessive global state. |
+| 11 | Authentication/dashboard UI; depends on 4–5 and 10 | Implement sign-in/up, session bootstrap/logout, profile and dashboard. | Browser tests for session expiry, form errors, loading/empty/error states, keyboard navigation. | Social login and unrelated product screens. |
+| 12 | Repository UI; depends on 8–10 | Implement repository list, creation, and overview screens. | Browser/API integration tests for owner/visibility/permission combinations and lifecycle errors. | Network Git clone/fetch/push controls. |
+| 13 | MVP security/reliability audit; depends on 1–12 | Review threat model, authorization, concurrency, lifecycle recovery, logs, data retention and backup/restore. | Explicit path/symlink, contention, failure-injection, recovery, redaction, and restore exercises; resolve high-risk findings before release. | Unsupported security guarantees. |
+| 14 | Organization invitations; post-MVP, depends on 4, 7–8 | Add scoped organization invitations and acceptance/revocation workflows using hashed tokens. | Expiry, replay, email match, authorization, duplicate pending invitation, and concurrent acceptance tests. | Teams and complex permission inheritance. |
+| 15 | Network Git protocol; separate post-MVP project | Design and implement authenticated network protocol support using Core, including pack/receive limits and isolation. | Protocol interoperability, auth-before-repository access, malformed input/resource exhaustion, concurrency and compatibility tests. | Delegating to GitPython/system Git or assuming local transport is network transport. |
+| 16 | Zero-cost deployment readiness; depends on verified MVP and hosting review | Verify a compliant full Python runtime and filesystem-backed repository storage solution, quotas, backups, and recovery before deployment. | Written evidence that no billing activation/payment/trials/pay-as-you-go are required; quota exhaustion safely pauses/degrades. | Deployment until the Python hosting/storage blocker is resolved. |
 
 ## Cross-cutting engineering rules
 
@@ -108,5 +108,6 @@ work; this roadmap does not imply implementation.
   from implicitly seeing every organization repository; test effective access
   after membership, ownership, or grant changes.
 
-Stop after the approved architecture and roadmap; do not begin implementation
-without the user's approval of the next milestone.
+Milestones marked implemented above are complete within their stated local
+scope. Begin later milestones only after their scope and implementation are
+approved.

@@ -50,3 +50,20 @@ def test_default_settings_are_safe() -> None:
     assert settings.environment == "development"
     assert not settings.debug
     assert settings.api_prefix == "/api/v1"
+    assert settings.repository_storage_root.is_absolute()
+
+
+def test_repository_storage_root_is_configurable_and_must_be_absolute(tmp_path) -> None:
+    root = tmp_path / "repositories"
+    settings = Settings.from_environment(
+        {"HUB_REPOSITORY_STORAGE_ROOT": str(root)}
+    )
+    assert settings.repository_storage_root == root
+
+    with pytest.raises(ValueError, match="HUB_REPOSITORY_STORAGE_ROOT"):
+        Settings.from_environment({"HUB_REPOSITORY_STORAGE_ROOT": "relative/repositories"})
+
+    with pytest.raises(ValueError, match="HUB_REPOSITORY_STORAGE_ROOT"):
+        Settings.from_environment(
+            {"HUB_REPOSITORY_STORAGE_ROOT": str(tmp_path / ".." / "repositories")}
+        )

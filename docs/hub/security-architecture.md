@@ -2,11 +2,12 @@
 
 ## Status and threat model
 
-This document records the approved security architecture, separating the
-authentication primitives that now exist from controls and workflows that
-remain planned. The initial metadata schema and constraints do not by themselves
-implement authentication workflows, authorization, or repository isolation
-and must not be treated as security guarantees.
+This document records the approved security architecture and distinguishes
+implemented Hub controls from remaining requirements. Registration/login/logout,
+session authentication, and owner-only personal repository lifecycle routes
+exist. Organization/collaborator authorization and broader repository
+operations remain unimplemented; the initial schema alone is not a security
+guarantee.
 The threat model covers unauthenticated and malicious clients, compromised
 accounts, abusive repository operations, malformed repository data, path
 manipulation, symlink attacks, concurrent requests, partial database/filesystem
@@ -37,19 +38,22 @@ Hash passwords with Argon2id through a maintained password-hashing library
 using its current recommended parameters. Keep algorithm/version metadata so
 hashes can be upgraded on successful authentication. Use generic login failure
 responses, protect registration/login with rate limits, and never log
-credentials.
+credentials. Rate limiting is not currently implemented.
 
-### Implemented authentication foundation
+### Implemented authentication workflows
 
 The reusable primitives in `apps/hub-api/src/commitverse_hub/auth/` are
 implemented and paired with session-oriented browser auth routes. The current
 Hub API includes account registration, login, logout, and current-user
 resolution under `/api/v1/auth` and `/api/v1/me`.
 
-State-changing auth routes require an exact allow-listed `Origin` and a valid
-`X-CSRF-Token` bound to the current opaque session token. Session cookies are
-issued with the configured `Secure`, `HttpOnly`, `SameSite`, path, and expiry
-attributes; only the session hash is stored in the database.
+Registration requires an exact allow-listed `Origin`. Login requires an
+allow-listed `Origin`, and if a session cookie is already present it also
+requires the matching session-bound `X-CSRF-Token`. Logout similarly checks
+Origin and CSRF for an existing token. Repository mutations require an active
+session plus both Origin and CSRF validation. Session cookies use the
+configured `Secure`, `HttpOnly`, `SameSite`, path, and expiry attributes; only
+the session hash is stored in the database.
 
 - `passwords.py` uses `argon2-cffi` Argon2id with a 64 MiB memory cost,
   three iterations, parallelism four, a 32-byte output, and a 16-byte
@@ -73,21 +77,18 @@ attributes; only the session hash is stored in the database.
 - `csrf.py` generates a random URL-safe nonce with an HMAC bound to the raw
   session token. Validation uses constant-time comparison and requires an
   exact allow-listed `Origin`; missing/invalid tokens, missing origins, and
-  wildcard origin configuration are rejected. This is a utility only: routes
-  must pass the authenticated session token and an explicit origin allowlist.
+  wildcard origin configuration are rejected. Routes pass the current session
+  token and an explicit origin allowlist.
 
 Environment-based cookie configuration uses `HUB_SESSION_COOKIE_NAME`,
 `HUB_SESSION_COOKIE_SECURE`, `HUB_SESSION_COOKIE_HTTPONLY`,
 `HUB_SESSION_COOKIE_SAMESITE`, `HUB_SESSION_COOKIE_PATH`,
 `HUB_SESSION_COOKIE_DOMAIN`, and `HUB_SESSION_COOKIE_MAX_AGE`. There is no
-default cookie domain or configured CORS allowlist. Production routes still
-need exact-origin policy wiring and generic error responses.
-
-These utilities do not yet implement end-to-end password verification
-workflows, password rehashing during login, session rotation at authentication
-boundaries, idle-expiry refresh, session-cookie issuance in an API route, or a
-transactional account-disable workflow that revokes all sessions. Those
-belong to later authentication services and endpoints.
+default cookie domain or separate CORS middleware configuration. Sessions have
+a finite configured expiry, but idle-expiry refresh and password rehashing on
+login are not implemented. There is no password reset, email verification,
+MFA, account-disable workflow, or rate limiting. Login failures use the same
+external message for unknown, disabled, and incorrect-password cases.
 
 JWTs are deferred: the initial modular monolith has no independent service
 consumer that justifies token refresh, key rotation, and revocation complexity.
@@ -110,10 +111,17 @@ Revisit only for a concrete client/integration requirement.
 
 ## Authorization
 
-Use deny-by-default service-level authorization on every operation. Route
-guards and frontend visibility are not sufficient. Determine public/private
-read access, personal ownership, organization owner/admin rights, and direct
-repository grants using the rules in
+The implemented repository routes are limited to authenticated personal
+owners: list/detail/update/delete queries constrain both repository ID and
+`owner_user_id`, require lifecycle state `ready` for normal access, and return
+the same not-found response for absent, non-ready, and other-owner records.
+Every repository mutation also enforces CSRF/Origin. Public visibility is
+metadata only; it does not enable anonymous access.
+
+Use deny-by-default service-level authorization for any added operation. Route
+guards and frontend visibility are not sufficient. Organization owner/admin
+rights and direct repository grants are not implemented; future behavior must
+follow the rules in
 [`database-design.md`](database-design.md#ownership-and-effective-authorization).
 Check lifecycle state and authorization before opening a repository through
 Core. Never trust a client-supplied repository path, owner, or role.
@@ -126,9 +134,9 @@ revocation, ownership changes, and missing/inconsistent metadata.
 ## Rate limiting and abuse prevention
 
 Apply limits to login, account creation, invitation issuance/acceptance,
-repository creation, and expensive repository reads. Bound concurrent Core
-operations and transfer/object sizes. An in-process counter is not a
-cross-worker rate limiter; deployment must provide a verified compliant
+repository creation, and expensive repository reads. These limits are not
+implemented. Bound concurrent Core operations and transfer/object sizes. An
+in-process counter is not a cross-worker rate limiter; deployment must provide a verified compliant
 mechanism before relying on distributed limits. Do not add a paid dependency
 or billing requirement to satisfy this control.
 
@@ -159,12 +167,15 @@ relevant components are expected directories, reject symlinks and path
 escapes, and use the least-privilege service account and filesystem permissions
 available.
 
-Initialize repositories bare through Core in a controlled temporary sibling
-directory, validate before publication, and only publish beneath the approved
-root. Lifecycle deletion must verify the generated key and resolved path,
-block new operations, and remove only the exact known repository directory.
-Never recursively delete a path assembled from request input. Failures must
-leave a recorded, recoverable lifecycle state.
+The implemented storage layer creates repositories bare through Core in a
+controlled temporary sibling directory, validates before publication, and
+publishes only beneath `HUB_REPOSITORY_STORAGE_ROOT`. The root must be a
+dedicated path outside the source tree, with private permissions; symlinked
+components, unsafe repository paths, and invalid generated keys are rejected.
+Deletion verifies the generated key and Core bare-repository structure, and
+removes only the exact known repository directory. Failures leave a
+recoverable lifecycle state. Storage-root isolation does not defend against a
+privileged local attacker or every filesystem race.
 
 Core has supported safe worktree path checks, no-follow tracked reads, atomic
 loose-object writes, and single-reference compare-and-swap behavior. These
@@ -175,11 +186,12 @@ and test symlink/path traversal attempts.
 
 ## Concurrency and bounded execution
 
-Authorize first, then acquire per-repository operation coordination before
-running Core work. Core operations are synchronous and must not block the
-ASGI event loop: use bounded worker execution, operation timeouts where safe,
-and concurrency limits. Cancellation must not be treated as proof that a
-filesystem operation stopped.
+The implemented lifecycle operations use synchronous FastAPI handlers so
+Core and filesystem work runs outside the ASGI event loop. A module-level
+`RLock` serializes repository create/delete operations within one process.
+There is no cross-process lock, general per-repository operation coordination,
+or configured operation timeout/concurrency limit. Keep repository lifecycle
+operations single-process until a cross-process strategy is implemented.
 
 Core's CAS ref update coordinates one reference publication; it is not a
 multi-ref/multi-operation transaction and does not coordinate metadata
@@ -189,18 +201,20 @@ single-process for repository mutations unless a cross-process locking design
 has been implemented and verified. Do not claim safe horizontal scaling by
 adding workers.
 
-Add contention tests for same-repository and different-repository operations,
-failure-injection around publication and cleanup, stale lifecycle recovery,
-and checks that denied requests never invoke the adapter.
+The current tests cover lifecycle races within one process, publication and
+cleanup failures, retry behavior, path/symlink rejection, and denial before
+Core access. Cross-process contention, automated stale-state reconciliation,
+and bounded execution remain unverified/unimplemented.
 
 ## Database and filesystem lifecycle
 
 Repository metadata uses `provisioning`, `ready`, `deleting`, and `error`
 states. PostgreSQL and the filesystem do not share an atomic transaction.
-Implement idempotent lifecycle steps and a reconciler for abandoned
-provisioning/deleting/error records and orphaned directories. Reconciliation
-must compare generated opaque keys, validate paths, and require explicit
-policy for ambiguous state; it must never silently delete unknown data.
+Creation and deletion have idempotent retry paths for known metadata records,
+but an automated reconciler for abandoned `provisioning`/`deleting`/`error`
+records or orphaned directories is not implemented. Reconciliation must compare
+generated opaque keys, validate paths, and require explicit policy for
+ambiguous state; it must never silently delete unknown data.
 
 ## Backup, recovery, and deployment
 
@@ -224,5 +238,6 @@ Before any hosted release, test password/session behavior; CSRF/CORS policy;
 authorization matrices; input and rate limits; path traversal and symlink
 attacks; repository isolation; safe provisioning/deletion; per-repository
 contention; worker bounds; failure injection and reconciliation; error/log
-redaction; backup/restore; and the zero-cost deployment assumptions. These are
-future Hub tests, not current evidence.
+redaction; backup/restore; and the zero-cost deployment assumptions. Items
+explicitly marked unimplemented or unverified above are requirements for a
+hosted release, not current evidence.

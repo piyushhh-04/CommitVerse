@@ -9,6 +9,7 @@ from argon2 import PasswordHasher, Type
 from fastapi import Response
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, func, select, update
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 
 from commitverse_hub.auth.cookies import (
@@ -40,6 +41,7 @@ from commitverse_hub.auth.tokens import (
     validate_session_token,
 )
 from commitverse_hub.config import Settings
+from commitverse_hub.api.v1 import auth as auth_api
 from commitverse_hub.db.base import Base
 from commitverse_hub.main import create_app
 from commitverse_hub.db.models import SessionRecord, User
@@ -296,7 +298,7 @@ def test_session_lifecycle_on_postgresql_in_a_rolled_back_schema() -> None:
         engine.dispose()
 
 
-def test_auth_routes_register_login_me_and_logout(tmp_path) -> None:
+def test_auth_routes_register_login_me_and_logout(tmp_path, monkeypatch) -> None:
     sqlite_path = tmp_path / "hub-auth-routes.sqlite"
     engine = create_engine(f"sqlite:///{sqlite_path}")
 
@@ -344,6 +346,21 @@ def test_auth_routes_register_login_me_and_logout(tmp_path) -> None:
         assert me_response.status_code == 200
         assert me_response.json()["email"] == "alice@example.test"
 
+        def fail_revocation(_db_session, _token):
+            raise SQLAlchemyError("database failure")
+
+        monkeypatch.setattr(auth_api, "revoke_session", fail_revocation)
+        failed_logout = client.post(
+            "/api/v1/auth/logout",
+            headers={**origin_headers, "X-CSRF-Token": csrf_token},
+        )
+        assert failed_logout.status_code == 503
+        assert failed_logout.json()["error"]["code"] == "session_revocation_failed"
+        assert "Max-Age=0" not in ";".join(
+            get_set_cookie_values(failed_logout.headers)
+        )
+
+        monkeypatch.undo()
         logout_response = client.post(
             "/api/v1/auth/logout",
             headers={**origin_headers, "X-CSRF-Token": csrf_token},

@@ -3,11 +3,12 @@
 ## Status and scope
 
 This document records the reviewed architecture for CommitVerse Hub. The
-initial API and authentication-security foundation now exists in
-`apps/hub-api/`; registration/login/logout APIs, authorization, repository
-hosting, and collaboration features are not implemented. Hub is a
-local-development-first application that builds on, but does not absorb or
-replace, CommitVerse Core.
+`apps/hub-api/` implementation includes registration/login/logout and
+current-user APIs, authenticated owner-only personal repository metadata CRUD,
+and local bare-repository lifecycle integration with Core. Organization and
+collaborator authorization, repository browsing, and broader collaboration
+features are not implemented. Hub is a local-development-first application
+that builds on, but does not absorb or replace, CommitVerse Core.
 CommitVerse AI remains future scope.
 
 The initial architecture is a **modular monolith**: one Python/FastAPI
@@ -16,8 +17,8 @@ filesystem, and a React/Tailwind web client. REST endpoints are versioned under
 `/api/v1`. The API package and optional SQLAlchemy/Psycopg/Alembic foundation
 and initial metadata models/migration exist. Local PostgreSQL 17.11 migration
 validation has been completed against a native Homebrew installation on
-macOS/Apple Silicon M2. Application workflows, hosted runtime services, and
-deployment configuration remain unimplemented or unverified.
+macOS/Apple Silicon M2. Organization/collaboration workflows, hosted runtime
+services, and deployment configuration remain unimplemented or unverified.
 
 ## Goals and boundaries
 
@@ -87,13 +88,13 @@ The table distinguishes existing foundations from planned workflows:
 |---|---|
 | `api/v1` | Versioned REST routers, HTTP input/output, dependency wiring, and HTTP error mapping. Keep handlers thin. |
 | `schemas` | Pydantic request/response models and validation; no database or filesystem access. |
-| `auth` | **Implemented primitives:** Argon2id password utilities, opaque token/hash helpers, transaction-managed session persistence, validated cookie settings, and session-bound CSRF utilities. **Planned:** registration/login/logout workflows and current-principal resolution. |
+| `auth` | **Implemented:** Argon2id registration/login, opaque server-side sessions, current-principal resolution, logout/revocation, validated cookies, and exact-Origin/session-bound CSRF checks for state-changing requests. |
 | `users` | Account state and profile workflows. |
 | `organizations` | Organization and membership workflows; teams are deferred. |
-| `repositories` | Repository metadata, owner/slug/visibility rules, and lifecycle state transitions. |
+| `repositories` | **Implemented for personal repositories:** owner-scoped metadata, name/visibility validation, list/detail/update/delete, audit events, and retryable lifecycle state transitions. Organization repositories remain planned. |
 | `permissions` | Central deny-by-default policy evaluation for public/private access, ownership, memberships, and direct grants. |
-| `repository_ops` | Authorized repository operations, per-repository coordination, bounded execution, lifecycle recovery integration. |
-| `core_adapter` | Calls supported Core library APIs and translates Core-specific results/errors into Hub-level outcomes. |
+| `repository_ops` | **Implemented for lifecycle operations:** authenticated personal ownership checks, a process-local lifecycle lock, safe provisioning/deletion, and explicit retryable failure states. Cross-process coordination and general repository operations remain planned. |
+| `core_adapter` | **Implemented:** calls Core bare initialization/discovery APIs in-process and maps failures to safe Hub outcomes. |
 | `persistence` | SQLAlchemy models and focused database queries/commands. |
 | `db` | PostgreSQL engine/session lifecycle and Alembic migration integration. |
 | `config` | Validated settings from local/deployment environment; never embeds secrets. |
@@ -108,9 +109,11 @@ paths, SQL, object-store details, or raw Core exceptions. GraphQL is not
 required by the initial use cases and would add schema/runtime complexity
 without a demonstrated need.
 
-The initial API may provide account/profile workflows, repository metadata,
-authorized browsing of supported repository data, and repository creation.
-Do not advertise normal Git client clone, fetch, or push.
+The API currently provides account registration/login/logout, current-user
+resolution, and owner-only personal repository metadata/lifecycle routes.
+Repository visibility is stored as metadata but does not enable anonymous
+access; detail and mutations remain owner-only. Do not advertise normal Git
+client clone, fetch, or push.
 
 ## CommitVerse Core integration
 
@@ -125,12 +128,11 @@ implement Git-over-HTTP, Git-over-SSH, network Git transport, packfile
 transfer, or normal remote Git client interoperability. Hub MVP therefore
 cannot accept ordinary network-based Git clone/fetch/push.
 
-For hosted repository provisioning, Hub assigns an opaque storage key, derives
-a path beneath the configured data root, and asks Core to initialize a bare
-repository there. Read/browse operations likewise pass a validated repository
-handle/path through the adapter only after authorization. Map expected Core
-errors to stable Hub errors; preserve internal details only in access-controlled
-logs.
+For personal repository provisioning, Hub assigns an opaque storage key, derives
+a path beneath `HUB_REPOSITORY_STORAGE_ROOT`, and asks Core to initialize and
+verify a bare repository there. Current APIs do not expose repository contents.
+Map expected Core errors to stable Hub errors; never expose storage paths or
+internal details in API responses.
 
 Core's compare-and-swap reference updates protect a single ref update under
 their supported protocol. They are not a transaction over multiple refs,
@@ -148,27 +150,28 @@ delegating production VCS work to another Git engine.
 ## Repository storage and lifecycle
 
 Store repository data outside the application source tree and outside
-PostgreSQL. A repository UUID maps to a generated opaque storage key, for
-example `repositories/ab/cd/<opaque-id>.git/`. Never construct the storage key
-or path from a username, repository slug, or untrusted request value.
+PostgreSQL. The generated opaque storage key maps to a bare repository directly
+beneath `HUB_REPOSITORY_STORAGE_ROOT`, for example
+`<storage-root>/<opaque-id>.git/`. Never construct the storage key or path from
+a username, repository slug, or untrusted request value.
 
 The Hub metadata record has lifecycle states `provisioning`, `ready`,
 `deleting`, and `error`. Creation is a recoverable workflow, not an atomic
 database/filesystem transaction:
 
-1. Validate owner, slug, quota/policy, and authorization.
+1. Validate the authenticated personal owner, repository name, and visibility.
 2. Create metadata in `provisioning` and generate a unique opaque storage key.
 3. Initialize a bare repository in a controlled temporary sibling location
    using Core; validate the result.
 4. Publish it beneath the configured storage root and mark metadata `ready`.
-5. On failure, record `error`, preserve diagnostic context without secrets, and
-   clean only the known temporary path. A reconciler handles abandoned states.
+5. On provisioning failure, record `error` and clean only the known temporary
+   path. Automated reconciliation of abandoned states is not implemented.
 
-Deletion first marks the record `deleting`, prevents new operations, removes
-the known repository path through a narrowly scoped lifecycle service, and
-then completes metadata cleanup/tombstoning. Failures remain visible and
-retryable. A reconciler detects metadata/filesystem mismatches; it must not
-guess paths or recursively remove an unverified location.
+Deletion first marks the record `deleting`, prevents current ready-only API
+operations, removes the known repository path through a narrowly scoped
+lifecycle service, and then tombstones the metadata record. Failures remain
+visible and retryable. Automated reconciliation is not yet implemented; no
+service may guess paths or remove an unverified location.
 
 Use least-privilege filesystem permissions and reject symlinked path components
 or resolved paths that escape the storage root. Local filesystem storage is a
@@ -232,16 +235,18 @@ blocker and no deployment configuration is implied.
   SQLAlchemy/Alembic, REST `/api/v1`, opaque server-side browser sessions,
   filesystem-backed bare repositories during development, dedicated Core
   adapter.
-- **Not implemented:** authentication and authorization workflows, frontend,
-  deployment, and repository lifecycle orchestration. The API foundation,
-  metadata models, initial schema migration, and reusable authentication
-  security primitives exist. Registration/login/logout APIs and authorization
-  remain unimplemented. Local PostgreSQL 17.11 migration validation is
-  complete; no hosted deployment has been verified.
+- **Implemented locally:** registration/login/logout, current-user resolution,
+  owner-only personal repository CRUD, Core-backed bare repository creation
+  and deletion, audit events, and retryable lifecycle states. Local
+  PostgreSQL 17.11 migration validation is complete.
+- **Not implemented:** organization/collaborator authorization, anonymous
+  public access, repository browsing, automated lifecycle reconciliation,
+  frontend, and deployment. No hosted deployment has been verified.
 - **Not available from Core:** network Git protocols, packfiles, and ordinary
   remote-client interoperability.
-- **Operational limitations to solve:** DB/filesystem partial failure,
-  cross-process repository locking, bounded Core execution, recovery and backup.
+- **Operational limitations:** DB/filesystem operations are not atomic;
+  lifecycle locking is process-local; automated reconciliation, bounded
+  cross-process execution, and backup/recovery are not implemented.
 - **Future scope:** teams/complex inherited permissions, issues, pull requests,
   broad collaboration features, and CommitVerse AI.
 

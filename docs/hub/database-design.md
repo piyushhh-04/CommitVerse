@@ -7,8 +7,10 @@ models and Alembic revision `40037b3edad7`
 ([initial migration](../../apps/hub-api/migrations/versions/40037b3edad7_create_initial_hub_schema.py)).
 It defines metadata only; PostgreSQL owns no CommitVerse Core repository
 objects, refs, or bare repository files. Live PostgreSQL migration validation
-is complete against the local PostgreSQL 17.11 development server. Application
-workflows have not been implemented.
+is complete against the local PostgreSQL 17.11 development server. Registration,
+session authentication, and owner-only personal repository workflows use the
+existing schema. Organization, collaboration, and invitation workflows remain
+unimplemented.
 
 The migration creates `users`, `user_profiles`, `organizations`,
 `organization_memberships`, `repositories`,
@@ -104,6 +106,12 @@ implicit organization-wide repository access based only on membership.
 - `storage_key` is generated independently of the owner and slug, unique, and
   never accepted from an API request. It maps to a path below one configured
   repository root.
+- The current API creates personal repositories only. Repository creation
+  provisions a bare Core repository before marking metadata `ready`; deletion
+  first marks metadata `deleting`, removes the verified generated-key path,
+  revokes pending invitations/direct grants associated with the row, and keeps
+  a tombstone for retry/idempotency and audit history. These operations are
+  recoverable across database/filesystem failures but are not atomic.
 - `created_by` is a required user FK, separate from ownership, for
   auditability even when the owner is an organization.
 

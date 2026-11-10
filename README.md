@@ -25,7 +25,11 @@ Core package foundation, Git-compatible loose objects and trees, index-v2
 staging, bare and non-bare repository initialization/discovery, commit objects and
 history, loose branch refs, safe branch switching/checkout, basic merging,
 read-only status/diff, local advertisement, bounded fetch, fast-forward-only
-push, safe local clone, and `cv` commands are implemented and tested.
+push, safe local clone, and `cv` commands are implemented and tested. Hub now
+provides a local-development API foundation, browser-session authentication,
+and authenticated owner-only personal repository management through Core;
+organizations, collaboration, repository browsing, frontend, and deployment
+remain future work.
 
 ## Technology direction
 
@@ -89,9 +93,10 @@ detect renames; diff excludes untracked files, treats non-UTF-8 or NUL-bearing
 content as binary, and buffers tracked file contents in memory. Full Git
 ignore semantics, color/porcelain output, and complete Git status/diff
 compatibility are not claimed. `cv init --bare <path>` initializes a bare
-repository. Remote management, network transport, and later hosting integration remain
-planned. Hub, frontend, database integration, and AI functionality are also
-future work.
+repository. Remote management and network transport remain planned. Hub
+implementation details and limitations are tracked in its documentation. The
+frontend, broader collaboration, deployment, and AI functionality remain future
+work.
 
 See [PROJECT_CONTEXT.md](./PROJECT_CONTEXT.md) for the project-wide engineering
 and contribution guidelines, and [the architecture overview](./docs/architecture/overview.md)

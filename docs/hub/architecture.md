@@ -11,8 +11,10 @@ CommitVerse AI remains future scope.
 The initial architecture is a **modular monolith**: one Python/FastAPI
 application, one PostgreSQL metadata database, a separately stored repository
 filesystem, and a React/Tailwind web client. REST endpoints are versioned under
-`/api/v1`. These choices do not imply that dependencies, migrations, runtime
-services, or deployment configuration exist.
+`/api/v1`. The API package and optional SQLAlchemy/Psycopg/Alembic foundation
+exist, but these choices do not imply that application tables, schema
+revisions, a database server, runtime services, or deployment configuration
+exist.
 
 ## Goals and boundaries
 

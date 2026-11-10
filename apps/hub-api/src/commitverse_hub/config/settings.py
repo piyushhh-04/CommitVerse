@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Mapping
+
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 
 _ENVIRONMENTS = frozenset({"development", "testing", "production"})
 _LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
@@ -32,6 +35,7 @@ class Settings:
     debug: bool = False
     log_level: str = "INFO"
     api_prefix: str = "/api/v1"
+    database_url: str | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if not self.application_name.strip() or len(self.application_name) > 120:
@@ -49,6 +53,21 @@ class Settings:
             raise ValueError("api_prefix must be an absolute path without a trailing slash.")
         if self.environment == "production" and self.debug:
             raise ValueError("debug must be disabled in production.")
+        if self.database_url is not None:
+            if not isinstance(self.database_url, str) or not self.database_url.strip():
+                raise ValueError("HUB_DATABASE_URL must be a non-empty PostgreSQL URL.")
+            try:
+                database_url = make_url(self.database_url)
+            except ArgumentError:
+                raise ValueError("HUB_DATABASE_URL must be a valid PostgreSQL URL.") from None
+            if (
+                database_url.drivername != "postgresql+psycopg"
+                or not database_url.host
+                or not database_url.database
+            ):
+                raise ValueError(
+                    "HUB_DATABASE_URL must use postgresql+psycopg and include a host and database."
+                )
         object.__setattr__(self, "application_name", self.application_name.strip())
         object.__setattr__(self, "log_level", normalized_log_level)
 
@@ -66,4 +85,5 @@ class Settings:
             debug=_parse_bool("HUB_DEBUG", debug_value),
             log_level=values.get("HUB_LOG_LEVEL", "INFO"),
             api_prefix=values.get("HUB_API_PREFIX", "/api/v1"),
+            database_url=values.get("HUB_DATABASE_URL"),
         )

@@ -3,9 +3,9 @@
 ## Status
 
 This roadmap sequences local Hub development without changing Core's completed
-scope. Milestone 2, the backend foundation, is implemented; subsequent
-milestones remain planned. Each milestone should be independently reviewable
-and tested before the next dependent milestone begins.
+scope. Milestones 2 and 3, the backend and database foundations, are
+implemented; subsequent milestones remain planned. Each milestone should be
+independently reviewable and tested before the next dependent milestone begins.
 
 ## Release scope
 
@@ -48,7 +48,7 @@ work; this roadmap does not imply implementation.
 |---|---|---|---|---|
 | 1 | Architecture and policy approval; no code dependency | Preserve the accepted modular monolith, ownership/permission model, session design, Core boundary, lifecycle, and ₹0 constraints in docs. | Review diagrams, permission rules, deployment blocker, and Core capability claims. | Application scaffolding or deployment. |
 | 2 | Local backend foundation; depends on 1 — **implemented** | Hub API package, FastAPI application factory, validated configuration, `/api/v1/health`, request IDs, safe error mapping, and structured logging. | App construction, invalid config, health route, error redaction, and request logging tests pass. | Auth, database schema, Core operations. |
-| 3 | Database and migration foundation; depends on 2 | Add PostgreSQL connection/session management, SQLAlchemy metadata, Alembic, and test database workflow. | Migration upgrade/downgrade and schema-constraint integration tests. | Cloud provisioning or Git object storage in PostgreSQL. |
+| 3 | Database and migration foundation; depends on 2 — **implemented** | Add optional PostgreSQL settings, bounded SQLAlchemy engine/session utilities, application lifespan disposal, connectivity diagnostic, and Alembic configuration sharing empty SQLAlchemy metadata. | URL validation/redaction, transaction commit/rollback/closure, injected availability/failure checks, lifecycle/disposal, migration wiring, no startup connection, and full Hub/Core suites. Live PostgreSQL interoperability remains unverified unless a dedicated local server is available. | Application tables, automatic migrations, cloud provisioning, or Git object storage in PostgreSQL. |
 | 4 | Accounts and authentication; depends on 3 | Add users, password hashing, opaque session issue/lookup/revoke, login/logout, CSRF and auth dependencies. | Password verification/upgrade, expiry/revocation, cookie flags, CSRF, rate-limit, and generic-error tests. | OAuth, JWT, social login. |
 | 5 | Profiles; depends on 4 | Add profile model/service/API and username rules. | Case-insensitive uniqueness, validation, privacy, and authorization tests. | Avatar storage service. |
 | 6 | Organizations and repository metadata; depends on 3–5 | Add organizations/memberships, repositories, exclusive owner constraint, visibility, opaque storage key, and lifecycle states. | FK/CHECK/unique/index tests; state-transition and ownership tests. | Teams and complex inherited permissions. |

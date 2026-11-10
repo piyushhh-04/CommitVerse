@@ -10,12 +10,13 @@ collaboration platform:
 
 - **CommitVerse Core:** a Git-like engine written in Python, with Git internals
   implemented in this project.
-- **CommitVerse Hub:** the initial API foundation is implemented under
-  `apps/hub-api/`: a Python/FastAPI modular monolith with validated
-  configuration, `/api/v1/health`, safe error responses, request IDs, and
-  structured request logging. Repository hosting and collaboration features
-  remain unimplemented. Its accepted architecture plans a React/Tailwind
-  frontend, PostgreSQL metadata, SQLAlchemy, Alembic, opaque server-side
+- **CommitVerse Hub:** the API and PostgreSQL persistence foundations are
+  implemented under `apps/hub-api/`: a Python/FastAPI modular monolith with
+  validated configuration, optional SQLAlchemy/Psycopg resources, Alembic
+  infrastructure, health diagnostics, safe errors, request IDs, and
+  structured logging. Application tables and repository hosting/collaboration
+  features remain unimplemented. Its accepted architecture plans a
+  React/Tailwind frontend, PostgreSQL metadata models, opaque server-side
   browser sessions, a filesystem repository store during development, and a
   dedicated Core adapter.
 - **CommitVerse AI:** a future AI developer assistant.
@@ -35,9 +36,10 @@ rename detection, and full Git compatibility remain unimplemented. Local
 filesystem advertisement, bounded loose-object fetch, fast-forward-only push
 to bare repositories, and safe local clone are implemented as library
 operations, not `cv` CLI commands. Git-over-HTTP, Git-over-SSH, and ordinary
-network-based Git client interoperability are not implemented. Treat Hub, AI,
-and other unimplemented functionality as plans until working implementations
-and their tests exist.
+network-based Git client interoperability are not implemented. Treat Hub
+features beyond its implemented API/database foundation, AI, and other
+unimplemented functionality as plans until working implementations and their
+tests exist.
 
 ## Architecture
 
@@ -93,11 +95,12 @@ Planned stack:
 - Future AI: PyTorch and Hugging Face Transformers.
 
 These are technology choices, not a declaration that planned application
-services or features are configured. FastAPI and Uvicorn are dependencies of
-the Hub API foundation; PostgreSQL, SQLAlchemy, Alembic, and the frontend
-remain planned. Pytest is installed as Core's development dependency and as
-the Hub API's development dependency. Do not introduce additional
-technologies without a clear project need and an explicit decision.
+services or features are configured. FastAPI, Uvicorn, SQLAlchemy, Alembic,
+and Psycopg are dependencies of the Hub API foundation; a PostgreSQL server,
+Hub application models, schema revisions, and frontend remain unprovisioned
+or planned. Pytest is installed as Core's and Hub API's development
+dependency. Do not introduce additional technologies without a clear project
+need and an explicit decision.
 
 ## Development environment and workflow
 
@@ -108,6 +111,11 @@ technologies without a clear project need and an explicit decision.
   dependency management, keeping production dependencies separate from
   development-only dependencies. Core is installed in editable mode in the
   local development environment, and its `dev` extra includes Pytest.
+- Hub API has an independent `apps/hub-api/pyproject.toml`. Its SQLAlchemy
+  engine and session factory are application-lifecycle resources; setting
+  `HUB_DATABASE_URL` is optional for startup and tests. Alembic loads that same
+  variable only when a migration command is invoked. No application tables or
+  database revision have been created yet.
 - The scope of any future root-level `pyproject.toml` is undecided. It may
   configure workspace-wide tooling if needed, but must not replace the Core
   package's independently installable configuration.
@@ -137,9 +145,10 @@ technologies without a clear project need and an explicit decision.
   Hub's FastAPI backend, PostgreSQL, and frontend services; do not make a
   containerized Core a prerequisite for its initial development.
 - Document setup and execution commands as project workflows are established.
-- Hosting, deployment, database provisioning, and cloud storage remain
-  deliberately deferred until their appropriate development stage. Planned
-  infrastructure is not implemented infrastructure.
+- Hosting, deployment, PostgreSQL server provisioning, and cloud storage remain
+  deliberately deferred until their appropriate development stage. Database
+  connection and migration infrastructure do not provision a database or make
+  planned infrastructure available.
 
 ## Engineering conventions
 

@@ -10,6 +10,8 @@ from typing import Mapping
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
+from commitverse_hub.auth.cookies import AuthCookieSettings
+
 _ENVIRONMENTS = frozenset({"development", "testing", "production"})
 _LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 _VERSION_PATTERN = re.compile(r"\A\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?\Z")
@@ -36,6 +38,7 @@ class Settings:
     log_level: str = "INFO"
     api_prefix: str = "/api/v1"
     database_url: str | None = field(default=None, repr=False)
+    auth_cookie: AuthCookieSettings = field(default_factory=AuthCookieSettings)
 
     def __post_init__(self) -> None:
         if not self.application_name.strip() or len(self.application_name) > 120:
@@ -53,6 +56,8 @@ class Settings:
             raise ValueError("api_prefix must be an absolute path without a trailing slash.")
         if self.environment == "production" and self.debug:
             raise ValueError("debug must be disabled in production.")
+        if self.environment == "production" and not self.auth_cookie.secure:
+            raise ValueError("Session cookies must be Secure in production.")
         if self.database_url is not None:
             if not isinstance(self.database_url, str) or not self.database_url.strip():
                 raise ValueError("HUB_DATABASE_URL must be a non-empty PostgreSQL URL.")
@@ -86,4 +91,5 @@ class Settings:
             log_level=values.get("HUB_LOG_LEVEL", "INFO"),
             api_prefix=values.get("HUB_API_PREFIX", "/api/v1"),
             database_url=values.get("HUB_DATABASE_URL"),
+            auth_cookie=AuthCookieSettings.from_environment(values),
         )

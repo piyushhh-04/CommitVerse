@@ -14,12 +14,14 @@ collaboration platform:
   implemented under `apps/hub-api/`: a Python/FastAPI modular monolith with
   validated configuration, optional SQLAlchemy/Psycopg resources, Alembic
   infrastructure, nine approved metadata models and their initial migration,
-  health diagnostics, safe errors, request IDs, and structured logging.
-  Authentication and authorization workflows, repository hosting, and
-  collaboration features remain unimplemented. Its accepted architecture
-  plans a React/Tailwind frontend, opaque server-side browser sessions, a
-  filesystem repository store during development, and a dedicated Core
-  adapter.
+  health diagnostics, safe errors, request IDs, structured logging, and
+  authentication security primitives (Argon2id password hashing, opaque
+  session-token utilities, server-side session persistence, secure-cookie
+  configuration, and session-bound CSRF utilities). Registration/login/logout
+  APIs, authorization workflows, repository hosting, and collaboration
+  features remain unimplemented. Its accepted architecture plans a
+  React/Tailwind frontend, opaque server-side browser sessions, a filesystem
+  repository store during development, and a dedicated Core adapter.
 - **CommitVerse AI:** a future AI developer assistant.
 
 Core has an installable Python package with canonical object serialization,
@@ -99,14 +101,13 @@ Planned stack:
 
 These are technology choices, not a declaration that planned application
 services or features are configured. FastAPI, Uvicorn, SQLAlchemy, Alembic,
-and Psycopg are dependencies of the Hub API foundation. PostgreSQL 17.11 has
-been verified as a local development database; the frontend and hosted
+Psycopg, and argon2-cffi are dependencies of the Hub API foundation. PostgreSQL 17.11
+has been verified as a local development database; the frontend and hosted
 infrastructure remain planned. Initial schema revision `40037b3edad7` was
 validated against this PostgreSQL server through upgrade, downgrade,
 re-upgrade, and current-revision checks. Pytest is installed as Core's and Hub
-API's development dependency. Do not introduce
-additional technologies without a clear project need and an explicit
-decision.
+API's development dependency. Do not introduce additional technologies
+without a clear project need and an explicit decision.
 
 ## Development environment and workflow
 

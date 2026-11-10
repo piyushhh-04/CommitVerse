@@ -4,8 +4,10 @@
 
 This roadmap sequences local Hub development without changing Core's completed
 scope. Milestones 2 and 3, the backend and database foundations, are
-implemented; subsequent milestones remain planned. Each milestone should be
-independently reviewable and tested before the next dependent milestone begins.
+implemented. Milestone 4's reusable authentication security primitives are
+implemented; authentication workflows and subsequent milestones remain
+planned. Each milestone should be independently reviewable and tested before
+the next dependent milestone begins.
 
 ## Release scope
 
@@ -49,7 +51,7 @@ work; this roadmap does not imply implementation.
 | 1 | Architecture and policy approval; no code dependency | Preserve the accepted modular monolith, ownership/permission model, session design, Core boundary, lifecycle, and ₹0 constraints in docs. | Review diagrams, permission rules, deployment blocker, and Core capability claims. | Application scaffolding or deployment. |
 | 2 | Local backend foundation; depends on 1 — **implemented** | Hub API package, FastAPI application factory, validated configuration, `/api/v1/health`, request IDs, safe error mapping, and structured logging. | App construction, invalid config, health route, error redaction, and request logging tests pass. | Auth, database schema, Core operations. |
 | 3 | Database foundation and approved schema; depends on 2 — **implemented and locally PostgreSQL-verified** | Add optional PostgreSQL settings, bounded SQLAlchemy engine/session utilities, lifecycle management, database diagnostic, nine approved metadata models, and initial Alembic revision `40037b3edad7`. | URL validation/redaction, constraints and relationships, migration discovery, SQLite test-database upgrade/downgrade/re-upgrade and metadata comparison, no startup migration, and full Hub/Core suites passed. Against native Homebrew PostgreSQL 17.11 on macOS/Apple Silicon M2, verified SQLAlchemy connectivity to `commitverse` as `commitverse_app`, all nine application tables plus `alembic_version`, upgrade, downgrade to base, re-upgrade, and `alembic current` at `40037b3edad7 (head)`. | Authentication/authorization workflows, application APIs, cloud provisioning, or Git object storage in PostgreSQL. |
-| 4 | Accounts and authentication; depends on 3 | Add users, password hashing, opaque session issue/lookup/revoke, login/logout, CSRF and auth dependencies. | Password verification/upgrade, expiry/revocation, cookie flags, CSRF, rate-limit, and generic-error tests. | OAuth, JWT, social login. |
+| 4 | Authentication security foundation; depends on 3 — **primitives implemented, workflows planned** | Add reusable Argon2id password utilities, opaque 256-bit session-token helpers, server-side session create/lookup/revoke, validated secure-cookie settings, and session-bound CSRF/Origin utilities. | Password/rehash and malformed-hash tests; token entropy/hash-only persistence; session expiry/revocation and caller-owned transaction tests; production cookie constraints; CSRF binding and Origin rejection. SQLite tests and an isolated PostgreSQL 17.11 session-lifecycle test passed. | Registration/login/logout routes, password reset, email verification, OAuth, JWT, MFA, and authorization workflows. |
 | 5 | Profiles; depends on 4 | Add profile model/service/API and username rules. | Case-insensitive uniqueness, validation, privacy, and authorization tests. | Avatar storage service. |
 | 6 | Organizations and repository metadata; depends on 3–5 | Add organizations/memberships, repositories, exclusive owner constraint, visibility, opaque storage key, and lifecycle states. | FK/CHECK/unique/index tests; state-transition and ownership tests. | Teams and complex inherited permissions. |
 | 7 | Core adapter; depends on 6 and existing Core package | Add narrow in-process adapter, typed Hub outcomes, and Core exception mapping. | Adapter tests against temporary bare repos; assert Core imports without Hub dependencies. | System Git, GitPython, external Git engine, network protocol. |

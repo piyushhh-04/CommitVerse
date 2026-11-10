@@ -4,9 +4,10 @@ The Hub API is the local-development FastAPI foundation for CommitVerse Hub.
 It is a separate package from CommitVerse Core and currently provides
 application composition, validated environment configuration, versioned
 health reporting, safe error responses, request IDs, structured request
-logging, and an optional PostgreSQL persistence foundation. No application
-workflows are implemented; the initial SQLAlchemy schema defines the nine
-approved metadata tables.
+logging, an optional PostgreSQL persistence foundation, and reusable
+authentication security primitives. No registration, login, logout, or
+authorization workflows are implemented; the initial SQLAlchemy schema
+defines the nine approved metadata tables.
 
 ## Requirements
 
@@ -84,6 +85,13 @@ non-database tests.
 | `HUB_LOG_LEVEL` | `INFO` | One of `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`. |
 | `HUB_API_PREFIX` | `/api/v1` | Absolute URL path prefix for the versioned API. |
 | `HUB_DATABASE_URL` | unset | PostgreSQL URL using `postgresql+psycopg://`; required for database checks and migrations. |
+| `HUB_SESSION_COOKIE_NAME` | `commitverse_session` | Opaque browser-session cookie name. |
+| `HUB_SESSION_COOKIE_SECURE` | `true` | Secure-cookie flag; cannot be disabled in production. |
+| `HUB_SESSION_COOKIE_HTTPONLY` | `true` | Must remain enabled. |
+| `HUB_SESSION_COOKIE_SAMESITE` | `lax` | `lax`, `strict`, or `none`; `none` requires Secure. |
+| `HUB_SESSION_COOKIE_PATH` | `/` | Cookie path. |
+| `HUB_SESSION_COOKIE_DOMAIN` | unset | Optional explicit host scope; wildcard domains are rejected. |
+| `HUB_SESSION_COOKIE_MAX_AGE` | `2592000` | Cookie lifetime in seconds, limited to one year. |
 
 Invalid values fail application creation with a clear configuration error.
 Unexpected HTTP errors always return a generic response; exception details
@@ -149,6 +157,24 @@ transaction; it commits on success, rolls back on exceptions, and closes the
 session. Do not call synchronous database operations directly from an async
 route: use a synchronous route/dependency or bounded worker-thread execution.
 
+## Authentication security primitives
+
+`commitverse_hub.auth` provides Argon2id password hashing/verification with
+rehash detection, 256-bit opaque session token generation and SHA-256 storage
+hashing, session lifecycle persistence, cookie set/clear helpers, and
+session-bound CSRF token and exact-Origin validation utilities. Password
+hashes and raw session tokens are not logged or returned through response
+schemas. Session persistence helpers participate in the caller's SQLAlchemy
+transaction and do not commit independently.
+
+These are reusable foundations, not authentication workflows. There are no
+registration, login, logout, password-reset, email-verification, current-user,
+or authorization endpoints. Future routes must add generic failure responses,
+rate limiting, session rotation, authenticated principal resolution, and an
+explicit exact-Origin allowlist. CORS configuration is not a substitute for
+CSRF validation. Active-session lookup rejects disabled accounts; account
+disable workflows must also revoke the account's existing sessions.
+
 ## Tests
 
 From the repository root:
@@ -160,18 +186,30 @@ PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest \
 
 The default test suite uses an in-process HTTP client and injected resources;
 it requires neither a running PostgreSQL server nor external network access.
+Authentication and session tests use isolated SQLite databases by default.
+Set `HUB_TEST_DATABASE_URL` to run the PostgreSQL session-lifecycle test; it
+creates a unique schema in a transaction and rolls the entire schema back.
+This test has been run against the verified local PostgreSQL 17.11 database.
+For example, after configuring `HUB_DATABASE_URL` for the local server:
+
+```sh
+HUB_TEST_DATABASE_URL="$HUB_DATABASE_URL" PYTHONDONTWRITEBYTECODE=1 \
+  .venv/bin/python -m pytest -p no:cacheprovider \
+  apps/hub-api/tests/test_auth.py -q
+```
+
 Schema tests apply, downgrade, and re-apply the migration against a temporary
-SQLite database, then compare SQLAlchemy metadata and inspect indexes. This
-does not claim PostgreSQL interoperability. SQLite/Alembic cannot reflect
-expression-based indexes, so their created SQL is checked directly. These
-isolated SQLite tests complement, but do not substitute for, the completed
-PostgreSQL migration verification above.
+SQLite database, then compare SQLAlchemy metadata and inspect indexes.
+SQLite/Alembic cannot reflect expression-based indexes, so their created SQL
+is checked directly. The isolated SQLite tests complement, but do not
+substitute for, the completed PostgreSQL migration verification above.
 
 ## Current limitations
 
-The persistence schema does not implement registration/login, password
-hashing, session issuance or middleware, authorization workflows,
-organization management, repository operations, the Core adapter, network
-Git protocols, a frontend, or deployment. Local PostgreSQL migration
-verification does not establish cloud deployment readiness; hosting and
-repository storage remain subject to the project's strict ₹0 policy.
+The persistence schema and authentication utilities do not implement
+registration/login/logout, password-reset or email-verification workflows,
+session middleware or principal resolution, authorization workflows,
+organization management, repository operations, the Core adapter, network Git
+protocols, a frontend, or deployment. Local PostgreSQL validation does not
+establish cloud deployment readiness; hosting and repository storage remain
+subject to the project's strict ₹0 policy.

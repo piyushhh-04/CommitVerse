@@ -3,9 +3,11 @@
 ## Status and scope
 
 This document records the reviewed architecture for CommitVerse Hub. The
-initial API foundation now exists in `apps/hub-api/`; repository hosting and
-collaboration features are not implemented. Hub is a local-development-first
-application that builds on, but does not absorb or replace, CommitVerse Core.
+initial API and authentication-security foundation now exists in
+`apps/hub-api/`; registration/login/logout APIs, authorization, repository
+hosting, and collaboration features are not implemented. Hub is a
+local-development-first application that builds on, but does not absorb or
+replace, CommitVerse Core.
 CommitVerse AI remains future scope.
 
 The initial architecture is a **modular monolith**: one Python/FastAPI
@@ -79,13 +81,13 @@ a concrete use case; keep data-access operations focused.
 
 ## Backend module responsibilities
 
-These are proposed boundaries, not existing packages:
+The table distinguishes existing foundations from planned workflows:
 
 | Module | Responsibility |
 |---|---|
 | `api/v1` | Versioned REST routers, HTTP input/output, dependency wiring, and HTTP error mapping. Keep handlers thin. |
 | `schemas` | Pydantic request/response models and validation; no database or filesystem access. |
-| `auth` | Registration/login/logout, password hashing integration, session issuance/revocation, and current-principal resolution. |
+| `auth` | **Implemented primitives:** Argon2id password utilities, opaque token/hash helpers, transaction-managed session persistence, validated cookie settings, and session-bound CSRF utilities. **Planned:** registration/login/logout workflows and current-principal resolution. |
 | `users` | Account state and profile workflows. |
 | `organizations` | Organization and membership workflows; teams are deferred. |
 | `repositories` | Repository metadata, owner/slug/visibility rules, and lifecycle state transitions. |
@@ -232,8 +234,10 @@ blocker and no deployment configuration is implied.
   adapter.
 - **Not implemented:** authentication and authorization workflows, frontend,
   deployment, and repository lifecycle orchestration. The API foundation,
-  metadata models, and initial schema migration exist. Local PostgreSQL 17.11
-  migration validation is complete; no hosted deployment has been verified.
+  metadata models, initial schema migration, and reusable authentication
+  security primitives exist. Registration/login/logout APIs and authorization
+  remain unimplemented. Local PostgreSQL 17.11 migration validation is
+  complete; no hosted deployment has been verified.
 - **Not available from Core:** network Git protocols, packfiles, and ordinary
   remote-client interoperability.
 - **Operational limitations to solve:** DB/filesystem partial failure,

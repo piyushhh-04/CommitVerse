@@ -2,10 +2,11 @@
 
 ## Status and threat model
 
-This document specifies **proposed controls** for Hub features that remain
-unimplemented. The initial metadata schema and constraints exist, but they do
-not implement authentication, authorization, repository isolation, or the
-other security controls below and must not be treated as security guarantees.
+This document records the approved security architecture, separating the
+authentication primitives that now exist from controls and workflows that
+remain planned. The initial metadata schema and constraints do not by themselves
+implement authentication workflows, authorization, or repository isolation
+and must not be treated as security guarantees.
 The threat model covers unauthenticated and malicious clients, compromised
 accounts, abusive repository operations, malformed repository data, path
 manipulation, symlink attacks, concurrent requests, partial database/filesystem
@@ -37,6 +38,50 @@ using its current recommended parameters. Keep algorithm/version metadata so
 hashes can be upgraded on successful authentication. Use generic login failure
 responses, protect registration/login with rate limits, and never log
 credentials.
+
+### Implemented authentication foundation
+
+The reusable primitives in `apps/hub-api/src/commitverse_hub/auth/` are
+implemented; no registration, login, logout, principal-resolution, or
+authorization routes exist.
+
+- `passwords.py` uses `argon2-cffi` Argon2id with a 64 MiB memory cost,
+  three iterations, parallelism four, a 32-byte output, and a 16-byte
+  library-generated salt. It rejects empty, non-string, and over-1024-byte
+  inputs; verification returns false for incorrect passwords or malformed
+  hashes. A rehash check detects outdated or malformed encodings.
+- `tokens.py` generates 32-byte (`token_urlsafe(32)`) session secrets,
+  validates their canonical encoding, stores their SHA-256 digest, and
+  provides constant-time digest comparison. Only the session-issuing caller
+  receives the raw token.
+- `sessions.py` creates, retrieves, expires, and revokes session records using
+  the existing `sessions` table. Retrieval excludes expired, revoked, and
+  disabled-user sessions; individual and account-wide revocation use bounded
+  SQL updates. Helpers flush or execute within the caller's SQLAlchemy
+  transaction and never commit it.
+- `cookies.py` centralizes validated cookie attributes and response helpers.
+  Defaults are `Secure`, `HttpOnly`, `SameSite=Lax`, path `/`, no domain, and
+  a 30-day maximum age. `HttpOnly` cannot be disabled, production rejects an
+  insecure cookie, `SameSite=None` requires `Secure`, and wildcard domains are
+  rejected.
+- `csrf.py` generates a random URL-safe nonce with an HMAC bound to the raw
+  session token. Validation uses constant-time comparison and requires an
+  exact allow-listed `Origin`; missing/invalid tokens, missing origins, and
+  wildcard origin configuration are rejected. This is a utility only: routes
+  must pass the authenticated session token and an explicit origin allowlist.
+
+Environment-based cookie configuration uses `HUB_SESSION_COOKIE_NAME`,
+`HUB_SESSION_COOKIE_SECURE`, `HUB_SESSION_COOKIE_HTTPONLY`,
+`HUB_SESSION_COOKIE_SAMESITE`, `HUB_SESSION_COOKIE_PATH`,
+`HUB_SESSION_COOKIE_DOMAIN`, and `HUB_SESSION_COOKIE_MAX_AGE`. There is no
+default cookie domain or configured CORS allowlist. Production routes still
+need exact-origin policy wiring and generic error responses.
+
+These utilities do not yet implement end-to-end password verification
+workflows, password rehashing during login, session rotation at authentication
+boundaries, idle-expiry refresh, session-cookie issuance in an API route, or a
+transactional account-disable workflow that revokes all sessions. Those
+belong to later authentication services and endpoints.
 
 JWTs are deferred: the initial modular monolith has no independent service
 consumer that justifies token refresh, key rotation, and revocation complexity.

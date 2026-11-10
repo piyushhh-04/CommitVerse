@@ -11,6 +11,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
 from commitverse_hub.auth.cookies import AuthCookieSettings
+from commitverse_hub.auth.csrf import validate_request_origin
 
 _ENVIRONMENTS = frozenset({"development", "testing", "production"})
 _LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
@@ -39,6 +40,16 @@ class Settings:
     api_prefix: str = "/api/v1"
     database_url: str | None = field(default=None, repr=False)
     auth_cookie: AuthCookieSettings = field(default_factory=AuthCookieSettings)
+    csrf_allowed_origins: tuple[str, ...] = (
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+        "https://localhost:3000",
+        "https://localhost:5173",
+        "https://127.0.0.1:3000",
+        "https://127.0.0.1:5173",
+    )
 
     def __post_init__(self) -> None:
         if not self.application_name.strip() or len(self.application_name) > 120:
@@ -73,6 +84,11 @@ class Settings:
                 raise ValueError(
                     "HUB_DATABASE_URL must use postgresql+psycopg and include a host and database."
                 )
+        if not self.csrf_allowed_origins:
+            raise ValueError("csrf_allowed_origins must contain at least one allow-listed origin.")
+        for origin in self.csrf_allowed_origins:
+            if not isinstance(origin, str) or not validate_request_origin(origin, set(self.csrf_allowed_origins)):
+                raise ValueError(f"CSRF allow-list contains an invalid origin: {origin!r}.")
         object.__setattr__(self, "application_name", self.application_name.strip())
         object.__setattr__(self, "log_level", normalized_log_level)
 
@@ -83,6 +99,24 @@ class Settings:
         """Create settings from process environment or a supplied mapping."""
         values = os.environ if environ is None else environ
         debug_value = values.get("HUB_DEBUG", "false")
+        raw_allowed_origins = values.get("HUB_CSRF_ALLOWED_ORIGINS") or values.get(
+            "HUB_ALLOWED_ORIGINS"
+        )
+        if raw_allowed_origins:
+            parsed_origins = tuple(
+                origin.strip() for origin in raw_allowed_origins.split(",") if origin.strip()
+            )
+        else:
+            parsed_origins = (
+                "http://localhost:3000",
+                "http://localhost:5173",
+                "http://127.0.0.1:3000",
+                "http://127.0.0.1:5173",
+                "https://localhost:3000",
+                "https://localhost:5173",
+                "https://127.0.0.1:3000",
+                "https://127.0.0.1:5173",
+            )
         return cls(
             application_name=values.get("HUB_APPLICATION_NAME", "CommitVerse Hub"),
             api_version=values.get("HUB_API_VERSION", "0.1.0"),
@@ -92,4 +126,5 @@ class Settings:
             api_prefix=values.get("HUB_API_PREFIX", "/api/v1"),
             database_url=values.get("HUB_DATABASE_URL"),
             auth_cookie=AuthCookieSettings.from_environment(values),
+            csrf_allowed_origins=parsed_origins,
         )

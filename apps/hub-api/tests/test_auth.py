@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from argon2 import PasswordHasher, Type
 from fastapi import Response
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, func, select, update
 from sqlalchemy.orm import sessionmaker
 
@@ -40,8 +41,18 @@ from commitverse_hub.auth.tokens import (
 )
 from commitverse_hub.config import Settings
 from commitverse_hub.db.base import Base
+from commitverse_hub.main import create_app
 from commitverse_hub.db.models import SessionRecord, User
 from commitverse_hub.db.session import create_session_factory, transactional_session
+
+
+def get_set_cookie_values(headers):
+    if hasattr(headers, "get_list"):
+        return headers.get_list("set-cookie")
+    if hasattr(headers, "getlist"):
+        return headers.getlist("set-cookie")
+    value = headers.get("set-cookie")
+    return [value] if value else []
 
 
 @pytest.fixture
@@ -285,6 +296,129 @@ def test_session_lifecycle_on_postgresql_in_a_rolled_back_schema() -> None:
         engine.dispose()
 
 
+def test_auth_routes_register_login_me_and_logout(tmp_path) -> None:
+    sqlite_path = tmp_path / "hub-auth-routes.sqlite"
+    engine = create_engine(f"sqlite:///{sqlite_path}")
+
+    @event.listens_for(engine, "connect")
+    def enable_foreign_keys(dbapi_connection, _connection_record) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    Base.metadata.create_all(engine)
+
+    settings = Settings(
+        environment="testing",
+        database_url="postgresql+psycopg://commitverse_app:secret@localhost:5432/commitverse",
+        auth_cookie=AuthCookieSettings(secure=False, max_age_seconds=3600),
+        csrf_allowed_origins=("https://hub.example.test",),
+    )
+
+    app = create_app(
+        settings=settings,
+        database_engine_factory=lambda _url: engine,
+    )
+
+    with TestClient(app) as client:
+        origin_headers = {"Origin": "https://hub.example.test"}
+        register_response = client.post(
+            "/api/v1/auth/register",
+            headers=origin_headers,
+            json={
+                "email": " ALICE@example.test ",
+                "password": "strong password",
+                "username": " Alice ",
+                "display_name": " Alice ",
+            },
+        )
+        assert register_response.status_code == 200
+        payload = register_response.json()
+        assert payload["email"] == "alice@example.test"
+        assert payload["username"] == "Alice"
+        assert payload["display_name"] == "Alice"
+        assert "commitverse_session" in client.cookies
+        csrf_token = register_response.headers["X-CSRF-Token"]
+
+        me_response = client.get("/api/v1/me")
+        assert me_response.status_code == 200
+        assert me_response.json()["email"] == "alice@example.test"
+
+        logout_response = client.post(
+            "/api/v1/auth/logout",
+            headers={**origin_headers, "X-CSRF-Token": csrf_token},
+        )
+        assert logout_response.status_code == 200
+        assert logout_response.json()["status"] == "ok"
+        assert "Max-Age=0" in get_set_cookie_values(logout_response.headers)[-1]
+
+        unauthenticated = client.get("/api/v1/me")
+        assert unauthenticated.status_code == 401
+
+
+def test_auth_routes_reject_duplicate_accounts_and_bad_login(tmp_path) -> None:
+    sqlite_path = tmp_path / "hub-auth-duplicates.sqlite"
+    engine = create_engine(f"sqlite:///{sqlite_path}")
+
+    @event.listens_for(engine, "connect")
+    def enable_foreign_keys(dbapi_connection, _connection_record) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    Base.metadata.create_all(engine)
+
+    settings = Settings(
+        environment="testing",
+        database_url="postgresql+psycopg://commitverse_app:secret@localhost:5432/commitverse",
+        auth_cookie=AuthCookieSettings(secure=False, max_age_seconds=3600),
+        csrf_allowed_origins=("https://hub.example.test",),
+    )
+
+    app = create_app(
+        settings=settings,
+        database_engine_factory=lambda _url: engine,
+    )
+
+    with TestClient(app) as client:
+        origin_headers = {"Origin": "https://hub.example.test"}
+        first = client.post(
+            "/api/v1/auth/register",
+            headers=origin_headers,
+            json={
+                "email": "duplicate@example.test",
+                "password": "strong password",
+                "username": "duplicateuser",
+            },
+        )
+        assert first.status_code == 200
+
+        second = client.post(
+            "/api/v1/auth/register",
+            headers=origin_headers,
+            json={
+                "email": "duplicate@example.test",
+                "password": "another strong password",
+                "username": "otheruser",
+            },
+        )
+        assert second.status_code == 409
+        assert second.json()["error"]["code"] == "account_exists"
+
+        session_token = client.cookies.get("commitverse_session")
+        csrf = generate_csrf_token(session_token)
+        bad_login = client.post(
+            "/api/v1/auth/login",
+            headers={**origin_headers, "X-CSRF-Token": csrf},
+            json={
+                "email": "duplicate@example.test",
+                "password": "wrong-password",
+            },
+        )
+        assert bad_login.status_code == 401
+        assert bad_login.json()["error"]["code"] == "authentication_failed"
+
+
 def test_csrf_tokens_are_random_and_bound_to_the_session() -> None:
     first_session = generate_session_token()
     second_session = generate_session_token()
@@ -382,7 +516,7 @@ def test_cookie_defaults_and_set_clear_headers() -> None:
     assert "Domain=" not in set_header
 
     clear_session_cookie(response, settings)
-    assert "Max-Age=0" in response.headers.getlist("set-cookie")[-1]
+    assert "Max-Age=0" in get_set_cookie_values(response.headers)[-1]
 
 
 def test_cookie_settings_enforce_production_security() -> None:

@@ -120,5 +120,11 @@ class RepositoryUserPermission(TimestampMixin, Base):
         nullable=False,
     )
     repository: Mapped[Repository] = relationship(back_populates="user_permissions")
-    user: Mapped["User"] = relationship(foreign_keys=[user_id])
-    grantor: Mapped["User"] = relationship(foreign_keys=[granted_by])
+    user: Mapped["User"] = relationship(
+        foreign_keys=[user_id],
+        back_populates="repository_permissions",
+    )
+    grantor: Mapped["User"] = relationship(
+        foreign_keys=[granted_by],
+        back_populates="granted_repository_permissions",
+    )

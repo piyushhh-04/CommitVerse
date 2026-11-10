@@ -42,8 +42,14 @@ credentials.
 ### Implemented authentication foundation
 
 The reusable primitives in `apps/hub-api/src/commitverse_hub/auth/` are
-implemented; no registration, login, logout, principal-resolution, or
-authorization routes exist.
+implemented and paired with session-oriented browser auth routes. The current
+Hub API includes account registration, login, logout, and current-user
+resolution under `/api/v1/auth` and `/api/v1/me`.
+
+State-changing auth routes require an exact allow-listed `Origin` and a valid
+`X-CSRF-Token` bound to the current opaque session token. Session cookies are
+issued with the configured `Secure`, `HttpOnly`, `SameSite`, path, and expiry
+attributes; only the session hash is stored in the database.
 
 - `passwords.py` uses `argon2-cffi` Argon2id with a 64 MiB memory cost,
   three iterations, parallelism four, a 32-byte output, and a 16-byte

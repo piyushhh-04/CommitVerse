@@ -127,11 +127,19 @@ def test_relationships_are_configured_and_one_to_one_profile() -> None:
     assert mapper.relationships.profile.uselist is False
     assert mapper.relationships.profile.back_populates == "user"
     assert mapper.relationships.owned_repositories.back_populates == "owner_user"
+    assert mapper.relationships.repository_permissions.back_populates == "user"
+    assert mapper.relationships.granted_repository_permissions.back_populates == "grantor"
     assert inspect(models.Organization).relationships.memberships.back_populates == (
         "organization"
     )
     assert inspect(models.Repository).relationships.user_permissions.back_populates == (
         "repository"
+    )
+    assert inspect(models.RepositoryUserPermission).relationships.user.back_populates == (
+        "repository_permissions"
+    )
+    assert inspect(models.RepositoryUserPermission).relationships.grantor.back_populates == (
+        "granted_repository_permissions"
     )
 
 

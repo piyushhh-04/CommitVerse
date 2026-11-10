@@ -52,6 +52,16 @@ class User(TimestampMixin, Base):
         back_populates="owner_user",
         passive_deletes=True,
     )
+    repository_permissions: Mapped[list["RepositoryUserPermission"]] = relationship(
+        foreign_keys="RepositoryUserPermission.user_id",
+        back_populates="user",
+        passive_deletes=True,
+    )
+    granted_repository_permissions: Mapped[list["RepositoryUserPermission"]] = relationship(
+        foreign_keys="RepositoryUserPermission.granted_by",
+        back_populates="grantor",
+        passive_deletes=True,
+    )
     audit_events: Mapped[list["AuditEvent"]] = relationship(
         back_populates="actor",
         passive_deletes=True,

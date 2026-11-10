@@ -4,10 +4,11 @@ The Hub API is the local-development FastAPI foundation for CommitVerse Hub.
 It is a separate package from CommitVerse Core and currently provides
 application composition, validated environment configuration, versioned
 health reporting, safe error responses, request IDs, structured request
-logging, an optional PostgreSQL persistence foundation, and reusable
-authentication security primitives. No registration, login, logout, or
-authorization workflows are implemented; the initial SQLAlchemy schema
-defines the nine approved metadata tables.
+logging, an optional PostgreSQL persistence foundation, and secure browser
+session authentication for the first-party Hub client. The current API includes
+registration, login, logout, and current-user resolution flows, with
+server-side session tokens and an exact-origin allowlist for state-changing
+requests.
 
 ## Requirements
 
@@ -85,6 +86,7 @@ non-database tests.
 | `HUB_LOG_LEVEL` | `INFO` | One of `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`. |
 | `HUB_API_PREFIX` | `/api/v1` | Absolute URL path prefix for the versioned API. |
 | `HUB_DATABASE_URL` | unset | PostgreSQL URL using `postgresql+psycopg://`; required for database checks and migrations. |
+| `HUB_ALLOWED_ORIGINS` / `HUB_CSRF_ALLOWED_ORIGINS` | `http://localhost:3000,...` | Exact allow-list of browser origins accepted for state-changing auth requests. |
 | `HUB_SESSION_COOKIE_NAME` | `commitverse_session` | Opaque browser-session cookie name. |
 | `HUB_SESSION_COOKIE_SECURE` | `true` | Secure-cookie flag; cannot be disabled in production. |
 | `HUB_SESSION_COOKIE_HTTPONLY` | `true` | Must remain enabled. |
@@ -157,7 +159,7 @@ transaction; it commits on success, rolls back on exceptions, and closes the
 session. Do not call synchronous database operations directly from an async
 route: use a synchronous route/dependency or bounded worker-thread execution.
 
-## Authentication security primitives
+## Authentication security primitives and workflows
 
 `commitverse_hub.auth` provides Argon2id password hashing/verification with
 rehash detection, 256-bit opaque session token generation and SHA-256 storage
@@ -167,13 +169,13 @@ hashes and raw session tokens are not logged or returned through response
 schemas. Session persistence helpers participate in the caller's SQLAlchemy
 transaction and do not commit independently.
 
-These are reusable foundations, not authentication workflows. There are no
-registration, login, logout, password-reset, email-verification, current-user,
-or authorization endpoints. Future routes must add generic failure responses,
-rate limiting, session rotation, authenticated principal resolution, and an
-explicit exact-Origin allowlist. CORS configuration is not a substitute for
-CSRF validation. Active-session lookup rejects disabled accounts; account
-disable workflows must also revoke the account's existing sessions.
+The API now implements first-party browser registration, login, logout, and
+current-user resolution under `/api/v1/auth` and `/api/v1/me`. Auth routes
+require an allow-listed `Origin` and a valid `X-CSRF-Token` when a session is
+active; raw session tokens are stored only as hashed values in the database.
+CORS configuration is not a substitute for CSRF validation. Active-session
+lookup rejects disabled accounts; account disable workflows must also revoke
+the account's existing sessions.
 
 ## Tests
 

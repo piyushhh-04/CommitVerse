@@ -2,9 +2,10 @@
 
 ## Status
 
-This roadmap is proposed and unimplemented. It sequences local Hub development
-without changing Core's completed scope. Each milestone should be independently
-reviewable and tested before the next dependent milestone begins.
+This roadmap sequences local Hub development without changing Core's completed
+scope. Milestone 2, the backend foundation, is implemented; subsequent
+milestones remain planned. Each milestone should be independently reviewable
+and tested before the next dependent milestone begins.
 
 ## Release scope
 
@@ -46,7 +47,7 @@ work; this roadmap does not imply implementation.
 | # | Milestone / dependencies | Objective and expected modules | Tests and acceptance criteria | Explicit exclusions |
 |---|---|---|---|---|
 | 1 | Architecture and policy approval; no code dependency | Preserve the accepted modular monolith, ownership/permission model, session design, Core boundary, lifecycle, and ₹0 constraints in docs. | Review diagrams, permission rules, deployment blocker, and Core capability claims. | Application scaffolding or deployment. |
-| 2 | Local backend foundation; depends on 1 | Create Hub API package, FastAPI composition root, configuration, request IDs, error mapping, and structured logging. | App startup/shutdown, invalid config, health route, error redaction, and logging tests. | Auth, database schema, Core operations. |
+| 2 | Local backend foundation; depends on 1 — **implemented** | Hub API package, FastAPI application factory, validated configuration, `/api/v1/health`, request IDs, safe error mapping, and structured logging. | App construction, invalid config, health route, error redaction, and request logging tests pass. | Auth, database schema, Core operations. |
 | 3 | Database and migration foundation; depends on 2 | Add PostgreSQL connection/session management, SQLAlchemy metadata, Alembic, and test database workflow. | Migration upgrade/downgrade and schema-constraint integration tests. | Cloud provisioning or Git object storage in PostgreSQL. |
 | 4 | Accounts and authentication; depends on 3 | Add users, password hashing, opaque session issue/lookup/revoke, login/logout, CSRF and auth dependencies. | Password verification/upgrade, expiry/revocation, cookie flags, CSRF, rate-limit, and generic-error tests. | OAuth, JWT, social login. |
 | 5 | Profiles; depends on 4 | Add profile model/service/API and username rules. | Case-insensitive uniqueness, validation, privacy, and authorization tests. | Avatar storage service. |

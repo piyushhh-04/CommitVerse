@@ -10,10 +10,12 @@ collaboration platform:
 
 - **CommitVerse Core:** a Git-like engine written in Python, with Git internals
   implemented in this project.
-- **CommitVerse Hub:** architecture-planned repository hosting and
-  collaboration, not yet implemented. Its accepted initial architecture is a
-  Python/FastAPI modular monolith with a React/Tailwind frontend, PostgreSQL
-  metadata, SQLAlchemy, Alembic, REST under `/api/v1`, opaque server-side
+- **CommitVerse Hub:** the initial API foundation is implemented under
+  `apps/hub-api/`: a Python/FastAPI modular monolith with validated
+  configuration, `/api/v1/health`, safe error responses, request IDs, and
+  structured request logging. Repository hosting and collaboration features
+  remain unimplemented. Its accepted architecture plans a React/Tailwind
+  frontend, PostgreSQL metadata, SQLAlchemy, Alembic, opaque server-side
   browser sessions, a filesystem repository store during development, and a
   dedicated Core adapter.
 - **CommitVerse AI:** a future AI developer assistant.
@@ -90,9 +92,11 @@ Planned stack:
   and CLI behavior.
 - Future AI: PyTorch and Hugging Face Transformers.
 
-These are technology choices, not a declaration that the planned application
-dependencies, services, or features are configured. Pytest is the exception:
-it is installed as Core's development dependency. Do not introduce additional
+These are technology choices, not a declaration that planned application
+services or features are configured. FastAPI and Uvicorn are dependencies of
+the Hub API foundation; PostgreSQL, SQLAlchemy, Alembic, and the frontend
+remain planned. Pytest is installed as Core's development dependency and as
+the Hub API's development dependency. Do not introduce additional
 technologies without a clear project need and an explicit decision.
 
 ## Development environment and workflow

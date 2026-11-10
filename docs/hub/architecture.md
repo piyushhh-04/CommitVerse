@@ -2,10 +2,11 @@
 
 ## Status and scope
 
-This document records the reviewed **proposed architecture** for CommitVerse
-Hub. Hub is not implemented. It is a local-development-first repository
-hosting and collaboration application that builds on, but does not absorb or
-replace, CommitVerse Core. CommitVerse AI remains future scope.
+This document records the reviewed architecture for CommitVerse Hub. The
+initial API foundation now exists in `apps/hub-api/`; repository hosting and
+collaboration features are not implemented. Hub is a local-development-first
+application that builds on, but does not absorb or replace, CommitVerse Core.
+CommitVerse AI remains future scope.
 
 The initial architecture is a **modular monolith**: one Python/FastAPI
 application, one PostgreSQL metadata database, a separately stored repository

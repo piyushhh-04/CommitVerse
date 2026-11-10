@@ -2,9 +2,20 @@
 
 ## Status and database boundary
 
-This is the proposed initial Hub PostgreSQL schema; it is not implemented.
-PostgreSQL owns Hub application metadata only. CommitVerse Core repository
-objects, refs, and bare repository files remain in the repository filesystem.
+This approved initial Hub PostgreSQL schema is implemented in SQLAlchemy
+models and Alembic revision `40037b3edad7`
+([initial migration](../../apps/hub-api/migrations/versions/40037b3edad7_create_initial_hub_schema.py)).
+It defines metadata only; PostgreSQL owns no CommitVerse Core repository
+objects, refs, or bare repository files. A live PostgreSQL server and
+application workflows have not been verified or implemented.
+
+The migration creates `users`, `user_profiles`, `organizations`,
+`organization_memberships`, `repositories`,
+`repository_user_permissions`, `invitations`, `sessions`, and `audit_events`.
+The models share `Base.metadata`; invitations are represented for schema
+consistency, but invitation workflows remain post-MVP. The migration was
+upgraded, downgraded, re-upgraded, and compared to metadata on a temporary
+SQLite database. PostgreSQL-specific migration execution remains pending.
 
 Use SQLAlchemy for persistence and Alembic for versioned schema migrations.
 Use UUID primary keys for externally addressable entities. Use database

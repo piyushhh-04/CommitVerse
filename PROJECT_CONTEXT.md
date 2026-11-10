@@ -13,12 +13,13 @@ collaboration platform:
 - **CommitVerse Hub:** the API and PostgreSQL persistence foundations are
   implemented under `apps/hub-api/`: a Python/FastAPI modular monolith with
   validated configuration, optional SQLAlchemy/Psycopg resources, Alembic
-  infrastructure, health diagnostics, safe errors, request IDs, and
-  structured logging. Application tables and repository hosting/collaboration
-  features remain unimplemented. Its accepted architecture plans a
-  React/Tailwind frontend, PostgreSQL metadata models, opaque server-side
-  browser sessions, a filesystem repository store during development, and a
-  dedicated Core adapter.
+  infrastructure, nine approved metadata models and their initial migration,
+  health diagnostics, safe errors, request IDs, and structured logging.
+  Authentication and authorization workflows, repository hosting, and
+  collaboration features remain unimplemented. Its accepted architecture
+  plans a React/Tailwind frontend, opaque server-side browser sessions, a
+  filesystem repository store during development, and a dedicated Core
+  adapter.
 - **CommitVerse AI:** a future AI developer assistant.
 
 Core has an installable Python package with canonical object serialization,
@@ -96,11 +97,12 @@ Planned stack:
 
 These are technology choices, not a declaration that planned application
 services or features are configured. FastAPI, Uvicorn, SQLAlchemy, Alembic,
-and Psycopg are dependencies of the Hub API foundation; a PostgreSQL server,
-Hub application models, schema revisions, and frontend remain unprovisioned
-or planned. Pytest is installed as Core's and Hub API's development
-dependency. Do not introduce additional technologies without a clear project
-need and an explicit decision.
+and Psycopg are dependencies of the Hub API foundation; the PostgreSQL server
+and frontend remain unprovisioned or planned. The initial schema revision is
+`40037b3edad7`; live PostgreSQL migration validation is pending. Pytest is
+installed as Core's and Hub API's development dependency. Do not introduce
+additional technologies without a clear project need and an explicit
+decision.
 
 ## Development environment and workflow
 
@@ -114,8 +116,10 @@ need and an explicit decision.
 - Hub API has an independent `apps/hub-api/pyproject.toml`. Its SQLAlchemy
   engine and session factory are application-lifecycle resources; setting
   `HUB_DATABASE_URL` is optional for startup and tests. Alembic loads that same
-  variable only when a migration command is invoked. No application tables or
-  database revision have been created yet.
+  variable only when a migration command is invoked. The shared declarative
+  metadata and initial Alembic revision define nine Hub metadata tables.
+  Application workflows do not yet use these models; the local PostgreSQL
+  server has not been provisioned or verified.
 - The scope of any future root-level `pyproject.toml` is undecided. It may
   configure workspace-wide tooling if needed, but must not replace the Core
   package's independently installable configuration.

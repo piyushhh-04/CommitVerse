@@ -5,7 +5,8 @@ It is a separate package from CommitVerse Core and currently provides
 application composition, validated environment configuration, versioned
 health reporting, safe error responses, request IDs, structured request
 logging, and an optional PostgreSQL persistence foundation. No application
-tables are defined yet.
+workflows are implemented; the initial SQLAlchemy schema defines the nine
+approved metadata tables.
 
 ## Requirements
 
@@ -108,12 +109,19 @@ Run Alembic commands from `apps/hub-api/`:
 ```sh
 ../../.venv/bin/alembic -c alembic.ini current
 ../../.venv/bin/alembic -c alembic.ini upgrade head
+../../.venv/bin/alembic -c alembic.ini check
 ```
 
 Alembic uses `HUB_DATABASE_URL` and `commitverse_hub.db.base.Base.metadata`.
-Migrations are never run by application startup. No initial revision or
-application tables exist yet. Add model modules and a reviewed migration in a
-later milestone before treating the database schema as established.
+Migration `40037b3edad7` (`create_initial_hub_schema`) creates the initial
+schema for users, profiles, organizations, organization memberships,
+repositories, direct repository permissions, invitations, sessions, and
+audit events. Migration `upgrade`/`downgrade` is explicit and is never run by
+application startup. The schema contains no authentication or authorization
+workflows. Future model changes require reviewed Alembic revisions; do not use
+`Base.metadata.create_all()` as a substitute.
+`alembic check` compares the connected schema with model metadata and requires
+the configured database URL.
 
 The engine and synchronous session factory are application-lifecycle
 resources. Use `transactional_session` only where the caller explicitly owns a
@@ -132,13 +140,17 @@ PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest \
 
 The default test suite uses an in-process HTTP client and injected resources;
 it requires neither a running PostgreSQL server nor external network access.
-Tests of transaction mechanics do not claim PostgreSQL driver interoperability.
+Schema tests apply, downgrade, and re-apply the migration against a temporary
+SQLite database, then compare SQLAlchemy metadata and inspect indexes. This
+does not claim PostgreSQL interoperability. SQLite/Alembic cannot reflect
+expression-based indexes, so their created SQL is checked directly.
 
 ## Current limitations
 
-This is only the persistence foundation. It does not define application
-models, authentication, sessions, authorization, organizations, repository
-operations, the Core adapter, network Git protocols, a frontend, or
-deployment. A live PostgreSQL server is not bundled or provisioned. Database
-provisioning remains local/deferred under the project's strict ₹0 policy; this
-package does not establish cloud deployment readiness.
+The persistence schema does not implement registration/login, password
+hashing, session issuance or middleware, authorization workflows,
+organization management, repository operations, the Core adapter, network
+Git protocols, a frontend, or deployment. A live PostgreSQL server is not
+bundled or provisioned, so live PostgreSQL migration validation remains
+pending. Database provisioning remains local/deferred under the project's
+strict ₹0 policy; this package does not establish cloud deployment readiness.

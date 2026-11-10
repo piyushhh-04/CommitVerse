@@ -17,6 +17,7 @@ from commitverse_hub.config import Settings
 from commitverse_hub.db.base import Base
 from commitverse_hub.db.engine import build_engine, check_database_connection
 from commitverse_hub.db.session import create_session_factory, transactional_session
+from commitverse_hub.db import models as _models
 from commitverse_hub.main import create_app
 
 DATABASE_URL = "postgresql+psycopg://hub_user:secret-value@127.0.0.1:5432/hub_test"
@@ -250,5 +251,7 @@ def test_alembic_uses_shared_metadata_without_embedding_credentials() -> None:
     assert Path(script.dir).resolve() == (package_root / "migrations").resolve()
     assert config.get_main_option("sqlalchemy.url") == ""
     assert "target_metadata = Base.metadata" in env_source
-    assert Base.metadata.tables == {}
-    assert list(script.walk_revisions()) == []
+    assert len(Base.metadata.tables) == 9
+    revisions = list(script.walk_revisions())
+    assert len(revisions) == 1
+    assert revisions[0].down_revision is None

@@ -1,4 +1,4 @@
-"""Shared SQLAlchemy declarative metadata for future Hub models."""
+"""Shared SQLAlchemy declarative metadata for Hub models."""
 
 from sqlalchemy import MetaData
 from sqlalchemy.orm import DeclarativeBase

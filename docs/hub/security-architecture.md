@@ -2,12 +2,14 @@
 
 ## Status and threat model
 
-This document specifies **proposed controls** for an unimplemented Hub. They
-are design requirements, not current security guarantees. The threat model
-covers unauthenticated and malicious clients, compromised accounts, abusive
-repository operations, malformed repository data, path manipulation, symlink
-attacks, concurrent requests, partial database/filesystem failures, and
-accidental exposure through logs or API errors.
+This document specifies **proposed controls** for Hub features that remain
+unimplemented. The initial metadata schema and constraints exist, but they do
+not implement authentication, authorization, repository isolation, or the
+other security controls below and must not be treated as security guarantees.
+The threat model covers unauthenticated and malicious clients, compromised
+accounts, abusive repository operations, malformed repository data, path
+manipulation, symlink attacks, concurrent requests, partial database/filesystem
+failures, and accidental exposure through logs or API errors.
 
 Trust boundaries:
 

@@ -12,9 +12,9 @@ The initial architecture is a **modular monolith**: one Python/FastAPI
 application, one PostgreSQL metadata database, a separately stored repository
 filesystem, and a React/Tailwind web client. REST endpoints are versioned under
 `/api/v1`. The API package and optional SQLAlchemy/Psycopg/Alembic foundation
-exist, but these choices do not imply that application tables, schema
-revisions, a database server, runtime services, or deployment configuration
-exist.
+and initial metadata models/migration exist. These choices do not imply that a
+PostgreSQL server, application workflows, runtime services, or deployment
+configuration exist.
 
 ## Goals and boundaries
 
@@ -227,8 +227,10 @@ does not solve the hosting blocker and no deployment configuration is implied.
   SQLAlchemy/Alembic, REST `/api/v1`, opaque server-side browser sessions,
   filesystem-backed bare repositories during development, dedicated Core
   adapter.
-- **Not implemented:** Hub runtime, schema/migrations, API, frontend,
-  authorization, deployment, and repository lifecycle orchestration.
+- **Not implemented:** authentication and authorization workflows, frontend,
+  deployment, and repository lifecycle orchestration. The API foundation,
+  metadata models, and initial schema migration exist; no live PostgreSQL
+  server has been verified.
 - **Not available from Core:** network Git protocols, packfiles, and ordinary
   remote-client interoperability.
 - **Operational limitations to solve:** DB/filesystem partial failure,

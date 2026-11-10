@@ -17,8 +17,9 @@ CommitVerse is organized as a modular monorepo with three product areas:
    platform.
 3. **CommitVerse AI** is the planned AI-powered developer assistant layer.
 
-The implemented work is in Core. Hub and AI are future-facing architecture
-plans and do not yet contain working runtime integrations.
+The implemented work is in Core. Hub has an accepted modular-monolith
+architecture plan but no working runtime integration or application code. AI
+remains future scope.
 
 Core is an independently installable Python package under
 `packages/commitverse-core/`, with source in
@@ -113,6 +114,14 @@ Hub is expected to coordinate hosting and collaboration workflows with Core
 through defined repository interfaces, but no Hub API or integration is present
 in this repository.
 
+The accepted initial Hub design is a Python/FastAPI modular monolith with a
+React/Tailwind frontend, PostgreSQL application metadata, SQLAlchemy, Alembic,
+REST under `/api/v1`, opaque server-side browser sessions, local filesystem
+repository storage during development, and a dedicated Core adapter. The
+architecture is documented in [`../hub/architecture.md`](../hub/architecture.md),
+with proposed schema, security, and roadmap in the linked Hub documents. These
+documents describe plans; Hub remains unimplemented.
+
 AI is a future product capability. It has no implemented data access model,
 repository API, or runtime integration in the current codebase.
 
@@ -151,9 +160,14 @@ during development, and GitHub for source and collaboration.
 Cloudflare Workers must not run the full Python Git engine. Cloudflare R2 is
 deferred unless a genuinely no-billing setup becomes possible. AWS, Render,
 Fly.io, Railway, and Supabase are excluded; Neon is the selected PostgreSQL
-service. Hosting, deployment, database provisioning, and cloud storage remain
-planned rather than implemented. If a free quota is exhausted, a feature must
-pause, degrade gracefully, or migrate without incurring charges.
+service. There is currently no verified approved zero-cost hosting solution
+for the complete Python FastAPI application and filesystem-backed repository
+storage. Hub development remains local and Hub is not cloud-deployment-ready.
+Deployment requires separate verification of a compliant Python runtime and
+repository-storage solution. Hosting, deployment, database provisioning, and
+cloud storage remain planned rather than implemented. If a free quota is
+exhausted, a feature must pause, degrade gracefully, or migrate without
+incurring charges.
 
 ## Development environment and deployment
 
@@ -174,7 +188,9 @@ Known limitations include:
 
 - no conflict-resolution workflow or recursive/octopus merges
 - no packed refs or reflog support
-- no remote transport or repository hosting workflows
+- no network Git transport or repository hosting workflows; local filesystem
+  transport, bounded local fetch, fast-forward-only local push, and safe local
+  clone are implemented as library operations
 - no packfile handling
 - no rename detection in status or diff
 - partial `.gitignore` semantics

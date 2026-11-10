@@ -10,7 +10,12 @@ collaboration platform:
 
 - **CommitVerse Core:** a Git-like engine written in Python, with Git internals
   implemented in this project.
-- **CommitVerse Hub:** repository hosting and collaboration.
+- **CommitVerse Hub:** architecture-planned repository hosting and
+  collaboration, not yet implemented. Its accepted initial architecture is a
+  Python/FastAPI modular monolith with a React/Tailwind frontend, PostgreSQL
+  metadata, SQLAlchemy, Alembic, REST under `/api/v1`, opaque server-side
+  browser sessions, a filesystem repository store during development, and a
+  dedicated Core adapter.
 - **CommitVerse AI:** a future AI developer assistant.
 
 Core has an installable Python package with canonical object serialization,
@@ -23,12 +28,14 @@ deletion, merge-base discovery, basic three-way merging, and read-only
 status/diff comparison. The `cv` CLI exposes these tested operations. Unit, integration,
 and isolated external Git compatibility tests cover the implemented scope.
 This is not a complete version control engine: conflict resolution,
-recursive/octopus merge, remote management, network transport, packfiles,
+recursive/octopus merge, remote management, network Git transport, packfiles,
 rename detection, and full Git compatibility remain unimplemented. Local
-advertisement, bounded loose-object fetch, fast-forward-only push to bare
-repositories, and safe local clone are implemented. Treat Hub, AI, and other
-unimplemented Core functionality as plans until working implementations and
-their tests exist.
+filesystem advertisement, bounded loose-object fetch, fast-forward-only push
+to bare repositories, and safe local clone are implemented as library
+operations, not `cv` CLI commands. Git-over-HTTP, Git-over-SSH, and ordinary
+network-based Git client interoperability are not implemented. Treat Hub, AI,
+and other unimplemented functionality as plans until working implementations
+and their tests exist.
 
 ## Architecture
 
@@ -43,6 +50,9 @@ their tests exist.
 - Define explicit interfaces between components. Do not make one component's
   internal storage format an accidental dependency of another.
 - Keep deployment and infrastructure concerns distinct from product logic.
+- Hub's accepted initial architecture is a modular monolith, not microservices;
+  its proposed architecture, data model, security boundaries, and roadmap are
+  documented under `docs/hub/`.
 - CommitVerse follows the permanent strict zero-cost policy in
   `docs/infrastructure/zero-cost-policy.md`: it must not require or incur
   payment. Approved planned services are Cloudflare Pages Free, Cloudflare
@@ -51,6 +61,12 @@ their tests exist.
   AWS, Render, Fly.io, Railway, Supabase, and paid or quota-overrun usage are
   excluded. Free-quota exhaustion must pause, degrade, or migrate a feature
   without incurring charges.
+- Hub development remains local: there is no verified, approved zero-cost host
+  for the complete Python FastAPI application plus filesystem-backed Core
+  repository storage. Cloudflare Pages Free, suitable lightweight Workers Free
+  endpoints, and Neon PostgreSQL Free are planned only; they are not provisioned.
+  Workers must not run the Python Git engine. Deployment requires separate
+  verification of a compliant Python runtime and repository-storage solution.
 - Docker is mandatory infrastructure for reproducible environments and
   containerized application services. Keep Docker configuration modular and
   use Docker Compose when integrating FastAPI, PostgreSQL, and frontend
@@ -101,9 +117,9 @@ technologies without a clear project need and an explicit decision.
   `cv` entry point. `objects/format.py` and `objects/store.py` provide
   canonical object bytes, hashing, and verified loose-object storage. Repository
   capability modeling supports bare repositories for object and reference
-  operations; worktree operations require a non-bare repository. Remote
-  local transport, bounded fetch, push, and clone are implemented; network
-  transport is not implemented.
+  operations; worktree operations require a non-bare repository. Local
+  filesystem transport, bounded fetch, push, and clone library operations are
+  implemented; network Git transport is not.
   Compatibility tests invoke Git only in isolated temporary repositories.
   `checkout.py`, `merge_base.py`, and `merge.py` provide type-aware rollback
   for checkout transitions, iterative ancestry, and basic merges; network

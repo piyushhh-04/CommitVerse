@@ -453,48 +453,100 @@ def test_csrf_tokens_are_random_and_bound_to_the_session() -> None:
     assert not validate_csrf_token(first_session, tampered_csrf)
 
 
-def test_csrf_protection_accepts_exact_allow_listed_origin() -> None:
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "https://hub.example.test",
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+        "http://[::1]:8000",
+    ],
+)
+def test_csrf_protection_accepts_exact_allow_listed_origin(origin: str) -> None:
     session_token = generate_session_token()
     csrf_token = generate_csrf_token(session_token)
 
     require_csrf_protection(
         session_token,
         csrf_token,
-        "https://hub.example.test",
-        {"https://hub.example.test"},
+        origin,
+        {origin},
     )
 
 
-@pytest.mark.parametrize(
-    ("csrf_token", "origin"),
-    [
-        (None, "https://hub.example.test"),
-        ("invalid", "https://hub.example.test"),
-        ("valid-token", None),
-        ("valid-token", "https://attacker.example.test"),
-    ],
-)
-def test_csrf_protection_rejects_missing_or_invalid_values(
+@pytest.mark.parametrize("csrf_token", [None, "invalid"])
+def test_csrf_protection_rejects_missing_or_invalid_tokens(
     csrf_token: str | None,
-    origin: str | None,
 ) -> None:
+    session_token = generate_session_token()
     allowed_origins = {"https://hub.example.test"}
     with pytest.raises(CsrfValidationError, match="CSRF validation failed"):
         require_csrf_protection(
-            generate_session_token(),
+            session_token,
+            csrf_token,
+            "https://hub.example.test",
+            allowed_origins,
+        )
+
+
+@pytest.mark.parametrize(
+    ("origin", "allowed_origins"),
+    [
+        (None, {"https://hub.example.test"}),
+        ("https://attacker.example.test", {"https://hub.example.test"}),
+        ("*", {"https://hub.example.test"}),
+        ("https://*.example.test", {"https://hub.example.test"}),
+        ("https://foo..example.test", {"https://hub.example.test"}),
+        ("https://-bad.example.test", {"https://hub.example.test"}),
+        ("https://bad_.example.test", {"https://hub.example.test"}),
+        ("https://hub.example.test\t", {"https://hub.example.test"}),
+        ("https://hub.example.test\n", {"https://hub.example.test"}),
+        ("https://user@hub.example.test", {"https://hub.example.test"}),
+        ("https://user:password@hub.example.test", {"https://hub.example.test"}),
+    ],
+)
+def test_csrf_protection_rejects_invalid_origins_with_valid_token(
+    origin: str | None,
+    allowed_origins: set[str],
+) -> None:
+    session_token = generate_session_token()
+    csrf_token = generate_csrf_token(session_token)
+    with pytest.raises(CsrfValidationError):
+        require_csrf_protection(
+            session_token,
             csrf_token,
             origin,
             allowed_origins,
         )
 
 
-def test_csrf_protection_rejects_wildcard_origin_configuration() -> None:
+@pytest.mark.parametrize(
+    "invalid_allowed_origin",
+    [
+        "*",
+        "https://*.example.test",
+        "https://hub.example.test/path",
+        "https://foo..example.test",
+        "https://-bad.example.test",
+        "https://bad_.example.test",
+        "https://hub.example.test\t",
+        "https://hub.example.test\n",
+        "https://hub.example.test\r",
+        "https://hub.example.test\0",
+        "https://hub.example.test\x7f",
+    ],
+)
+def test_csrf_protection_rejects_invalid_allowlist_entries_with_valid_token(
+    invalid_allowed_origin: str,
+) -> None:
+    session_token = generate_session_token()
+    csrf_token = generate_csrf_token(session_token)
     with pytest.raises(CsrfValidationError):
         require_csrf_protection(
-            generate_session_token(),
-            "token",
+            session_token,
+            csrf_token,
             "https://hub.example.test",
-            {"*"},
+            {invalid_allowed_origin},
         )
 
 
@@ -510,10 +562,12 @@ def test_csrf_protection_rejects_non_origin_values(
     origin: str,
     allowed_origins: set[str],
 ) -> None:
+    session_token = generate_session_token()
+    csrf_token = generate_csrf_token(session_token)
     with pytest.raises(CsrfValidationError):
         require_csrf_protection(
-            generate_session_token(),
-            "invalid",
+            session_token,
+            csrf_token,
             origin,
             allowed_origins,
         )

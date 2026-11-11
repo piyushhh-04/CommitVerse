@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import ipaddress
 import re
 from collections.abc import Collection
 from urllib.parse import urlsplit
@@ -75,20 +76,56 @@ def validate_request_origin(
 def _is_http_origin(value: str) -> bool:
     if not isinstance(value, str) or value == "null":
         return False
+    if any(
+        character.isspace() or ord(character) < 0x20 or ord(character) == 0x7F
+        for character in value
+    ):
+        return False
     try:
         parsed = urlsplit(value)
         parsed.port
     except ValueError:
         return False
+    hostname = parsed.hostname
     return (
         parsed.scheme in {"http", "https"}
         and bool(parsed.netloc)
-        and parsed.hostname is not None
+        and hostname is not None
+        and _is_valid_hostname(hostname)
+        and not parsed.netloc.endswith(":")
         and parsed.username is None
         and parsed.password is None
         and not parsed.path
         and not parsed.query
         and not parsed.fragment
+    )
+
+
+def _is_valid_hostname(hostname: str) -> bool:
+    if not hostname or "*" in hostname:
+        return False
+    try:
+        ipaddress.ip_address(hostname)
+        return True
+    except ValueError:
+        pass
+
+    try:
+        ascii_hostname = hostname.encode("idna").decode("ascii")
+    except UnicodeError:
+        return False
+    if ascii_hostname.endswith("."):
+        ascii_hostname = ascii_hostname[:-1]
+    if not ascii_hostname or len(ascii_hostname) > 253:
+        return False
+    if re.fullmatch(r"[0-9.]+", ascii_hostname):
+        return False
+    return all(
+        1 <= len(label) <= 63
+        and label[0].isalnum()
+        and label[-1].isalnum()
+        and all(character.isalnum() or character == "-" for character in label)
+        for label in ascii_hostname.split(".")
     )
 
 

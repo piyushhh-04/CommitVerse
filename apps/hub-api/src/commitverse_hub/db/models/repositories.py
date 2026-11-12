@@ -32,7 +32,7 @@ class Repository(TimestampMixin, Base):
             name="repository_visibility",
         ),
         CheckConstraint(
-            "lifecycle_state IN ('provisioning', 'ready', 'deleting', 'error')",
+            "lifecycle_state IN ('provisioning', 'ready', 'deleting', 'error', 'deleted')",
             name="repository_lifecycle_state",
         ),
         Index(

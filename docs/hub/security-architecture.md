@@ -3,11 +3,12 @@
 ## Status and threat model
 
 This document records the approved security architecture and distinguishes
-implemented Hub controls from remaining requirements. Registration/login/logout,
-session authentication, and owner-only personal repository lifecycle routes
-exist. Organization/collaborator authorization and broader repository
-operations remain unimplemented; the initial schema alone is not a security
-guarantee.
+implemented Hub controls from remaining requirements.
+Registration/login/logout, session authentication, and owner-only personal
+repository lifecycle routes exist. The shared repository lifecycle service
+also supports organization repositories with current owner/admin membership
+checks; organization repository HTTP routes and broader repository operations
+remain unimplemented. The initial schema alone is not a security guarantee.
 The threat model covers unauthenticated and malicious clients, compromised
 accounts, abusive repository operations, malformed repository data, path
 manipulation, symlink attacks, concurrent requests, partial database/filesystem
@@ -187,34 +188,43 @@ and test symlink/path traversal attempts.
 ## Concurrency and bounded execution
 
 The implemented lifecycle operations use synchronous FastAPI handlers so
-Core and filesystem work runs outside the ASGI event loop. A module-level
-`RLock` serializes repository create/delete operations within one process.
-There is no cross-process lock, general per-repository operation coordination,
-or configured operation timeout/concurrency limit. Keep repository lifecycle
-operations single-process until a cross-process strategy is implemented.
+Core and filesystem work runs outside the ASGI event loop. Database row locks
+coordinate lifecycle metadata transitions without relying on process-local
+locks. Organization-owned operations always lock the organization before the
+repository; personal operations lock the repository. Creation publication and
+deletion finalization revalidate state and actor authorization under those
+locks. Database transactions are closed before Core or filesystem work.
+These locks coordinate database metadata only; shared storage and multi-host
+behavior remain deployment-specific and are not verified.
 
 Core's CAS ref update coordinates one reference publication; it is not a
 multi-ref/multi-operation transaction and does not coordinate metadata
-transactions or every ref writer. A process-local keyed lock does not
-coordinate multiple server processes. Keep the initial development topology
-single-process for repository mutations unless a cross-process locking design
-has been implemented and verified. Do not claim safe horizontal scaling by
-adding workers.
+transactions or every ref writer. PostgreSQL row locks coordinate metadata
+transitions across processes, but do not coordinate storage across hosts or
+provide multi-host filesystem guarantees. Do not claim safe horizontal scaling
+without verifying the shared repository storage and failure behavior.
 
-The current tests cover lifecycle races within one process, publication and
-cleanup failures, retry behavior, path/symlink rejection, and denial before
-Core access. Cross-process contention, automated stale-state reconciliation,
-and bounded execution remain unverified/unimplemented.
+The current tests cover personal and organization lifecycle behavior,
+authorization revalidation, lock ordering, provisioning/publication/cleanup
+failures, retry behavior, idempotent cleanup, path/symlink rejection, and
+audit transitions. Multi-process database contention, automated stale-state
+reconciliation, and bounded execution remain unverified/unimplemented.
 
 ## Database and filesystem lifecycle
 
-Repository metadata uses `provisioning`, `ready`, `deleting`, and `error`
-states. PostgreSQL and the filesystem do not share an atomic transaction.
-Creation and deletion have idempotent retry paths for known metadata records,
-but an automated reconciler for abandoned `provisioning`/`deleting`/`error`
-records or orphaned directories is not implemented. Reconciliation must compare
-generated opaque keys, validate paths, and require explicit policy for
-ambiguous state; it must never silently delete unknown data.
+Repository metadata uses `provisioning`, `ready`, `error`, `deleting`, and
+`deleted` states. Exactly one personal-user or organization owner is set.
+PostgreSQL and the filesystem do not share an atomic transaction. Creation
+reserves metadata and authorizes the current organization role in a committed
+transaction, provisions storage outside the transaction, then revalidates
+under organization-before-repository locks before publishing `ready` with its
+audit event. Deletion similarly commits `deleting` and its audit event before
+cleanup, then atomically writes the tombstone, `deleted` state, and final audit
+event. Cleanup and finalization have retry paths. An automated reconciler for
+abandoned lifecycle records or orphaned directories is not implemented;
+reconciliation must compare generated opaque keys, validate paths, and require
+explicit policy for ambiguous state; it must never silently delete unknown
+data.
 
 ## Backup, recovery, and deployment
 

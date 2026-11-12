@@ -68,9 +68,18 @@ def delete_bare_repository(storage_root: Path, storage_key: str) -> bool:
     repository_path = _repository_path(root, storage_key)
     if not _path_exists(repository_path):
         return False
-    _verify_bare_repository(repository_path)
+    try:
+        _verify_bare_repository(repository_path)
+    except RepositoryStorageError:
+        if not _path_exists(repository_path):
+            return False
+        raise
     try:
         shutil.rmtree(repository_path)
+    except FileNotFoundError as exc:
+        if not _path_exists(repository_path):
+            return False
+        raise RepositoryStorageError("Core repository deletion failed.") from exc
     except OSError as exc:
         raise RepositoryStorageError("Core repository deletion failed.") from exc
     return True

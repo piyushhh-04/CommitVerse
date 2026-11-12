@@ -281,7 +281,7 @@ def test_migration_upgrade_downgrade_upgrade_and_autogenerate_match(
         assert set(inspector.get_table_names()) == _EXPECTED_TABLES | {"alembic_version"}
 
         migration_context = MigrationContext.configure(connection)
-        assert migration_context.get_current_revision() == "40037b3edad7"
+        assert migration_context.get_current_revision() == "a7d4d1d1f7ed"
         from alembic.autogenerate import compare_metadata
 
         assert compare_metadata(migration_context, Base.metadata) == []
@@ -314,11 +314,112 @@ def test_migration_upgrade_downgrade_upgrade_and_autogenerate_match(
         }
 
 
-def test_migration_revision_is_the_single_initial_revision() -> None:
+def test_repository_deleted_state_migration_backfills_only_exact_tombstones(
+    tmp_path,
+) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'repository_deleted.sqlite'}")
+
+    @event.listens_for(engine, "connect")
+    def enable_foreign_keys(dbapi_connection, _connection_record) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    with engine.connect() as connection:
+        command.upgrade(_migration_config(connection), "40037b3edad7")
+
+        user_id = uuid.uuid4()
+        connection.execute(
+            models.User.__table__.insert().values(
+                id=user_id,
+                normalized_email="owner@example.test",
+                password_hash="hash",
+            )
+        )
+
+        exact_id = uuid.uuid4()
+        ambiguous_id = uuid.uuid4()
+        connection.execute(
+            models.Repository.__table__.insert().values(
+                id=exact_id,
+                owner_user_id=user_id,
+                created_by=user_id,
+                slug=f"deleted~{exact_id.hex}",
+                visibility="private",
+                storage_key="exact-tombstone",
+                lifecycle_state="deleting",
+            )
+        )
+        connection.execute(
+            models.Repository.__table__.insert().values(
+                id=ambiguous_id,
+                owner_user_id=user_id,
+                created_by=user_id,
+                slug="deleted~legacy-name",
+                visibility="private",
+                storage_key="ambiguous-tombstone",
+                lifecycle_state="deleting",
+            )
+        )
+
+        command.upgrade(_migration_config(connection), "head")
+        exact_row = connection.execute(
+            text(
+                "SELECT lifecycle_state FROM repositories WHERE lower(replace(id, '-', '')) = :hex_id"
+            ),
+            {"hex_id": exact_id.hex},
+        ).scalar_one()
+        ambiguous_row = connection.execute(
+            text(
+                "SELECT lifecycle_state FROM repositories WHERE lower(replace(id, '-', '')) = :hex_id"
+            ),
+            {"hex_id": ambiguous_id.hex},
+        ).scalar_one()
+        assert exact_row == "deleted"
+        assert ambiguous_row == "deleting"
+
+        manual_deleted_id = uuid.uuid4()
+        connection.execute(
+            models.Repository.__table__.insert().values(
+                id=manual_deleted_id,
+                owner_user_id=user_id,
+                created_by=user_id,
+                slug="non-standard-deleted-slug",
+                visibility="private",
+                storage_key="manual-deleted",
+                lifecycle_state="deleted",
+            )
+        )
+
+        command.downgrade(_migration_config(connection), "40037b3edad7")
+        downgraded_row = connection.execute(
+            text(
+                "SELECT lifecycle_state, slug FROM repositories WHERE lower(replace(id, '-', '')) = :hex_id"
+            ),
+            {"hex_id": manual_deleted_id.hex},
+        ).one()
+        assert downgraded_row == ("deleting", "non-standard-deleted-slug")
+
+        command.upgrade(_migration_config(connection), "head")
+        reupgraded_row = connection.execute(
+            text(
+                "SELECT lifecycle_state, slug FROM repositories WHERE lower(replace(id, '-', '')) = :hex_id"
+            ),
+            {"hex_id": manual_deleted_id.hex},
+        ).one()
+        assert reupgraded_row == ("deleting", "non-standard-deleted-slug")
+        assert MigrationContext.configure(connection).get_current_revision() == (
+            "a7d4d1d1f7ed"
+        )
+
+    engine.dispose()
+
+
+def test_migration_revision_chain_is_current_and_explicit() -> None:
     package_root = Path(__file__).parents[1]
     script = ScriptDirectory.from_config(Config(str(package_root / "alembic.ini")))
-    revisions = list(script.walk_revisions())
+    revisions = {revision.revision: revision for revision in script.walk_revisions()}
 
-    assert len(revisions) == 1
-    assert revisions[0].revision == "40037b3edad7"
-    assert revisions[0].down_revision is None
+    assert set(revisions) == {"40037b3edad7", "a7d4d1d1f7ed"}
+    assert revisions["40037b3edad7"].down_revision is None
+    assert revisions["a7d4d1d1f7ed"].down_revision == "40037b3edad7"

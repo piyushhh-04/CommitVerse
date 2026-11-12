@@ -8,10 +8,13 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from commitverse_hub.auth.cookies import AuthCookieSettings
 from commitverse_hub.auth.passwords import hash_password
+from commitverse_hub.config import Settings
 from commitverse_hub.db.base import Base
 from commitverse_hub.db.models import (
     AuditEvent,
@@ -20,6 +23,7 @@ from commitverse_hub.db.models import (
     User,
 )
 from commitverse_hub.db.session import transactional_session
+from commitverse_hub.main import create_app
 from commitverse_hub.organizations import (
     OrganizationConflictError,
     OrganizationDisabledError,
@@ -748,3 +752,250 @@ def test_postgresql_concurrent_owner_leaves_preserve_one_eligible_owner() -> Non
         with engine.begin() as connection:
             connection.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
         engine.dispose()
+
+
+def _register_api_user(client: TestClient, *, email: str, username: str, password: str):
+    response = client.post(
+        "/api/v1/auth/register",
+        headers={"Origin": "https://hub.example.test"},
+        json={
+            "email": email,
+            "username": username,
+            "password": password,
+        },
+    )
+    assert response.status_code == 200, response.text
+    csrf_token = response.headers["X-CSRF-Token"]
+    me = client.get("/api/v1/me")
+    assert me.status_code == 200, me.text
+    return response.json(), csrf_token, me.json()
+
+
+def test_organization_api_routes_create_list_detail_and_member_management(tmp_path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'organization-api.sqlite'}")
+
+    @event.listens_for(engine, "connect")
+    def enable_foreign_keys(dbapi_connection, _connection_record) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    Base.metadata.create_all(engine)
+    settings = Settings(
+        environment="testing",
+        database_url="postgresql+psycopg://commitverse_app:secret@localhost:5432/commitverse",
+        auth_cookie=AuthCookieSettings(secure=False, max_age_seconds=3600),
+        csrf_allowed_origins=("https://hub.example.test",),
+    )
+    app = create_app(settings=settings, database_engine_factory=lambda _url: engine)
+
+    with TestClient(app) as owner_client, TestClient(app) as member_client:
+        _, owner_csrf, owner_me = _register_api_user(
+            owner_client,
+            email="owner-org@example.test",
+            username="ownerorg",
+            password="owner-password",
+        )
+        _, member_csrf, member_me = _register_api_user(
+            member_client,
+            email="member-org@example.test",
+            username="memberorg",
+            password="member-password",
+        )
+
+        create_response = owner_client.post(
+            "/api/v1/organizations",
+            headers={"Origin": "https://hub.example.test", "X-CSRF-Token": owner_csrf},
+            json={"slug": "demo-org", "name": "Demo Organization"},
+        )
+        assert create_response.status_code == 201, create_response.text
+        created = create_response.json()
+        assert created["slug"] == "demo-org"
+        assert created["role"] == "owner"
+
+        list_response = owner_client.get("/api/v1/organizations", params={"limit": 10, "offset": 0})
+        assert list_response.status_code == 200, list_response.text
+        assert list_response.json()["total"] == 1
+
+        detail_response = owner_client.get(f"/api/v1/organizations/{created['id']}")
+        assert detail_response.status_code == 200, detail_response.text
+        assert detail_response.json()["name"] == "Demo Organization"
+
+        member_add = owner_client.post(
+            f"/api/v1/organizations/{created['id']}/members",
+            headers={"Origin": "https://hub.example.test", "X-CSRF-Token": owner_csrf},
+            json={"user_id": member_me["id"], "role": "member"},
+        )
+        assert member_add.status_code == 200, member_add.text
+        assert member_add.json()["role"] == "member"
+
+        member_detail = member_client.get(f"/api/v1/organizations/{created['id']}")
+        assert member_detail.status_code == 200, member_detail.text
+        assert member_detail.json()["role"] == "member"
+
+        member_list = member_client.get(
+            f"/api/v1/organizations/{created['id']}/members",
+            params={"limit": 10, "offset": 0},
+        )
+        assert member_list.status_code == 200, member_list.text
+        assert member_list.json()["total"] == 2
+
+        bad_role = member_client.patch(
+            f"/api/v1/organizations/{created['id']}/members/{owner_me['id']}",
+            headers={"Origin": "https://hub.example.test", "X-CSRF-Token": member_csrf},
+            json={"role": "member"},
+        )
+        assert bad_role.status_code == 403, bad_role.text
+
+    engine.dispose()
+
+
+def test_organization_api_restricts_role_changes_and_keeps_last_owner(tmp_path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'organization-api-rules.sqlite'}")
+
+    @event.listens_for(engine, "connect")
+    def enable_foreign_keys(dbapi_connection, _connection_record) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    Base.metadata.create_all(engine)
+    settings = Settings(
+        environment="testing",
+        database_url="postgresql+psycopg://commitverse_app:secret@localhost:5432/commitverse",
+        auth_cookie=AuthCookieSettings(secure=False, max_age_seconds=3600),
+        csrf_allowed_origins=("https://hub.example.test",),
+    )
+    app = create_app(settings=settings, database_engine_factory=lambda _url: engine)
+
+    with TestClient(app) as owner_client, TestClient(app) as admin_client, TestClient(app) as member_client:
+        _, owner_csrf, owner_me = _register_api_user(
+            owner_client,
+            email="owner-rules@example.test",
+            username="ownerrules",
+            password="owner-password",
+        )
+        _, admin_csrf, admin_me = _register_api_user(
+            admin_client,
+            email="admin-rules@example.test",
+            username="adminrules",
+            password="admin-password",
+        )
+        _, member_csrf, member_me = _register_api_user(
+            member_client,
+            email="member-rules@example.test",
+            username="memberrules",
+            password="member-password",
+        )
+
+        org_response = owner_client.post(
+            "/api/v1/organizations",
+            headers={"Origin": "https://hub.example.test", "X-CSRF-Token": owner_csrf},
+            json={"slug": "rules-org", "name": "Rules Org"},
+        )
+        org_id = org_response.json()["id"]
+
+        owner_client.post(
+            f"/api/v1/organizations/{org_id}/members",
+            headers={"Origin": "https://hub.example.test", "X-CSRF-Token": owner_csrf},
+            json={"user_id": admin_me["id"], "role": "admin"},
+        )
+        owner_client.post(
+            f"/api/v1/organizations/{org_id}/members",
+            headers={"Origin": "https://hub.example.test", "X-CSRF-Token": owner_csrf},
+            json={"user_id": member_me["id"], "role": "member"},
+        )
+
+        admin_update = admin_client.patch(
+            f"/api/v1/organizations/{org_id}",
+            headers={"Origin": "https://hub.example.test", "X-CSRF-Token": admin_csrf},
+            json={"name": "Renamed Rules Org"},
+        )
+        assert admin_update.status_code == 200, admin_update.text
+
+        bad_promote = admin_client.post(
+            f"/api/v1/organizations/{org_id}/members",
+            headers={"Origin": "https://hub.example.test", "X-CSRF-Token": admin_csrf},
+            json={"user_id": member_me["id"], "role": "admin"},
+        )
+        assert bad_promote.status_code == 403, bad_promote.text
+
+        member_leave = member_client.post(
+            f"/api/v1/organizations/{org_id}/leave",
+            headers={"Origin": "https://hub.example.test", "X-CSRF-Token": member_csrf},
+        )
+        assert member_leave.status_code == 200, member_leave.text
+
+        owner_leave = owner_client.post(
+            f"/api/v1/organizations/{org_id}/leave",
+            headers={"Origin": "https://hub.example.test", "X-CSRF-Token": owner_csrf},
+        )
+        assert owner_leave.status_code == 409, owner_leave.text
+
+    engine.dispose()
+
+
+def test_organization_api_transfer_ownership_requires_verified_password(tmp_path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'organization-api-transfer.sqlite'}")
+
+    @event.listens_for(engine, "connect")
+    def enable_foreign_keys(dbapi_connection, _connection_record) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    Base.metadata.create_all(engine)
+    settings = Settings(
+        environment="testing",
+        database_url="postgresql+psycopg://commitverse_app:secret@localhost:5432/commitverse",
+        auth_cookie=AuthCookieSettings(secure=False, max_age_seconds=3600),
+        csrf_allowed_origins=("https://hub.example.test",),
+    )
+    app = create_app(settings=settings, database_engine_factory=lambda _url: engine)
+
+    with TestClient(app) as owner_client, TestClient(app) as member_client:
+        _, owner_csrf, owner_me = _register_api_user(
+            owner_client,
+            email="owner-transfer@example.test",
+            username="ownertransfer",
+            password="owner-password",
+        )
+        _, member_csrf, member_me = _register_api_user(
+            member_client,
+            email="member-transfer@example.test",
+            username="membertransfer",
+            password="member-password",
+        )
+
+        org_response = owner_client.post(
+            "/api/v1/organizations",
+            headers={"Origin": "https://hub.example.test", "X-CSRF-Token": owner_csrf},
+            json={"slug": "transfer-org", "name": "Transfer Org"},
+        )
+        org_id = org_response.json()["id"]
+
+        owner_client.post(
+            f"/api/v1/organizations/{org_id}/members",
+            headers={"Origin": "https://hub.example.test", "X-CSRF-Token": owner_csrf},
+            json={"user_id": member_me["id"], "role": "member"},
+        )
+
+        reauth = owner_client.post(
+            f"/api/v1/organizations/{org_id}/transfer-ownership",
+            headers={"Origin": "https://hub.example.test", "X-CSRF-Token": owner_csrf},
+            json={"target_user_id": member_me["id"], "current_password": "wrong-password"},
+        )
+        assert reauth.status_code == 401, reauth.text
+
+        transfer_response = owner_client.post(
+            f"/api/v1/organizations/{org_id}/transfer-ownership",
+            headers={"Origin": "https://hub.example.test", "X-CSRF-Token": owner_csrf},
+            json={"target_user_id": member_me["id"], "current_password": "owner-password"},
+        )
+        assert transfer_response.status_code == 200, transfer_response.text
+
+        member_list = member_client.get(f"/api/v1/organizations/{org_id}/members")
+        assert member_list.status_code == 200, member_list.text
+        assert any(item["role"] == "owner" for item in member_list.json()["items"])
+
+    engine.dispose()

@@ -12,7 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from commitverse_core.repository import discover_repository, initialize_repository
 from commitverse_hub.auth.cookies import AuthCookieSettings
@@ -20,12 +20,23 @@ from commitverse_hub.auth.csrf import generate_csrf_token
 from commitverse_hub.auth.sessions import create_session_record
 from commitverse_hub.config import Settings
 from commitverse_hub.db.base import Base
-from commitverse_hub.db.models import AuditEvent, Repository, User, UserProfile
+from commitverse_hub.db.models import (
+    AuditEvent,
+    Organization,
+    OrganizationMembership,
+    Repository,
+    User,
+    UserProfile,
+)
 from commitverse_hub.db.session import transactional_session
 from commitverse_hub.main import create_app
 from commitverse_hub.repositories.service import (
     RepositoryConflictError,
+    RepositoryOperationError,
+    RepositoryPermissionError,
+    create_organization_repository,
     create_personal_repository,
+    delete_organization_repository,
     delete_personal_repository,
     get_personal_repository,
     list_personal_repositories,
@@ -34,6 +45,7 @@ from commitverse_hub.repositories.service import (
 from commitverse_hub.repositories.storage import (
     RepositoryStorageError,
     create_bare_repository,
+    delete_bare_repository,
 )
 
 
@@ -109,6 +121,40 @@ def _create(client, csrf_token: str, name: str, **fields):
     )
 
 
+def _create_test_organization(
+    factory: sessionmaker[Session],
+    user_ids: tuple[uuid.UUID, uuid.UUID],
+    *,
+    second_role: str = "admin",
+) -> uuid.UUID:
+    organization_id = uuid.uuid4()
+    with transactional_session(factory) as db_session:
+        db_session.add(
+            Organization(
+                id=organization_id,
+                slug=f"repo-org-{organization_id.hex[:8]}",
+                name="Repository Test Organization",
+                created_by=user_ids[0],
+                state="active",
+            )
+        )
+        db_session.add_all(
+            [
+                OrganizationMembership(
+                    organization_id=organization_id,
+                    user_id=user_ids[0],
+                    role="owner",
+                ),
+                OrganizationMembership(
+                    organization_id=organization_id,
+                    user_id=user_ids[1],
+                    role=second_role,
+                ),
+            ]
+        )
+    return organization_id
+
+
 def test_repository_creation_uses_authenticated_owner_and_core(repository_client) -> None:
     client = repository_client["client"]
     response = _create(
@@ -145,6 +191,12 @@ def test_repository_creation_uses_authenticated_owner_and_core(repository_client
         assert repository.storage_key not in payload.values()
         stored_path = repository_client["storage_root"] / f"{repository.storage_key}.git"
         assert discover_repository(stored_path).bare
+        assert db_session.scalar(
+            select(func.count()).select_from(AuditEvent).where(
+                AuditEvent.action == "repository.provisioning",
+                AuditEvent.target_id == str(repository.id),
+            )
+        ) == 1
         assert db_session.scalar(
             select(func.count()).select_from(AuditEvent).where(
                 AuditEvent.action == "repository.created",
@@ -315,8 +367,14 @@ def test_repository_delete_is_owner_only_safe_and_idempotent(repository_client) 
     with repository_client["factory"]() as db_session:
         tombstone = db_session.get(Repository, uuid.UUID(repository_id))
         assert tombstone is not None
-        assert tombstone.lifecycle_state == "deleting"
+        assert tombstone.lifecycle_state == "deleted"
         assert tombstone.slug == f"deleted~{uuid.UUID(repository_id).hex}"
+        assert db_session.scalar(
+            select(func.count()).select_from(AuditEvent).where(
+                AuditEvent.action == "repository.deleting",
+                AuditEvent.target_id == repository_id,
+            )
+        ) == 1
         assert db_session.scalar(
             select(func.count()).select_from(AuditEvent).where(
                 AuditEvent.action == "repository.deleted",
@@ -472,7 +530,7 @@ def test_database_failure_after_core_publication_cleans_exact_repository(
         "db-failure",
     )
     assert response.status_code == 503
-    assert transaction_count == 3
+    assert transaction_count == 4
 
     with repository_client["factory"]() as db_session:
         repository = db_session.scalar(
@@ -485,6 +543,551 @@ def test_database_failure_after_core_publication_cleans_exact_repository(
         assert repository.lifecycle_state == "error"
         assert not (
             repository_client["storage_root"] / f"{repository.storage_key}.git"
+        ).exists()
+
+
+def test_organization_repository_lifecycle_and_audit(repository_client) -> None:
+    factory = repository_client["factory"]
+    user_ids = repository_client["user_ids"]
+    organization_id = _create_test_organization(factory, user_ids)
+    actor_user_id = user_ids[1]
+
+    repository = create_organization_repository(
+        factory,
+        repository_client["storage_root"],
+        organization_id,
+        actor_user_id,
+        name="team-repository",
+        description="Organization-owned",
+        visibility="private",
+        request_id="org-repo-create",
+    )
+    repository_path = (
+        repository_client["storage_root"] / f"{repository.storage_key}.git"
+    )
+    assert repository.lifecycle_state == "ready"
+    assert repository.owner_user_id is None
+    assert repository.owner_organization_id == organization_id
+    assert repository.created_by == actor_user_id
+    assert discover_repository(repository_path).bare
+
+    delete_organization_repository(
+        factory,
+        repository_client["storage_root"],
+        repository.id,
+        organization_id,
+        actor_user_id,
+        request_id="org-repo-delete",
+    )
+    assert not repository_path.exists()
+    with factory() as db_session:
+        deleted = db_session.get(Repository, repository.id)
+        assert deleted is not None
+        assert deleted.lifecycle_state == "deleted"
+        assert deleted.slug == f"deleted~{repository.id.hex}"
+        actions = list(
+            db_session.scalars(
+                select(AuditEvent.action).where(
+                    AuditEvent.target_id == str(repository.id)
+                )
+            )
+        )
+    assert actions.count("repository.provisioning") == 1
+    assert actions.count("repository.created") == 1
+    assert actions.count("repository.deleting") == 1
+    assert actions.count("repository.deleted") == 1
+
+    delete_organization_repository(
+        factory,
+        repository_client["storage_root"],
+        repository.id,
+        organization_id,
+        actor_user_id,
+        request_id="org-repo-delete-retry",
+    )
+    with factory() as db_session:
+        assert db_session.scalar(
+            select(func.count()).select_from(AuditEvent).where(
+                AuditEvent.action == "repository.deleted",
+                AuditEvent.target_id == str(repository.id),
+            )
+        ) == 1
+
+
+def test_organization_repository_authorization_is_checked_in_transactions(
+    repository_client,
+    monkeypatch,
+) -> None:
+    from commitverse_hub.repositories import service
+
+    factory = repository_client["factory"]
+    user_ids = repository_client["user_ids"]
+    organization_id = _create_test_organization(
+        factory,
+        user_ids,
+        second_role="member",
+    )
+
+    def storage_must_not_be_touched(*_args, **_kwargs):
+        raise AssertionError("Unauthorized operation reached repository storage.")
+
+    monkeypatch.setattr(service, "create_bare_repository", storage_must_not_be_touched)
+    with pytest.raises(RepositoryPermissionError):
+        create_organization_repository(
+            factory,
+            repository_client["storage_root"],
+            organization_id,
+            user_ids[1],
+            name="denied-create",
+            description=None,
+            visibility="private",
+            request_id="denied-create",
+        )
+
+    monkeypatch.undo()
+    repository = create_organization_repository(
+        factory,
+        repository_client["storage_root"],
+        organization_id,
+        user_ids[0],
+        name="denied-delete",
+        description=None,
+        visibility="private",
+        request_id="owner-create",
+    )
+    repository_path = (
+        repository_client["storage_root"] / f"{repository.storage_key}.git"
+    )
+    with pytest.raises(RepositoryPermissionError):
+        delete_organization_repository(
+            factory,
+            repository_client["storage_root"],
+            repository.id,
+            organization_id,
+            user_ids[1],
+            request_id="denied-delete",
+        )
+    assert repository_path.is_dir()
+    with factory() as db_session:
+        stored = db_session.get(Repository, repository.id)
+        assert stored is not None
+        assert stored.lifecycle_state == "ready"
+
+
+def test_organization_repository_provisioning_failure_is_retryable(
+    repository_client,
+    monkeypatch,
+) -> None:
+    from commitverse_hub.repositories import service
+
+    factory = repository_client["factory"]
+    user_ids = repository_client["user_ids"]
+    organization_id = _create_test_organization(factory, user_ids)
+
+    def fail_initialization(*_args, **_kwargs):
+        raise RepositoryStorageError("simulated organization storage failure")
+
+    monkeypatch.setattr(service, "create_bare_repository", fail_initialization)
+    with pytest.raises(RepositoryOperationError):
+        create_organization_repository(
+            factory,
+            repository_client["storage_root"],
+            organization_id,
+            user_ids[1],
+            name="retry-organization-repo",
+            description=None,
+            visibility="private",
+            request_id="org-provisioning-failure",
+        )
+
+    with factory() as db_session:
+        repository = db_session.scalar(
+            select(Repository).where(
+                Repository.owner_organization_id == organization_id,
+                Repository.slug == "retry-organization-repo",
+            )
+        )
+        assert repository is not None
+        repository_id = repository.id
+        assert repository.lifecycle_state == "error"
+        actions = list(
+            db_session.scalars(
+                select(AuditEvent.action).where(
+                    AuditEvent.target_id == str(repository_id)
+                )
+            )
+        )
+    assert actions.count("repository.provisioning") == 1
+    assert actions.count("repository.provisioning_failed") == 1
+
+    monkeypatch.undo()
+    retried = create_organization_repository(
+        factory,
+        repository_client["storage_root"],
+        organization_id,
+        user_ids[0],
+        name="retry-organization-repo",
+        description=None,
+        visibility="private",
+        request_id="org-provisioning-retry",
+    )
+    assert retried.lifecycle_state == "ready"
+    with factory() as db_session:
+        actions = list(
+            db_session.scalars(
+                select(AuditEvent.action).where(
+                    AuditEvent.target_id == str(repository_id)
+                )
+            )
+        )
+    assert actions.count("repository.provisioning") == 2
+    assert actions.count("repository.provisioning_failed") == 1
+    assert actions.count("repository.created") == 1
+
+
+def test_organization_repository_cleanup_failure_retries_without_duplicate_audit(
+    repository_client,
+    monkeypatch,
+) -> None:
+    from commitverse_hub.repositories import service
+
+    factory = repository_client["factory"]
+    user_ids = repository_client["user_ids"]
+    organization_id = _create_test_organization(factory, user_ids)
+    repository = create_organization_repository(
+        factory,
+        repository_client["storage_root"],
+        organization_id,
+        user_ids[0],
+        name="retry-cleanup",
+        description=None,
+        visibility="private",
+        request_id="cleanup-create",
+    )
+    original_delete = service.delete_bare_repository
+    cleanup_calls = 0
+
+    def fail_first_cleanup(*args, **kwargs):
+        nonlocal cleanup_calls
+        cleanup_calls += 1
+        if cleanup_calls == 1:
+            raise RepositoryStorageError("simulated cleanup failure")
+        return original_delete(*args, **kwargs)
+
+    monkeypatch.setattr(service, "delete_bare_repository", fail_first_cleanup)
+    with pytest.raises(RepositoryOperationError):
+        delete_organization_repository(
+            factory,
+            repository_client["storage_root"],
+            repository.id,
+            organization_id,
+            user_ids[0],
+            request_id="cleanup-failure",
+        )
+
+    with factory() as db_session:
+        pending = db_session.get(Repository, repository.id)
+        assert pending is not None
+        assert pending.lifecycle_state == "deleting"
+        assert pending.slug == "retry-cleanup"
+
+    monkeypatch.undo()
+    delete_organization_repository(
+        factory,
+        repository_client["storage_root"],
+        repository.id,
+        organization_id,
+        user_ids[1],
+        request_id="cleanup-retry",
+    )
+    with factory() as db_session:
+        finalized = db_session.get(Repository, repository.id)
+        assert finalized is not None
+        assert finalized.lifecycle_state == "deleted"
+        assert finalized.slug == f"deleted~{repository.id.hex}"
+        assert db_session.scalar(
+            select(func.count()).select_from(AuditEvent).where(
+                AuditEvent.action == "repository.deleting",
+                AuditEvent.target_id == str(repository.id),
+            )
+        ) == 1
+        assert db_session.scalar(
+            select(func.count()).select_from(AuditEvent).where(
+                AuditEvent.action == "repository.deleted",
+                AuditEvent.target_id == str(repository.id),
+            )
+        ) == 1
+
+
+def test_organization_repository_finalization_failure_retries_idempotently(
+    repository_client,
+    monkeypatch,
+) -> None:
+    from contextlib import contextmanager
+
+    from commitverse_hub.repositories import service
+
+    factory = repository_client["factory"]
+    user_ids = repository_client["user_ids"]
+    organization_id = _create_test_organization(factory, user_ids)
+    repository = create_organization_repository(
+        factory,
+        repository_client["storage_root"],
+        organization_id,
+        user_ids[0],
+        name="retry-finalization",
+        description=None,
+        visibility="private",
+        request_id="finalize-create",
+    )
+    repository_path = (
+        repository_client["storage_root"] / f"{repository.storage_key}.git"
+    )
+    original_transaction = service.transactional_session
+    transaction_count = 0
+
+    @contextmanager
+    def fail_finalization(factory):
+        nonlocal transaction_count
+        transaction_count += 1
+        if transaction_count == 2:
+            raise SQLAlchemyError("simulated finalization failure")
+        with original_transaction(factory) as db_session:
+            yield db_session
+
+    monkeypatch.setattr(service, "transactional_session", fail_finalization)
+    with pytest.raises(RepositoryOperationError):
+        delete_organization_repository(
+            factory,
+            repository_client["storage_root"],
+            repository.id,
+            organization_id,
+            user_ids[0],
+            request_id="finalize-failure",
+        )
+    assert not repository_path.exists()
+    with factory() as db_session:
+        pending = db_session.get(Repository, repository.id)
+        assert pending is not None
+        assert pending.lifecycle_state == "deleting"
+        assert pending.slug == "retry-finalization"
+        assert db_session.scalar(
+            select(func.count()).select_from(AuditEvent).where(
+                AuditEvent.action == "repository.deleted",
+                AuditEvent.target_id == str(repository.id),
+            )
+        ) == 0
+
+    monkeypatch.undo()
+    delete_organization_repository(
+        factory,
+        repository_client["storage_root"],
+        repository.id,
+        organization_id,
+        user_ids[1],
+        request_id="finalize-retry",
+    )
+    with factory() as db_session:
+        finalized = db_session.get(Repository, repository.id)
+        assert finalized is not None
+        assert finalized.lifecycle_state == "deleted"
+        assert finalized.slug == f"deleted~{repository.id.hex}"
+        assert db_session.scalar(
+            select(func.count()).select_from(AuditEvent).where(
+                AuditEvent.action == "repository.deleting",
+                AuditEvent.target_id == str(repository.id),
+            )
+        ) == 1
+        assert db_session.scalar(
+            select(func.count()).select_from(AuditEvent).where(
+                AuditEvent.action == "repository.deleted",
+                AuditEvent.target_id == str(repository.id),
+            )
+        ) == 1
+
+
+def test_organization_repository_revalidates_membership_and_lock_order(
+    repository_client,
+    monkeypatch,
+) -> None:
+    from commitverse_hub.repositories import service
+
+    factory = repository_client["factory"]
+    user_ids = repository_client["user_ids"]
+    organization_id = _create_test_organization(factory, user_ids)
+    lock_order: list[str] = []
+    original_lock_organization = service._lock_organization
+    original_lock_repository = service._lock_repository
+    original_lock_existing = service._lock_existing_repository
+    original_create_storage = service.create_bare_repository
+
+    def lock_organization(*args, **kwargs):
+        lock_order.append("organization")
+        return original_lock_organization(*args, **kwargs)
+
+    def lock_repository(*args, **kwargs):
+        lock_order.append("repository")
+        return original_lock_repository(*args, **kwargs)
+
+    def lock_existing_repository(*args, **kwargs):
+        lock_order.append("repository")
+        return original_lock_existing(*args, **kwargs)
+
+    def create_then_revoke_role(*args, **kwargs):
+        published = original_create_storage(*args, **kwargs)
+        with transactional_session(factory) as db_session:
+            membership = db_session.get(
+                OrganizationMembership,
+                {
+                    "organization_id": organization_id,
+                    "user_id": user_ids[0],
+                },
+            )
+            assert membership is not None
+            membership.role = "member"
+        return published
+
+    monkeypatch.setattr(service, "_lock_organization", lock_organization)
+    monkeypatch.setattr(service, "_lock_repository", lock_repository)
+    monkeypatch.setattr(
+        service, "_lock_existing_repository", lock_existing_repository
+    )
+    monkeypatch.setattr(
+        service, "create_bare_repository", create_then_revoke_role
+    )
+
+    with pytest.raises(RepositoryPermissionError):
+        create_organization_repository(
+            factory,
+            repository_client["storage_root"],
+            organization_id,
+            user_ids[0],
+            name="authorization-revalidation",
+            description=None,
+            visibility="private",
+            request_id="role-revalidation",
+        )
+    with factory() as db_session:
+        repository = db_session.scalar(
+            select(Repository).where(
+                Repository.owner_organization_id == organization_id,
+                Repository.slug == "authorization-revalidation",
+            )
+        )
+        assert repository is not None
+        assert repository.lifecycle_state == "error"
+        assert not (
+            repository_client["storage_root"] / f"{repository.storage_key}.git"
+        ).exists()
+        assert db_session.scalar(
+            select(func.count()).select_from(AuditEvent).where(
+                AuditEvent.action == "repository.created",
+                AuditEvent.target_id == str(repository.id),
+            )
+        ) == 0
+
+    monkeypatch.setattr(service, "create_bare_repository", original_create_storage)
+    repository = create_organization_repository(
+        factory,
+        repository_client["storage_root"],
+        organization_id,
+        user_ids[1],
+        name="authorization-revalidation",
+        description=None,
+        visibility="private",
+        request_id="admin-retry",
+    )
+    delete_organization_repository(
+        factory,
+        repository_client["storage_root"],
+        repository.id,
+        organization_id,
+        user_ids[1],
+        request_id="admin-delete",
+    )
+
+    latest_organization_lock = -1
+    for index, lock in enumerate(lock_order):
+        if lock == "organization":
+            latest_organization_lock = index
+        elif lock == "repository":
+            assert latest_organization_lock < index
+
+
+def test_organization_repository_cleans_storage_published_after_delete(
+    repository_client,
+    monkeypatch,
+) -> None:
+    from commitverse_hub.repositories import service
+
+    factory = repository_client["factory"]
+    user_ids = repository_client["user_ids"]
+    organization_id = _create_test_organization(factory, user_ids)
+    original_create_storage = service.create_bare_repository
+    storage_keys: list[str] = []
+    repository_ids: list[uuid.UUID] = []
+
+    def delete_before_late_storage_publication(
+        storage_root,
+        storage_key,
+        *,
+        allow_existing=False,
+    ):
+        storage_keys.append(storage_key)
+        with factory() as db_session:
+            repository = db_session.scalar(
+                select(Repository).where(
+                    Repository.owner_organization_id == organization_id,
+                    Repository.slug == "late-storage-publication",
+                )
+            )
+            assert repository is not None
+            repository_id = repository.id
+            repository_ids.append(repository_id)
+        delete_organization_repository(
+            factory,
+            storage_root,
+            repository_id,
+            organization_id,
+            user_ids[0],
+            request_id="concurrent-delete",
+        )
+        return original_create_storage(
+            storage_root,
+            storage_key,
+            allow_existing=allow_existing,
+        )
+
+    monkeypatch.setattr(
+        service,
+        "create_bare_repository",
+        delete_before_late_storage_publication,
+    )
+    with pytest.raises(RepositoryOperationError):
+        create_organization_repository(
+            factory,
+            repository_client["storage_root"],
+            organization_id,
+            user_ids[0],
+            name="late-storage-publication",
+            description=None,
+            visibility="private",
+            request_id="concurrent-create",
+        )
+
+    with factory() as db_session:
+        repository = db_session.get(Repository, repository_ids[0])
+        assert repository is not None
+        assert repository.lifecycle_state == "deleted"
+        assert repository.slug == f"deleted~{repository.id.hex}"
+        assert db_session.scalar(
+            select(func.count()).select_from(AuditEvent).where(
+                AuditEvent.action == "repository.deleted",
+                AuditEvent.target_id == str(repository.id),
+            )
+        ) == 1
+        assert not (
+            repository_client["storage_root"] / f"{storage_keys[0]}.git"
         ).exists()
 
 
@@ -511,6 +1114,26 @@ def test_storage_only_reuses_existing_destination_for_recovery(tmp_path) -> None
         storage_key,
         allow_existing=True,
     )
+
+
+def test_storage_delete_is_idempotent_when_another_worker_removes_the_path(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import shutil as shutil_module
+
+    storage_root = (tmp_path / "repositories").resolve()
+    storage_key = uuid.uuid4().hex
+    assert create_bare_repository(storage_root, storage_key)
+    original_rmtree = shutil_module.rmtree
+
+    def remove_then_report_missing(path):
+        original_rmtree(path)
+        raise FileNotFoundError(path)
+
+    monkeypatch.setattr(shutil_module, "rmtree", remove_then_report_missing)
+    assert delete_bare_repository(storage_root, storage_key) is False
+    assert not (storage_root / f"{storage_key}.git").exists()
 
 
 def test_postgresql_repository_lifecycle_in_isolated_schema(tmp_path) -> None:
@@ -587,13 +1210,13 @@ def test_postgresql_repository_lifecycle_in_isolated_schema(tmp_path) -> None:
         with factory() as db_session:
             tombstone = db_session.get(Repository, repository.id)
             assert tombstone is not None
-            assert tombstone.lifecycle_state == "deleting"
+            assert tombstone.lifecycle_state == "deleted"
             assert tombstone.slug == f"deleted~{repository.id.hex}"
             assert db_session.scalar(
                 select(func.count()).select_from(AuditEvent).where(
                     AuditEvent.target_id == str(repository.id)
                 )
-            ) == 3
+            ) == 5
     finally:
         transaction.rollback()
         connection.close()

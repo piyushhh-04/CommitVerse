@@ -203,14 +203,19 @@ Every route requires a valid active browser session. Mutations also require
 the exact allow-listed `Origin` and a session-bound `X-CSRF-Token`. Responses
 never include a filesystem path or storage key. `public` is currently only a
 metadata setting; anonymous reads and repository browsing are not implemented.
+The shared repository lifecycle service also supports organization-owned
+repository creation/deletion for current organization owners and admins, but
+organization repository HTTP routes are not implemented.
 
 The storage root is created with private permissions when needed. Repository
 creation publishes a verified Core bare repository from a temporary sibling
-directory. Deletion marks metadata `deleting` before removing storage; failed
-steps remain retryable. Database and filesystem operations are not atomic, and
-the lifecycle lock coordinates only one process. Do not run multiple Hub
-workers for repository lifecycle operations until cross-process locking and
-recovery are implemented and tested.
+directory. Deletion commits metadata as `deleting` before removing storage,
+then finalizes the tombstone as `deleted`; failed steps remain retryable.
+Organization-owned operations lock the organization before the repository,
+and current membership/role is revalidated within the owning transaction.
+Database row locks coordinate metadata transitions across PostgreSQL workers,
+but database and filesystem operations are not atomic and the local filesystem
+does not provide multi-host storage guarantees.
 
 ## Tests
 

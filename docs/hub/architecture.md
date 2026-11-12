@@ -5,9 +5,10 @@
 This document records the reviewed architecture for CommitVerse Hub. The
 `apps/hub-api/` implementation includes registration/login/logout and
 current-user APIs, authenticated owner-only personal repository metadata CRUD,
-and local bare-repository lifecycle integration with Core. Organization and
-collaborator authorization, repository browsing, and broader collaboration
-features are not implemented. Hub is a local-development-first application
+and shared personal/organization bare-repository lifecycle integration with
+Core. Organization repository HTTP routes, repository browsing, and broader
+collaboration features are not implemented. Hub is a local-development-first
+application
 that builds on, but does not absorb or replace, CommitVerse Core.
 CommitVerse AI remains future scope.
 
@@ -91,9 +92,9 @@ The table distinguishes existing foundations from planned workflows:
 | `auth` | **Implemented:** Argon2id registration/login, opaque server-side sessions, current-principal resolution, logout/revocation, validated cookies, and exact-Origin/session-bound CSRF checks for state-changing requests. |
 | `users` | Account state and profile workflows. |
 | `organizations` | Organization and membership workflows; teams are deferred. |
-| `repositories` | **Implemented for personal repositories:** owner-scoped metadata, name/visibility validation, list/detail/update/delete, audit events, and retryable lifecycle state transitions. Organization repositories remain planned. |
+| `repositories` | **Implemented:** personal owner-scoped metadata APIs and a shared Core-backed lifecycle service for personal and organization-owned repository creation/deletion. Organization repository HTTP routes remain unimplemented. |
 | `permissions` | Central deny-by-default policy evaluation for public/private access, ownership, memberships, and direct grants. |
-| `repository_ops` | **Implemented for lifecycle operations:** authenticated personal ownership checks, a process-local lifecycle lock, safe provisioning/deletion, and explicit retryable failure states. Cross-process coordination and general repository operations remain planned. |
+| `repository_ops` | **Implemented for repository lifecycle:** current personal-owner or organization owner/admin authorization, database row locks, safe provisioning/deletion, and explicit retryable failure states. General repository operations remain planned. |
 | `core_adapter` | **Implemented:** calls Core bare initialization/discovery APIs in-process and maps failures to safe Hub outcomes. |
 | `persistence` | SQLAlchemy models and focused database queries/commands. |
 | `db` | PostgreSQL engine/session lifecycle and Alembic migration integration. |
@@ -111,6 +112,9 @@ without a demonstrated need.
 
 The API currently provides account registration/login/logout, current-user
 resolution, and owner-only personal repository metadata/lifecycle routes.
+The shared lifecycle service also supports organization-owned repository
+creation and deletion for current organization owners/admins; those operations
+do not yet have HTTP routes.
 Repository visibility is stored as metadata but does not enable anonymous
 access; detail and mutations remain owner-only. Do not advertise normal Git
 client clone, fetch, or push.
@@ -128,19 +132,23 @@ implement Git-over-HTTP, Git-over-SSH, network Git transport, packfile
 transfer, or normal remote Git client interoperability. Hub MVP therefore
 cannot accept ordinary network-based Git clone/fetch/push.
 
-For personal repository provisioning, Hub assigns an opaque storage key, derives
-a path beneath `HUB_REPOSITORY_STORAGE_ROOT`, and asks Core to initialize and
-verify a bare repository there. Current APIs do not expose repository contents.
-Map expected Core errors to stable Hub errors; never expose storage paths or
-internal details in API responses.
+For repository provisioning, Hub assigns an opaque storage key, derives a path
+beneath `HUB_REPOSITORY_STORAGE_ROOT`, and asks Core to initialize and verify a
+bare repository there. Personal and organization-owned repositories use the
+same storage layout and lifecycle service. Current APIs do not expose
+organization repository operations or repository contents. Map expected Core
+errors to stable Hub errors; never expose storage paths or internal details in
+API responses.
 
 Core's compare-and-swap reference updates protect a single ref update under
 their supported protocol. They are not a transaction over multiple refs,
-objects, metadata, or concurrent multi-user operations. Hub must coordinate
-operations per repository, bound work outside the ASGI event loop, and test
-concurrent requests and failures explicitly. An in-process lock is only
-process-local; any multi-process deployment requires a separately designed
-and tested cross-process coordination mechanism.
+objects, metadata, or concurrent multi-user operations. Repository lifecycle
+metadata uses database row locks: organization-owned operations lock the
+organization before its repository, while personal operations lock the
+repository. Transactions commit before any Core or filesystem work. These
+locks coordinate metadata transitions across workers using PostgreSQL, but
+do not establish shared-filesystem or multi-host guarantees; cross-process
+failure and storage behavior still require deployment-specific verification.
 
 Network Git client support is a distinct future engineering milestone. It
 requires an explicitly designed and security-tested receive/upload protocol,
@@ -155,23 +163,40 @@ beneath `HUB_REPOSITORY_STORAGE_ROOT`, for example
 `<storage-root>/<opaque-id>.git/`. Never construct the storage key or path from
 a username, repository slug, or untrusted request value.
 
-The Hub metadata record has lifecycle states `provisioning`, `ready`,
-`deleting`, and `error`. Creation is a recoverable workflow, not an atomic
-database/filesystem transaction:
+The shared repository metadata record has lifecycle states `provisioning`,
+`ready`, `error`, `deleting`, and `deleted`. Personal repositories have a
+`owner_user_id`; organization repositories have an `owner_organization_id`;
+exactly one owner is set. Both use the same opaque storage key format, storage
+root, and lifecycle service. Organization-owned lifecycle operations are
+service-level only; no organization repository API routes are implemented.
 
-1. Validate the authenticated personal owner, repository name, and visibility.
-2. Create metadata in `provisioning` and generate a unique opaque storage key.
-3. Initialize a bare repository in a controlled temporary sibling location
-   using Core; validate the result.
-4. Publish it beneath the configured storage root and mark metadata `ready`.
-5. On provisioning failure, record `error` and clean only the known temporary
-   path. Automated reconciliation of abandoned states is not implemented.
+Creation is recoverable, not an atomic database/filesystem transaction:
 
-Deletion first marks the record `deleting`, prevents current ready-only API
-operations, removes the known repository path through a narrowly scoped
-lifecycle service, and then tombstones the metadata record. Failures remain
-visible and retryable. Automated reconciliation is not yet implemented; no
-service may guess paths or remove an unverified location.
+1. **Reservation transaction:** for organization repositories, lock the
+   organization, validate its active state and the actor's current active
+   owner/admin membership, then reserve `provisioning`. Personal repositories
+   validate the authenticated owner. Write the reservation audit event in the
+   same transaction.
+2. **Provisioning:** outside any database transaction, initialize and verify
+   the bare repository through Core in a controlled temporary sibling path.
+3. **Publication transaction:** lock the organization first (when applicable)
+   and then the repository; revalidate ownership, organization state, and
+   current membership/role; mark `ready` and write the creation audit event
+   atomically.
+4. On failure, safely clean only storage published by that attempt and record
+   `error` with its audit event. Existing `error` reservations can be retried;
+   an in-progress `provisioning` reservation is not concurrently reused.
+
+Deletion uses the same organization-before-repository lock order. In one
+transaction it checks current ownership/role, marks `deleting`, revokes
+repository grants and pending invitations, and writes the transition audit
+event. It commits before storage cleanup. Core/filesystem cleanup occurs
+outside a transaction and tolerates already-removed storage. A final
+organization-then-repository transaction sets the ID-derived tombstone slug,
+marks `deleted`, and writes the final audit event atomically. Cleanup and
+finalization failures remain retryable. Automated reconciliation of abandoned
+states is not implemented; no service may guess paths or remove an unverified
+location.
 
 Use least-privilege filesystem permissions and reject symlinked path components
 or resolved paths that escape the storage root. Local filesystem storage is a
@@ -236,17 +261,18 @@ blocker and no deployment configuration is implied.
   filesystem-backed bare repositories during development, dedicated Core
   adapter.
 - **Implemented locally:** registration/login/logout, current-user resolution,
-  owner-only personal repository CRUD, Core-backed bare repository creation
-  and deletion, audit events, and retryable lifecycle states. Local
-  PostgreSQL 17.11 migration validation is complete.
+  owner-only personal repository APIs, and shared Core-backed personal and
+  organization repository lifecycle services with transactional audit events
+  and retryable states. Local PostgreSQL 17.11 migration validation is complete.
 - **Not implemented:** organization/collaborator authorization, anonymous
   public access, repository browsing, automated lifecycle reconciliation,
   frontend, and deployment. No hosted deployment has been verified.
 - **Not available from Core:** network Git protocols, packfiles, and ordinary
   remote-client interoperability.
 - **Operational limitations:** DB/filesystem operations are not atomic;
-  lifecycle locking is process-local; automated reconciliation, bounded
-  cross-process execution, and backup/recovery are not implemented.
+  PostgreSQL row locks cover lifecycle metadata transactions but not shared
+  storage or multi-host deployment; automated lifecycle reconciliation,
+  bounded execution, and backup/recovery are not implemented.
 - **Future scope:** teams/complex inherited permissions, issues, pull requests,
   broad collaboration features, and CommitVerse AI.
 

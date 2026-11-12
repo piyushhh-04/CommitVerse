@@ -253,5 +253,9 @@ def test_alembic_uses_shared_metadata_without_embedding_credentials() -> None:
     assert "target_metadata = Base.metadata" in env_source
     assert len(Base.metadata.tables) == 9
     revisions = list(script.walk_revisions())
-    assert len(revisions) == 1
-    assert revisions[0].down_revision is None
+    assert [revision.revision for revision in revisions] == [
+        "a7d4d1d1f7ed",
+        "40037b3edad7",
+    ]
+    assert revisions[0].down_revision == revisions[1].revision
+    assert revisions[1].down_revision is None

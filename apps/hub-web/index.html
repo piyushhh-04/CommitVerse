@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f8f5ef" />
+    <meta
+      name="description"
+      content="CommitVerse is building a Git-like version control engine and a thoughtful path toward developer collaboration."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="CommitVerse" />
+    <meta property="og:title" content="CommitVerse — Version control, built from the ground up" />
+    <meta
+      property="og:description"
+      content="A purpose-built Git-like core, a local Hub API foundation, and a clear-eyed roadmap."
+    />
+    <meta name="twitter:card" content="summary" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link
+      rel="preload"
+      href="/fonts/fraunces-latin.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <title>CommitVerse — Version control, built from the ground up</title>
+    <script>
+      (() => {
+        const key = "commitverse-theme";
+        let preference = "system";
+
+        try {
+          const stored = localStorage.getItem(key);
+          if (stored === "light" || stored === "dark") preference = stored;
+        } catch (error) {
+          console.warn("CommitVerse could not read the saved theme preference.", error);
+        }
+
+        const systemPrefersDark =
+          window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+        const resolved =
+          preference === "system" ? (systemPrefersDark ? "dark" : "light") : preference;
+
+        document.documentElement.dataset.themeMode = preference;
+        document.documentElement.dataset.theme = resolved;
+        document.documentElement.style.colorScheme = resolved;
+        document
+          .querySelector('meta[name="theme-color"]')
+          ?.setAttribute("content", resolved === "dark" ? "#191b18" : "#f8f5ef");
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

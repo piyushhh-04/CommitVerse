@@ -27,9 +27,12 @@ history, loose branch refs, safe branch switching/checkout, basic merging,
 read-only status/diff, local advertisement, bounded fetch, fast-forward-only
 push, safe local clone, and `cv` commands are implemented and tested. Hub now
 provides a local-development API foundation, browser-session authentication,
-and authenticated owner-only personal repository management through Core;
-organizations, collaboration, repository browsing, frontend, and deployment
-remain future work.
+authenticated owner-only personal repository management through Core, and
+organization and membership API endpoints. Organization-management workflows
+in the frontend, broader collaboration, repository browsing, an authenticated
+product UI, and deployment remain future work. `apps/hub-web/` contains a
+standalone informational landing page and design system; it does not call the
+Hub API.
 
 ## Technology direction
 
@@ -40,8 +43,9 @@ remain future work.
   used for Core's Python tests.
 - **Future AI:** PyTorch and Hugging Face Transformers.
 
-These technologies are planned; aside from Pytest in Core's development
-dependencies, application dependencies and services have not yet been set up.
+Hub API and the standalone Hub Web landing page have package-level dependencies
+for their local foundations. Hosted services remain unprovisioned, and planned
+technologies are not a declaration that all product workflows are available.
 
 ## Development environment
 
@@ -95,8 +99,8 @@ ignore semantics, color/porcelain output, and complete Git status/diff
 compatibility are not claimed. `cv init --bare <path>` initializes a bare
 repository. Remote management and network transport remain planned. Hub
 implementation details and limitations are tracked in its documentation. The
-frontend, broader collaboration, deployment, and AI functionality remain future
-work.
+Authenticated product workflows, broader collaboration features beyond the
+existing Hub API, deployment, and AI functionality remain future work.
 
 See [PROJECT_CONTEXT.md](./PROJECT_CONTEXT.md) for the project-wide engineering
 and contribution guidelines, and [the architecture overview](./docs/architecture/overview.md)

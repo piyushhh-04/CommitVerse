@@ -58,6 +58,74 @@ def get_set_cookie_values(headers):
 
 
 @pytest.fixture
+def auth_api_client(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'auth-api.sqlite'}")
+
+    @event.listens_for(engine, "connect")
+    def enable_foreign_keys(dbapi_connection, _connection_record) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    Base.metadata.create_all(engine)
+    settings = Settings(
+        environment="testing",
+        database_url="postgresql+psycopg://commitverse_app:secret@localhost:5432/commitverse",
+        auth_cookie=AuthCookieSettings(secure=False, max_age_seconds=3600),
+        csrf_allowed_origins=("https://hub.example.test",),
+    )
+    app = create_app(
+        settings=settings,
+        database_engine_factory=lambda _url: engine,
+    )
+
+    with TestClient(app) as client:
+        yield client, app.state.session_factory
+    engine.dispose()
+
+
+def register_auth_test_user(client):
+    response = client.post(
+        "/api/v1/auth/register",
+        headers={"Origin": "https://hub.example.test"},
+        json={
+            "email": "recovery@example.test",
+            "password": "strong password",
+            "username": "recoveryuser",
+        },
+    )
+    assert response.status_code == 200
+    return response
+
+
+def set_auth_cookie(client, token):
+    client.cookies.set(
+        "commitverse_session",
+        token,
+        domain="testserver.local",
+        path="/",
+    )
+
+
+def set_session_state(factory, token, state):
+    with transactional_session(factory) as db_session:
+        if state == "expired":
+            now = datetime.now(UTC)
+            db_session.execute(
+                update(SessionRecord)
+                .where(SessionRecord.token_hash == hash_session_token(token))
+                .values(
+                    created_at=now - timedelta(hours=2),
+                    expires_at=now - timedelta(hours=1),
+                )
+            )
+        elif state == "revoked":
+            assert revoke_session(db_session, token)
+        else:
+            raise AssertionError(f"Unsupported session state: {state}")
+
+
+@pytest.fixture
 def auth_database(tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'auth.sqlite'}")
 
@@ -434,6 +502,316 @@ def test_auth_routes_reject_duplicate_accounts_and_bad_login(tmp_path) -> None:
         )
         assert bad_login.status_code == 401
         assert bad_login.json()["error"]["code"] == "authentication_failed"
+
+
+def test_me_restores_a_session_bound_csrf_token_without_changing_user_body(auth_api_client) -> None:
+    client, factory = auth_api_client
+    registration = register_auth_test_user(client)
+    session_token = client.cookies.get("commitverse_session")
+    assert session_token is not None
+    user_id = uuid.UUID(registration.json()["id"])
+
+    with transactional_session(factory) as db_session:
+        _, another_session = create_session_record(
+            db_session,
+            user_id,
+            lifetime=timedelta(hours=1),
+        )
+
+    response = client.get("/api/v1/me")
+    csrf_token = response.headers.get("X-CSRF-Token")
+
+    assert response.status_code == 200
+    assert response.json() == registration.json()
+    assert csrf_token is not None
+    assert validate_csrf_token(session_token, csrf_token)
+    assert not validate_csrf_token(another_session, csrf_token)
+    assert response.headers["Cache-Control"] == "no-store"
+    assert session_token not in response.text
+
+
+def test_me_does_not_issue_csrf_token_without_a_session(auth_api_client) -> None:
+    client, _ = auth_api_client
+
+    response = client.get("/api/v1/me")
+
+    assert response.status_code == 401
+    assert response.headers.get("X-CSRF-Token") is None
+
+
+@pytest.mark.parametrize("cookie_value", ["malformed", generate_session_token()])
+def test_me_does_not_issue_csrf_token_for_an_invalid_session(
+    auth_api_client,
+    cookie_value: str,
+) -> None:
+    client, _ = auth_api_client
+    set_auth_cookie(client, cookie_value)
+
+    response = client.get("/api/v1/me")
+
+    assert response.status_code == 401
+    assert response.headers.get("X-CSRF-Token") is None
+
+
+@pytest.mark.parametrize("state", ["expired", "revoked"])
+def test_me_does_not_issue_csrf_token_for_an_inactive_session(auth_api_client, state: str) -> None:
+    client, factory = auth_api_client
+    register_auth_test_user(client)
+    session_token = client.cookies.get("commitverse_session")
+    assert session_token is not None
+    set_session_state(factory, session_token, state)
+
+    response = client.get("/api/v1/me")
+
+    assert response.status_code == 401
+    assert response.headers.get("X-CSRF-Token") is None
+
+
+def test_login_without_a_cookie_authenticates_and_returns_csrf(auth_api_client) -> None:
+    client, _ = auth_api_client
+    register_auth_test_user(client)
+    client.cookies.clear()
+
+    response = client.post(
+        "/api/v1/auth/login",
+        headers={"Origin": "https://hub.example.test"},
+        json={"email": "recovery@example.test", "password": "strong password"},
+    )
+
+    session_token = client.cookies.get("commitverse_session")
+    assert response.status_code == 200
+    assert response.json()["email"] == "recovery@example.test"
+    assert session_token is not None
+    assert validate_csrf_token(
+        session_token,
+        response.headers.get("X-CSRF-Token"),
+    )
+
+
+@pytest.mark.parametrize("csrf_header", [None, "invalid-csrf-token"])
+def test_login_with_an_active_session_requires_valid_csrf(
+    auth_api_client,
+    csrf_header: str | None,
+) -> None:
+    client, _ = auth_api_client
+    register_auth_test_user(client)
+    headers = {"Origin": "https://hub.example.test"}
+    if csrf_header is not None:
+        headers["X-CSRF-Token"] = csrf_header
+
+    response = client.post(
+        "/api/v1/auth/login",
+        headers=headers,
+        json={"email": "recovery@example.test", "password": "strong password"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "csrf_validation_failed"
+
+
+@pytest.mark.parametrize("state", ["expired", "revoked", "malformed"])
+def test_login_recovers_from_a_stale_or_malformed_cookie(auth_api_client, state: str) -> None:
+    client, factory = auth_api_client
+    register_auth_test_user(client)
+    old_token = client.cookies.get("commitverse_session")
+    assert old_token is not None
+    if state == "malformed":
+        set_auth_cookie(client, "not-a-session-token")
+    else:
+        set_session_state(factory, old_token, state)
+
+    response = client.post(
+        "/api/v1/auth/login",
+        headers={"Origin": "https://hub.example.test"},
+        json={"email": "recovery@example.test", "password": "strong password"},
+    )
+
+    new_token = client.cookies.get("commitverse_session")
+    assert response.status_code == 200
+    assert new_token is not None
+    assert new_token != old_token
+    assert validate_csrf_token(
+        new_token,
+        response.headers.get("X-CSRF-Token"),
+    )
+
+
+@pytest.mark.parametrize("cookie_state", ["absent", "active", "expired", "revoked", "malformed"])
+def test_login_rejects_untrusted_origin_for_every_cookie_state(
+    auth_api_client,
+    cookie_state: str,
+) -> None:
+    client, factory = auth_api_client
+    if cookie_state != "absent":
+        register_auth_test_user(client)
+        token = client.cookies.get("commitverse_session")
+        assert token is not None
+        if cookie_state in {"expired", "revoked"}:
+            set_session_state(factory, token, cookie_state)
+        elif cookie_state == "malformed":
+            set_auth_cookie(client, "malformed-cookie")
+    else:
+        client.cookies.clear()
+
+    response = client.post(
+        "/api/v1/auth/login",
+        headers={"Origin": "https://attacker.example.test"},
+        json={"email": "recovery@example.test", "password": "strong password"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "origin_not_allowed"
+
+
+def test_login_preserves_previous_active_sessions(auth_api_client) -> None:
+    client, factory = auth_api_client
+    registration = register_auth_test_user(client)
+    first_token = client.cookies.get("commitverse_session")
+    first_csrf = registration.headers["X-CSRF-Token"]
+    assert first_token is not None
+
+    login_response = client.post(
+        "/api/v1/auth/login",
+        headers={
+            "Origin": "https://hub.example.test",
+            "X-CSRF-Token": first_csrf,
+        },
+        json={"email": "recovery@example.test", "password": "strong password"},
+    )
+    second_token = client.cookies.get("commitverse_session")
+
+    assert login_response.status_code == 200
+    assert second_token is not None and second_token != first_token
+    with factory() as db_session:
+        assert get_active_session(db_session, first_token) is not None
+        assert get_active_session(db_session, second_token) is not None
+
+    logout_response = client.post(
+        "/api/v1/auth/logout",
+        headers={
+            "Origin": "https://hub.example.test",
+            "X-CSRF-Token": login_response.headers["X-CSRF-Token"],
+        },
+    )
+    assert logout_response.status_code == 200
+    with factory() as db_session:
+        assert get_active_session(db_session, first_token) is not None
+        assert get_active_session(db_session, second_token) is None
+
+
+def test_login_does_not_treat_session_store_failure_as_a_stale_cookie(
+    auth_api_client,
+    monkeypatch,
+) -> None:
+    client, _ = auth_api_client
+    register_auth_test_user(client)
+
+    def fail_session_lookup(*_args, **_kwargs):
+        raise SQLAlchemyError("session store unavailable")
+
+    monkeypatch.setattr(auth_api, "get_active_session", fail_session_lookup)
+    response = client.post(
+        "/api/v1/auth/login",
+        headers={"Origin": "https://hub.example.test"},
+        json={"email": "recovery@example.test", "password": "strong password"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "session_validation_failed"
+
+
+@pytest.mark.parametrize("csrf_header", [None, "invalid-csrf-token"])
+def test_logout_with_an_active_session_requires_valid_csrf(
+    auth_api_client,
+    csrf_header: str | None,
+) -> None:
+    client, _ = auth_api_client
+    register_auth_test_user(client)
+    headers = {"Origin": "https://hub.example.test"}
+    if csrf_header is not None:
+        headers["X-CSRF-Token"] = csrf_header
+
+    response = client.post("/api/v1/auth/logout", headers=headers)
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "csrf_validation_failed"
+    assert "Max-Age=0" not in ";".join(get_set_cookie_values(response.headers))
+
+
+@pytest.mark.parametrize("state", ["expired", "revoked", "malformed"])
+def test_logout_clears_a_stale_or_malformed_cookie(auth_api_client, state: str) -> None:
+    client, factory = auth_api_client
+    register_auth_test_user(client)
+    token = client.cookies.get("commitverse_session")
+    assert token is not None
+    if state == "malformed":
+        set_auth_cookie(client, "not-a-session-token")
+    else:
+        set_session_state(factory, token, state)
+
+    response = client.post(
+        "/api/v1/auth/logout",
+        headers={"Origin": "https://hub.example.test"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    assert "Max-Age=0" in ";".join(get_set_cookie_values(response.headers))
+
+
+@pytest.mark.parametrize("state", ["expired", "revoked", "malformed"])
+def test_logout_rejects_untrusted_origin_for_stale_cookies(auth_api_client, state: str) -> None:
+    client, factory = auth_api_client
+    register_auth_test_user(client)
+    token = client.cookies.get("commitverse_session")
+    assert token is not None
+    if state == "malformed":
+        set_auth_cookie(client, "not-a-session-token")
+    else:
+        set_session_state(factory, token, state)
+
+    response = client.post(
+        "/api/v1/auth/logout",
+        headers={"Origin": "https://attacker.example.test"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "origin_not_allowed"
+    assert "Max-Age=0" not in ";".join(get_set_cookie_values(response.headers))
+
+
+def test_logout_without_a_cookie_keeps_safe_origin_only_behavior(auth_api_client) -> None:
+    client, _ = auth_api_client
+
+    response = client.post(
+        "/api/v1/auth/logout",
+        headers={"Origin": "https://hub.example.test"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    assert "Max-Age=0" in ";".join(get_set_cookie_values(response.headers))
+
+
+def test_logout_does_not_clear_a_cookie_when_session_validation_fails(
+    auth_api_client,
+    monkeypatch,
+) -> None:
+    client, _ = auth_api_client
+    register_auth_test_user(client)
+
+    def fail_session_lookup(*_args, **_kwargs):
+        raise SQLAlchemyError("session store unavailable")
+
+    monkeypatch.setattr(auth_api, "get_active_session", fail_session_lookup)
+    response = client.post(
+        "/api/v1/auth/logout",
+        headers={"Origin": "https://hub.example.test"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "session_validation_failed"
+    assert "Max-Age=0" not in ";".join(get_set_cookie_values(response.headers))
 
 
 def test_csrf_tokens_are_random_and_bound_to_the_session() -> None:

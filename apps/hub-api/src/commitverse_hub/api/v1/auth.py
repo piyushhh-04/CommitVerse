@@ -178,6 +178,23 @@ def get_authenticated_user(request: Request) -> User:
         return user
 
 
+def _has_active_session(request: Request, token: str) -> bool:
+    """Check whether a well-formed cookie currently identifies an active session."""
+    if not validate_session_token(token):
+        return False
+
+    factory = _session_factory(request)
+    try:
+        with factory() as db_session:
+            return get_active_session(db_session, token) is not None
+    except SQLAlchemyError as exc:
+        raise HubApplicationError(
+            503,
+            "session_validation_failed",
+            "The session could not be validated.",
+        ) from exc
+
+
 def require_authenticated_csrf(request: Request) -> None:
     """Require the current authenticated session's CSRF token and allow-listed origin."""
     token = request.cookies.get(_cookie_settings(request).name)
@@ -280,11 +297,10 @@ async def login_account(
     response: Response,
 ) -> AuthUserResponse:
     """Authenticate a user and issue a secure cookie-backed session."""
+    _require_origin(request)
     existing_session = request.cookies.get(_cookie_settings(request).name)
-    if existing_session:
+    if existing_session and _has_active_session(request, existing_session):
         _require_origin(request, require_csrf_for_session=existing_session)
-    else:
-        _require_origin(request)
 
     factory = _session_factory(request)
     normalized_email = payload.email
@@ -320,13 +336,20 @@ async def login_account(
 
 
 @me_router.get("/me", response_model=AuthUserResponse)
-async def me(request: Request) -> AuthUserResponse:
+async def me(request: Request, response: Response) -> AuthUserResponse:
     """Return the authenticated user identity from the current browser session."""
     factory = _session_factory(request)
     user = get_authenticated_user(request)
     with factory() as db_session:
         profile = db_session.scalar(select(UserProfile).where(UserProfile.user_id == user.id))
-        return _user_payload(user, profile)
+        user_response = _user_payload(user, profile)
+
+    session_token = request.cookies.get(_cookie_settings(request).name)
+    if not session_token:
+        raise HubApplicationError(401, "authentication_required", "Authentication required.")
+    response.headers["X-CSRF-Token"] = generate_csrf_token(session_token)
+    response.headers["Cache-Control"] = "no-store"
+    return user_response
 
 
 @router.post("/logout", response_model=AuthStatusResponse)
@@ -334,15 +357,13 @@ async def logout_account(request: Request, response: Response) -> AuthStatusResp
     """Revoke the current session and clear the related cookie."""
     settings = _cookie_settings(request)
     token = request.cookies.get(settings.name)
-    if token:
-        _require_origin(request, require_csrf_for_session=token)
-    else:
-        _require_origin(request)
+    _require_origin(request)
 
-    if not token or not validate_session_token(token):
+    if not token or not _has_active_session(request, token):
         clear_session_cookie(response, settings)
         return AuthStatusResponse()
 
+    _require_origin(request, require_csrf_for_session=token)
     factory = _session_factory(request)
     try:
         with transactional_session(factory) as db_session:

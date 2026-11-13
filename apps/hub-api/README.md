@@ -176,14 +176,38 @@ hashes and raw session tokens are not logged or returned through response
 schemas. Session persistence helpers participate in the caller's SQLAlchemy
 transaction and do not commit independently.
 
-The API now implements first-party browser registration, login, logout, and
-current-user resolution under `/api/v1/auth` and `/api/v1/me`. Registration
-requires an allow-listed `Origin`; login and logout also require a valid
-session-bound `X-CSRF-Token` when a session cookie is present. Raw session
-tokens are stored only as hashes in the database.
-CORS configuration is not a substitute for CSRF validation. Active-session
-lookup rejects disabled accounts; account disable workflows must also revoke
-the account's existing sessions.
+The API implements first-party browser registration, login, logout, and
+current-user resolution under `/api/v1/auth` and `/api/v1/me`. The session
+cookie is `HttpOnly`, `Secure` by default, `SameSite=Lax`, and scoped to `/`;
+its server-side session expires according to the configured cookie max age.
+The raw 256-bit session token is returned only in the cookie and stored in the
+database only as a SHA-256 hash. Logging does not include raw session tokens,
+passwords, or CSRF tokens.
+
+Registration always requires an exact allow-listed `Origin`. Login and logout
+also require an exact allow-listed `Origin` on every request. If their cookie
+identifies an active session, they additionally require a valid
+session-bound `X-CSRF-Token`. If the cookie is absent, malformed, expired, or
+revoked, login follows the Origin-protected pre-authentication flow and logout
+clears the stale cookie after Origin validation. A database/session-store
+failure during active-session lookup returns a service error; it is not
+treated as evidence of a stale session and does not bypass CSRF validation.
+Login creates a new session without revoking other active sessions. Logout
+revokes only the active session represented by the current cookie.
+
+Successful registration and login return a fresh `X-CSRF-Token` response
+header. An authenticated `GET /api/v1/me` returns the same user JSON as before
+and a newly generated `X-CSRF-Token` header bound to the validated session.
+That successful response includes `Cache-Control: no-store`; invalid sessions
+receive neither a CSRF token nor an authenticated user response. The token is
+not included in JSON. A browser client should retain it only in memory and
+request `/api/v1/me` after a page reload to restore it; it must not persist the
+token in browser storage or a JavaScript-readable cookie.
+
+Authenticated mutation routes require both the exact allow-listed `Origin`
+and the session-bound `X-CSRF-Token`. CORS configuration is not a substitute
+for CSRF validation. Active-session lookup rejects disabled accounts;
+account-disable workflows must also revoke the account's existing sessions.
 
 ## Personal repositories
 

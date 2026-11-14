@@ -1,8 +1,9 @@
 # CommitVerse Hub Web
 
-The standalone CommitVerse landing page and design system. This app is
-informational only: it has no authentication UI, API client, live repository
-data, or backend dependency.
+The CommitVerse landing page and authenticated Hub application. Sign-in,
+registration, session restoration, and the authenticated application shell are
+implemented. Repository and organization data views remain neutral
+placeholders; product-management workflows are not implemented yet.
 
 ## Requirements
 
@@ -18,10 +19,30 @@ npm run dev
 
 The Vite server listens on `http://127.0.0.1:5173`. Its development-only
 `/api/v1` proxy targets `http://127.0.0.1:8000`; override the target with
-`HUB_API_PROXY_TARGET` when needed. The landing page does not currently use
-that proxy. Any browser API client must use the Hub API's exact-origin
-allow-list and session-bound CSRF flow. The proxy is not included in
-production builds.
+`HUB_API_PROXY_TARGET` when needed. The public landing page does not use that proxy or make session requests.
+Authenticated routes use a centralized same-origin API client, the Hub API's
+cookie session, and its session-bound CSRF header. Session credentials are not
+stored in `localStorage` or `sessionStorage`; the browser manages the session
+cookie as an HttpOnly cookie. CSRF tokens remain in memory and are not persisted
+in browser storage. The proxy is not included in production builds.
+
+## Frontend foundation
+
+- React Router separates the public landing page from account and protected
+  application routes. Protected routes restore `/api/v1/me` before rendering
+  and preserve the requested location when redirecting an anonymous user.
+- TanStack Query owns the in-memory session cache and provides bounded retries
+  for transient query failures. Mutations are not retried automatically.
+- The typed API client preserves backend error codes, validation details, and
+  request IDs; it sends same-origin cookies and attaches the in-memory CSRF
+  token to mutations.
+- `/login` and `/register` use the backend's email/password and
+  email/password/username/optional-display-name contracts. Credentials are
+  submitted through `AuthProvider` and are not written to browser storage.
+- Protected `/app/*` routes share a responsive shell with dashboard,
+  repository, and organization navigation, current-user information, theme
+  control, and logout. Dashboard, repository, and organization content is
+  still placeholder-only; no product-management workflow is implemented.
 
 ## Checks
 

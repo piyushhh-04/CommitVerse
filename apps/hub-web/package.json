@@ -17,8 +17,10 @@
     "test:api-integration": "playwright test --config playwright.integration.config.ts"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.107.1",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "react-router-dom": "^7.18.5"
   },
   "devDependencies": {
     "@playwright/test": "^1.65.0",

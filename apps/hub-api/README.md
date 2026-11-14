@@ -11,6 +11,10 @@ server-side session tokens and an exact-origin allowlist for state-changing
 requests. Authenticated users can create, list, inspect, update, and delete
 their own personal repositories; lifecycle operations initialize or remove
 bare repositories through CommitVerse Core.
+The API also supports organization metadata creation/list/detail/update and
+organization membership listing, addition, role changes, removal, leaving, and
+ownership transfer. Invitations and organization-owned repository HTTP routes
+are not implemented.
 
 ## Requirements
 
@@ -253,12 +257,13 @@ PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest \
 The default test suite uses an in-process HTTP client and injected resources;
 it requires neither a running PostgreSQL server nor external network access.
 Authentication and session tests use isolated SQLite databases by default.
-Set `HUB_TEST_DATABASE_URL` to run the PostgreSQL session-persistence test and
-repository lifecycle test against isolated schemas/resources. The repository
-integration test exercises create, list/detail, update, Core bare-repository
-verification, and delete, then rolls back its schema transaction. Duplicate
-names and retry behavior are covered by isolated SQLite tests. Do not claim
-PostgreSQL integration verification when these tests are skipped.
+Set `HUB_TEST_DATABASE_URL` to run the PostgreSQL session-persistence,
+repository lifecycle, and organization concurrency tests against isolated
+schemas/resources. The repository integration test exercises create,
+list/detail, update, Core bare-repository verification, and delete, then rolls
+back its schema transaction. Duplicate names and retry behavior are covered by
+isolated SQLite tests. Do not claim PostgreSQL integration verification when
+these tests are skipped.
 For example, after configuring `HUB_DATABASE_URL` for the local server:
 
 ```sh
@@ -276,9 +281,11 @@ substitute for, the completed PostgreSQL migration verification above.
 
 ## Current limitations
 
-Organization and collaborator workflows, anonymous public reads, repository
-browsing, automated reconciliation, cross-process repository coordination,
-network Git protocols, a frontend, and deployment are not implemented. There
-are no configured rate limits or production backup/restore procedures. Local
+Organization metadata and membership APIs are implemented, but invitations,
+user discovery, organization-owned repository HTTP routes, direct repository
+grants, anonymous public reads, repository browsing, automated reconciliation,
+cross-process repository coordination, network Git protocols, authenticated
+frontend workflows, and deployment are not implemented. There are no
+configured rate limits or production backup/restore procedures. Local
 PostgreSQL validation does not establish cloud deployment readiness; hosting
 and repository storage remain subject to the project's strict ₹0 policy.

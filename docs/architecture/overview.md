@@ -14,8 +14,8 @@ CommitVerse is organized as a modular monorepo with three product areas:
 1. **CommitVerse Core** implements the Git-like version control engine and
    repository operations in Python.
 2. **CommitVerse Hub** provides a local-development FastAPI foundation,
-   browser-session authentication, and owner-only personal repository
-   management integrated with Core.
+   browser-session authentication, owner-only personal repository management,
+   and organization metadata/membership APIs integrated with Core.
 3. **CommitVerse AI** is the planned AI-powered developer assistant layer.
 
 Core and Hub API code are implemented within their documented limits. AI
@@ -111,8 +111,10 @@ Supported commands in the current implementation:
 ## Communication boundaries
 
 Hub coordinates personal repository metadata and bare-repository lifecycle
-workflows with Core through a narrow in-process adapter. The current API is
-owner-only: organization/collaborator authorization, repository browsing, and
+workflows with Core through a narrow in-process adapter. Its API includes
+organization metadata and membership operations with role-based authorization.
+Repository HTTP operations remain limited to personal owners; organization-
+owned repository routes, direct repository grants, repository browsing, and
 network Git operations are not implemented.
 
 The Hub design is a Python/FastAPI modular monolith with a React/Tailwind
@@ -203,11 +205,12 @@ Known limitations include:
 
 ## Future capabilities
 
-Planned work beyond the implemented Core scope includes:
+Planned work beyond the implemented Core and Hub API scopes includes:
 
-- Hub repository hosting, permissions, and collaboration flows
-- database-backed application metadata and API integration
-- frontend interfaces for repository management
+- organization-owned repository HTTP routes, direct repository grants, and
+  invitation workflows
+- authenticated frontend interfaces for repository and organization
+  management
 - AI-assisted developer workflows and repository analysis
 - richer Git compatibility and advanced VCS operations
 
@@ -217,6 +220,6 @@ These are future capabilities and are not implemented in the current repository.
 
 CommitVerse Core is currently a Git-like version-control engine with a working
 object database, Git index, tree and staging logic, commit/ref handling, history
-traversal, read-only status/diff, and a CLI. Hub and AI remain future product
-layers. The Core does not claim full Git compatibility and intentionally keeps its
-scope bounded to the implemented Milestones 1–4.
+traversal, read-only status/diff, and a CLI. Hub's authenticated web product and
+AI remain future scope. The Core does not claim full Git compatibility and
+intentionally keeps its scope bounded to the implemented Milestones 1–4.

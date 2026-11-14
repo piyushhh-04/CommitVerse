@@ -5,10 +5,12 @@
 This document records the approved security architecture and distinguishes
 implemented Hub controls from remaining requirements.
 Registration/login/logout, session authentication, and owner-only personal
-repository lifecycle routes exist. The shared repository lifecycle service
-also supports organization repositories with current owner/admin membership
-checks; organization repository HTTP routes and broader repository operations
-remain unimplemented. The initial schema alone is not a security guarantee.
+repository lifecycle routes exist, as do organization metadata and membership
+routes with membership-scoped reads and role-gated mutations. The shared
+repository lifecycle service also supports organization repositories with
+current owner/admin membership checks; organization repository HTTP routes,
+direct repository grants, and broader repository operations remain
+unimplemented. The initial schema alone is not a security guarantee.
 The threat model covers unauthenticated and malicious clients, compromised
 accounts, abusive repository operations, malformed repository data, path
 manipulation, symlink attacks, concurrent requests, partial database/filesystem
@@ -120,9 +122,10 @@ Every repository mutation also enforces CSRF/Origin. Public visibility is
 metadata only; it does not enable anonymous access.
 
 Use deny-by-default service-level authorization for any added operation. Route
-guards and frontend visibility are not sufficient. Organization owner/admin
-rights and direct repository grants are not implemented; future behavior must
-follow the rules in
+guards and frontend visibility are not sufficient. Organization reads are
+scoped to active membership, and organization mutations enforce current
+owner/admin restrictions. Direct repository grants and organization-owned
+repository HTTP access are not implemented; future behavior must follow the rules in
 [`database-design.md`](database-design.md#ownership-and-effective-authorization).
 Check lifecycle state and authorization before opening a repository through
 Core. Never trust a client-supplied repository path, owner, or role.

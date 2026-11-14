@@ -18,10 +18,12 @@ collaboration platform:
   registration/login/logout and current-user APIs using opaque server-side
   sessions, plus authenticated owner-only personal repository metadata and
   lifecycle APIs backed by real Core bare repositories on the local filesystem.
-  Organization, collaborator, invitation, browsing, and frontend workflows
-  remain unimplemented. The filesystem lifecycle is recoverable but uses only
-  process-local coordination; it is not ready for multi-worker or hosted
-  deployment.
+  Organization metadata and membership APIs are implemented, including
+  owner/admin controls and ownership transfer. Invitations, user discovery,
+  direct repository grants, organization-owned repository HTTP routes,
+  browsing, and authenticated frontend workflows remain unimplemented. The
+  filesystem lifecycle is recoverable but uses only process-local coordination;
+  it is not ready for multi-worker or hosted deployment.
 - **CommitVerse AI:** a future AI developer assistant.
 
 Core has an installable Python package with canonical object serialization,
@@ -123,8 +125,11 @@ without a clear project need and an explicit decision.
   `HUB_DATABASE_URL` is optional for startup and tests. Alembic loads that same
   variable only when a migration command is invoked. The shared declarative
   metadata and initial Alembic revision define nine Hub metadata tables.
-  Application workflows do not yet use these models. Local PostgreSQL 17.11
-  migration validation is complete; hosted database provisioning is not.
+  Account/session, personal-repository, and organization/membership API
+  workflows use these models. Organization-owned repository HTTP routes,
+  direct repository grants, invitations, and authenticated frontend workflows
+  remain unimplemented. Local PostgreSQL 17.11 migration validation is
+  complete; hosted database provisioning is not.
 - The scope of any future root-level `pyproject.toml` is undecided. It may
   configure workspace-wide tooling if needed, but must not replace the Core
   package's independently installable configuration.

@@ -813,6 +813,20 @@ def test_organization_api_routes_create_list_detail_and_member_management(tmp_pa
         assert created["slug"] == "demo-org"
         assert created["role"] == "owner"
 
+        duplicate_org = owner_client.post(
+            "/api/v1/organizations",
+            headers={
+                "Origin": "https://hub.example.test",
+                "X-CSRF-Token": owner_csrf,
+                "X-Request-ID": "organization-conflict-test",
+            },
+            json={"slug": "demo-org", "name": "Duplicate Organization"},
+        )
+        assert duplicate_org.status_code == 409, duplicate_org.text
+        assert duplicate_org.json()["error"]["code"] == "organization_conflict"
+        assert duplicate_org.json()["request_id"] == "organization-conflict-test"
+        assert duplicate_org.headers["x-request-id"] == "organization-conflict-test"
+
         list_response = owner_client.get("/api/v1/organizations", params={"limit": 10, "offset": 0})
         assert list_response.status_code == 200, list_response.text
         assert list_response.json()["total"] == 1
@@ -846,6 +860,29 @@ def test_organization_api_routes_create_list_detail_and_member_management(tmp_pa
             json={"role": "member"},
         )
         assert bad_role.status_code == 403, bad_role.text
+
+        with Session(engine) as db_session:
+            organization = db_session.get(Organization, uuid.UUID(created["id"]))
+            assert organization is not None
+            organization.state = "disabled"
+            db_session.commit()
+
+        disabled_org_update = owner_client.patch(
+            f"/api/v1/organizations/{created['id']}",
+            headers={
+                "Origin": "https://hub.example.test",
+                "X-CSRF-Token": owner_csrf,
+                "X-Request-ID": "disabled-organization-test",
+            },
+            json={"name": "Disabled Organization"},
+        )
+        assert disabled_org_update.status_code == 409, disabled_org_update.text
+        assert disabled_org_update.json()["error"] == {
+            "code": "organization_disabled",
+            "message": "Organization is disabled.",
+        }
+        assert disabled_org_update.json()["request_id"] == "disabled-organization-test"
+        assert disabled_org_update.headers["x-request-id"] == "disabled-organization-test"
 
     engine.dispose()
 

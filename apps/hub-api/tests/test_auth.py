@@ -1,5 +1,6 @@
 """Authentication primitives and session persistence tests."""
 
+import inspect
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -46,6 +47,17 @@ from commitverse_hub.db.base import Base
 from commitverse_hub.main import create_app
 from commitverse_hub.db.models import SessionRecord, User
 from commitverse_hub.db.session import create_session_factory, transactional_session
+
+
+def test_auth_handlers_with_blocking_work_are_synchronous_routes() -> None:
+    handlers = (
+        auth_api.register_account,
+        auth_api.login_account,
+        auth_api.me,
+        auth_api.logout_account,
+    )
+
+    assert all(not inspect.iscoroutinefunction(handler) for handler in handlers)
 
 
 def get_set_cookie_values(headers):

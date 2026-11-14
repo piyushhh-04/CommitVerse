@@ -214,10 +214,10 @@ def _session_factory(request: Request) -> sessionmaker[Session]:
 
 
 def _organization_error(exc: Exception) -> HubApplicationError:
-    if isinstance(exc, OrganizationConflictError):
-        return HubApplicationError(409, "organization_conflict", str(exc))
     if isinstance(exc, OrganizationDisabledError):
         return HubApplicationError(409, "organization_disabled", "Organization is disabled.")
+    if isinstance(exc, OrganizationConflictError):
+        return HubApplicationError(409, "organization_conflict", str(exc))
     if isinstance(exc, OrganizationNotFoundError):
         return HubApplicationError(404, "organization_not_found", "Organization not found.")
     if isinstance(exc, OrganizationReauthenticationError):

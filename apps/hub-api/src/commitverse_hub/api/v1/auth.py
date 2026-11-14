@@ -204,7 +204,7 @@ def require_authenticated_csrf(request: Request) -> None:
 
 
 @router.post("/register", response_model=AuthUserResponse)
-async def register_account(
+def register_account(
     payload: RegisterRequest,
     request: Request,
     response: Response,
@@ -291,7 +291,7 @@ async def register_account(
 
 
 @router.post("/login", response_model=AuthUserResponse)
-async def login_account(
+def login_account(
     payload: LoginRequest,
     request: Request,
     response: Response,
@@ -336,7 +336,7 @@ async def login_account(
 
 
 @me_router.get("/me", response_model=AuthUserResponse)
-async def me(request: Request, response: Response) -> AuthUserResponse:
+def me(request: Request, response: Response) -> AuthUserResponse:
     """Return the authenticated user identity from the current browser session."""
     factory = _session_factory(request)
     user = get_authenticated_user(request)
@@ -353,7 +353,7 @@ async def me(request: Request, response: Response) -> AuthUserResponse:
 
 
 @router.post("/logout", response_model=AuthStatusResponse)
-async def logout_account(request: Request, response: Response) -> AuthStatusResponse:
+def logout_account(request: Request, response: Response) -> AuthStatusResponse:
     """Revoke the current session and clear the related cookie."""
     settings = _cookie_settings(request)
     token = request.cookies.get(settings.name)

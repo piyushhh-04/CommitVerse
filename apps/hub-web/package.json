@@ -8,12 +8,13 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --pretty false",
-    "lint": "oxlint src e2e vite.config.ts vitest.config.ts playwright.config.ts",
+    "lint": "oxlint src e2e vite.config.ts vitest.config.ts playwright.config.ts playwright.integration.config.ts",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:api-integration": "playwright test --config playwright.integration.config.ts"
   },
   "dependencies": {
     "react": "^19.3.1",

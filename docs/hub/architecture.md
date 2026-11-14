@@ -5,12 +5,13 @@
 This document records the reviewed architecture for CommitVerse Hub. The
 `apps/hub-api/` implementation includes registration/login/logout and
 current-user APIs, authenticated owner-only personal repository metadata CRUD,
-and shared personal/organization bare-repository lifecycle integration with
-Core. Organization repository HTTP routes, repository browsing, and broader
-collaboration features are not implemented. Hub is a local-development-first
-application
-that builds on, but does not absorb or replace, CommitVerse Core.
-CommitVerse AI remains future scope.
+organization metadata and membership APIs, and shared
+personal/organization bare-repository lifecycle integration with Core.
+Organization-owned repository HTTP routes, direct repository grants,
+invitations, repository browsing, and the authenticated frontend are not
+implemented. Hub is a local-development-first application that builds on, but
+does not absorb or replace, CommitVerse Core. CommitVerse AI remains future
+scope.
 
 The initial architecture is a **modular monolith**: one Python/FastAPI
 application, one PostgreSQL metadata database, a separately stored repository
@@ -18,8 +19,9 @@ filesystem, and a React/Tailwind web client. REST endpoints are versioned under
 `/api/v1`. The API package and optional SQLAlchemy/Psycopg/Alembic foundation
 and initial metadata models/migration exist. Local PostgreSQL 17.11 migration
 validation has been completed against a native Homebrew installation on
-macOS/Apple Silicon M2. Organization/collaboration workflows, hosted runtime
-services, and deployment configuration remain unimplemented or unverified.
+macOS/Apple Silicon M2. Organization-owned repository HTTP routes, direct
+repository grants, invitations, hosted runtime services, and deployment
+configuration remain unimplemented or unverified.
 
 ## Goals and boundaries
 
@@ -91,7 +93,7 @@ The table distinguishes existing foundations from planned workflows:
 | `schemas` | Pydantic request/response models and validation; no database or filesystem access. |
 | `auth` | **Implemented:** Argon2id registration/login, opaque server-side sessions, current-principal resolution, logout/revocation, validated cookies, and exact-Origin/session-bound CSRF checks for state-changing requests. |
 | `users` | Account state and profile workflows. |
-| `organizations` | Organization and membership workflows; teams are deferred. |
+| `organizations` | **Implemented API:** organization metadata create/list/detail/update and membership list/add/role-change/remove/leave/ownership-transfer workflows; teams and invitations are deferred. |
 | `repositories` | **Implemented:** personal owner-scoped metadata APIs and a shared Core-backed lifecycle service for personal and organization-owned repository creation/deletion. Organization repository HTTP routes remain unimplemented. |
 | `permissions` | Central deny-by-default policy evaluation for public/private access, ownership, memberships, and direct grants. |
 | `repository_ops` | **Implemented for repository lifecycle:** current personal-owner or organization owner/admin authorization, database row locks, safe provisioning/deletion, and explicit retryable failure states. General repository operations remain planned. |
@@ -111,7 +113,8 @@ required by the initial use cases and would add schema/runtime complexity
 without a demonstrated need.
 
 The API currently provides account registration/login/logout, current-user
-resolution, and owner-only personal repository metadata/lifecycle routes.
+resolution, owner-only personal repository metadata/lifecycle routes, and
+organization metadata/membership operations with role-based authorization.
 The shared lifecycle service also supports organization-owned repository
 creation and deletion for current organization owners/admins; those operations
 do not yet have HTTP routes.
@@ -264,9 +267,10 @@ blocker and no deployment configuration is implied.
   owner-only personal repository APIs, and shared Core-backed personal and
   organization repository lifecycle services with transactional audit events
   and retryable states. Local PostgreSQL 17.11 migration validation is complete.
-- **Not implemented:** organization/collaborator authorization, anonymous
-  public access, repository browsing, automated lifecycle reconciliation,
-  frontend, and deployment. No hosted deployment has been verified.
+- **Not implemented:** organization-owned repository HTTP routes, direct
+  repository grants, invitations, anonymous public access, repository
+  browsing, automated lifecycle reconciliation, authenticated frontend, and
+  deployment. No hosted deployment has been verified.
 - **Not available from Core:** network Git protocols, packfiles, and ordinary
   remote-client interoperability.
 - **Operational limitations:** DB/filesystem operations are not atomic;

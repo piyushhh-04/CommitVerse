@@ -8,9 +8,9 @@ models and Alembic revision `40037b3edad7`
 It defines metadata only; PostgreSQL owns no CommitVerse Core repository
 objects, refs, or bare repository files. Live PostgreSQL migration validation
 is complete against the local PostgreSQL 17.11 development server. Registration,
-session authentication, and owner-only personal repository workflows use the
-existing schema. Organization, collaboration, and invitation workflows remain
-unimplemented.
+session authentication, owner-only personal repository workflows, and
+organization metadata/membership APIs use the existing schema. Invitation and
+direct repository-permission workflows remain unimplemented.
 
 The migration creates `users`, `user_profiles`, `organizations`,
 `organization_memberships`, `repositories`,
@@ -106,12 +106,15 @@ implicit organization-wide repository access based only on membership.
 - `storage_key` is generated independently of the owner and slug, unique, and
   never accepted from an API request. It maps to a path below one configured
   repository root.
-- The current API creates personal repositories only. Repository creation
-  provisions a bare Core repository before marking metadata `ready`; deletion
-  first marks metadata `deleting`, removes the verified generated-key path,
-  revokes pending invitations/direct grants associated with the row, and keeps
-  a tombstone for retry/idempotency and audit history. These operations are
-  recoverable across database/filesystem failures but are not atomic.
+- The repository HTTP API creates personal repositories only. The shared
+  lifecycle service also supports organization-owned repository creation and
+  deletion for current owners/admins, but no organization-repository HTTP
+  routes expose those operations. Repository creation provisions a bare Core
+  repository before marking metadata `ready`; deletion first marks metadata
+  `deleting`, removes the verified generated-key path, revokes pending
+  invitations/direct grants associated with the row, and keeps a tombstone for
+  retry/idempotency and audit history. These operations are recoverable across
+  database/filesystem failures but are not atomic.
 - `created_by` is a required user FK, separate from ownership, for
   auditability even when the owner is an organization.
 

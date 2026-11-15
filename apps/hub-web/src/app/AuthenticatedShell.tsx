@@ -3,6 +3,15 @@ import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ThemeToggle } from "../theme/ThemeProvider";
 
+function requestsHeadingFocus(state: unknown): boolean {
+  return (
+    typeof state === "object" &&
+    state !== null &&
+    "focusDestinationHeading" in state &&
+    state.focusDestinationHeading === true
+  );
+}
+
 export function AuthenticatedShell() {
   const auth = useAuth();
   const location = useLocation();
@@ -33,11 +42,17 @@ export function AuthenticatedShell() {
   useLayoutEffect(() => {
     const pathnameChanged = previousPathname.current !== location.pathname;
     previousPathname.current = location.pathname;
-    if (!pathnameChanged || !focusDestinationHeading.current) return;
+    if (
+      !pathnameChanged ||
+      (!focusDestinationHeading.current && !requestsHeadingFocus(location.state))
+    ) {
+      return;
+    }
 
     focusDestinationHeading.current = false;
-    document.getElementById("foundation-title")?.focus();
-  }, [location.pathname]);
+    const heading = document.getElementById("foundation-title");
+    if (heading?.getAttribute("aria-busy") !== "true") heading?.focus();
+  }, [location.pathname, location.state]);
 
   if (auth.status !== "authenticated") return null;
 

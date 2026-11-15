@@ -58,23 +58,30 @@ describe("application routes", () => {
   });
 
   it("renders a protected route only after restoring an authenticated session", async () => {
-    fetchMock.mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          id: "user-1",
-          email: "dev@example.test",
-          username: "dev",
-          display_name: "Developer",
-        }),
-        {
-          status: 200,
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRF-Token": "csrf-session",
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            id: "user-1",
+            email: "dev@example.test",
+            username: "dev",
+            display_name: "Developer",
+          }),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              "X-CSRF-Token": "csrf-session",
+            },
           },
-        },
-      ),
-    );
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ items: [], total: 0, limit: 50, offset: 0 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
     renderAtPath("/app/repositories");
 
     expect(await screen.findByRole("heading", { name: "Repositories" })).toBeInTheDocument();

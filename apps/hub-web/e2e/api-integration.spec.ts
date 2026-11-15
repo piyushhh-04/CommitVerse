@@ -202,7 +202,7 @@ test("authentication screens register, log in, navigate, and revoke real API ses
   await page.getByRole("button", { name: "Sign in" }).click();
 
   await expect(page).toHaveURL(/\/app\/repositories$/);
-  await expect(page.getByRole("heading", { name: "Repositories" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Repositories", exact: true })).toBeVisible();
   await expect(page.getByText("Integration Developer")).toBeVisible();
   expect((await context.cookies()).some((cookie) => cookie.name === "commitverse_session")).toBe(
     true,
@@ -219,4 +219,46 @@ test("authentication screens register, log in, navigate, and revoke real API ses
   await page.goto("/app");
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+});
+
+test("personal repository creation, editing, and deletion use the real API", async ({ page }) => {
+  const suffix = Date.now().toString();
+  await page.goto("/register");
+  await page.getByLabel("Email address").fill(`repository-${suffix}@example.test`);
+  await page.getByLabel("Username").fill(`repository${suffix}`);
+  await page.getByRole("textbox", { name: "Password" }).fill("repository integration password");
+  await page.getByRole("button", { name: "Create your account" }).click();
+  await expect(page).toHaveURL(/\/app$/);
+
+  await page
+    .getByRole("navigation", { name: "Application navigation" })
+    .getByRole("link", { name: "Repositories" })
+    .click();
+  await expect(page.getByRole("heading", { name: "Repositories", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "New repository" }).click();
+  await page.getByLabel("Repository name").fill(`browser-project-${suffix}`);
+  await page.getByLabel("Description (optional)").fill("A description to clear.");
+  await page.getByRole("button", { name: "Create repository" }).click();
+
+  await expect(page).toHaveURL(/\/app\/repositories\/[0-9a-f-]+$/);
+  await expect(page.getByRole("heading", { name: `browser-project-${suffix}` })).toBeVisible();
+  await page.getByLabel("Repository name").fill(`renamed-${suffix}`);
+  await page.getByLabel("Description (optional)").fill("");
+  await page.getByRole("radio", { name: /Public/ }).check();
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("status")).toContainText("Changes saved.");
+  await expect(page.getByRole("heading", { name: `renamed-${suffix}` })).toBeVisible();
+  await expect(page.locator(".repository-detail-header .repository-visibility-tag")).toHaveText(
+    "public",
+  );
+  await expect(page.locator(".repository-detail-description")).toHaveText(
+    "No description provided.",
+  );
+
+  await page.getByRole("button", { name: "Delete repository" }).click();
+  await page.getByRole("button", { name: "Confirm deletion" }).click();
+  await expect(page).toHaveURL(/\/app\/repositories$/);
+  await expect(
+    page.getByRole("heading", { name: "Your repositories will live here." }),
+  ).toBeVisible();
 });

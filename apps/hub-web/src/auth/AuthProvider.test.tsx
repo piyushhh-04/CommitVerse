@@ -1,7 +1,18 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiClient } from "../api/client";
+import {
+  personalRepositoryMutationClient,
+  personalRepositoryMutationOptions,
+  personalRepositoryQueryKeys,
+} from "../repositories/queries";
+import type { PersonalRepository } from "../api/repositories";
 import { AuthProvider } from "./AuthProvider";
 import { useAuth } from "./AuthContext";
 import type { AuthUser } from "./types";
@@ -12,7 +23,15 @@ const user: AuthUser = {
   username: "dev",
   display_name: "Developer",
 };
+const anotherUser: AuthUser = {
+  id: "user-2",
+  email: "another@example.test",
+  username: "another",
+  display_name: "Another Developer",
+};
+const cachedRepositoryList = { items: [], total: 0, limit: 50, offset: 0 };
 const fetchMock = vi.fn<typeof fetch>();
+const queryClients: QueryClient[] = [];
 
 function AuthProbe() {
   const auth = useAuth();
@@ -61,18 +80,47 @@ function AuthProbe() {
   );
 }
 
-function renderAuthProvider() {
-  const queryClient = new QueryClient({
+function renderAuthProvider(
+  queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
+  }),
+  showRepositoryMutationProbe = false,
+) {
+  queryClients.push(queryClient);
   const view = render(
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <AuthProbe />
+        {showRepositoryMutationProbe ? <RepositoryMutationProbe /> : null}
       </AuthProvider>
     </QueryClientProvider>,
   );
   return { ...view, queryClient };
+}
+
+function RepositoryMutationProbe() {
+  const auth = useAuth();
+  const queryClient = useQueryClient();
+  const userId = auth.status === "authenticated" ? auth.user.id : "";
+  const mutation = useMutation(
+    personalRepositoryMutationOptions(queryClient, userId).create,
+    personalRepositoryMutationClient(queryClient),
+  );
+  return (
+    <div>
+      {auth.status === "authenticated" ? (
+        <>
+          <button type="button" onClick={() => mutation.mutate({ name: "mutation-result" })}>
+            Run repository mutation
+          </button>
+          <button type="button" onClick={() => void auth.retrySession()}>
+            Refresh session
+          </button>
+        </>
+      ) : null}
+      <p>Repository mutation result: {mutation.data?.name ?? "none"}</p>
+    </div>
+  );
 }
 
 function deferred<T>() {
@@ -103,6 +151,10 @@ afterEach(() => {
   apiClient.setCsrfToken(null);
   vi.unstubAllGlobals();
   fetchMock.mockReset();
+  for (const queryClient of queryClients.splice(0)) {
+    personalRepositoryMutationClient(queryClient).clear();
+    queryClient.clear();
+  }
 });
 
 describe("AuthProvider", () => {
@@ -164,17 +216,189 @@ describe("AuthProvider", () => {
       }
       throw new Error(`Unexpected API request: ${url}`);
     });
-    renderAuthProvider();
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const repositoryListKey = personalRepositoryQueryKeys.list(user.id);
+    queryClient.setQueryData(repositoryListKey, cachedRepositoryList);
+    renderAuthProvider(queryClient);
 
     expect(await screen.findByText("Auth status: anonymous")).toBeInTheDocument();
+    expect(queryClient.getQueryData(repositoryListKey)).toBeUndefined();
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
     expect(await screen.findByText("Signed in as dev")).toBeInTheDocument();
     await waitFor(() => expect(apiClient.hasCsrfToken).toBe(true));
 
+    queryClient.setQueryData(repositoryListKey, cachedRepositoryList);
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     expect(await screen.findByRole("button", { name: "Sign in" })).toBeInTheDocument();
     expect(apiClient.hasCsrfToken).toBe(false);
+    expect(queryClient.getQueryData(repositoryListKey)).toBeUndefined();
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("clears repository caches when session bootstrap resolves to another account", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(anotherUser, 200, { "X-CSRF-Token": "csrf-another-user" }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const previousListKey = personalRepositoryQueryKeys.list(user.id);
+    const nextListKey = personalRepositoryQueryKeys.list(anotherUser.id);
+    queryClient.setQueryData(["auth", "current-user"], user);
+    queryClient.setQueryData(previousListKey, cachedRepositoryList);
+    queryClient.setQueryData(nextListKey, cachedRepositoryList);
+    renderAuthProvider(queryClient);
+
+    expect(await screen.findByText("Signed in as another")).toBeInTheDocument();
+    expect(queryClient.getQueryData(previousListKey)).toBeUndefined();
+    expect(queryClient.getQueryData(nextListKey)).toBeUndefined();
+    expect(apiClient.hasCsrfToken).toBe(true);
+  });
+
+  it("removes a settled repository mutation result when switching authenticated accounts", async () => {
+    let meRequests = 0;
+    fetchMock.mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/me")) {
+        meRequests += 1;
+        return Promise.resolve(
+          jsonResponse(meRequests === 1 ? user : anotherUser, 200, {
+            "X-CSRF-Token": `csrf-user-${meRequests}`,
+          }),
+        );
+      }
+      if (url.endsWith("/api/v1/repositories") && init?.method === "POST") {
+        const created: PersonalRepository = {
+          id: "6f577861-febc-4c87-8949-e9201471141f",
+          name: "mutation-result",
+          description: null,
+          visibility: "private",
+          created_at: "2026-11-15T10:00:00Z",
+          updated_at: "2026-11-15T10:00:00Z",
+        };
+        return Promise.resolve(jsonResponse(created, 201));
+      }
+      throw new Error(`Unexpected API request: ${url}`);
+    });
+    const { queryClient } = renderAuthProvider(undefined, true);
+
+    expect(await screen.findByText("Signed in as dev")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Run repository mutation" }));
+    expect(
+      await screen.findByText("Repository mutation result: mutation-result"),
+    ).toBeInTheDocument();
+    const repositoryMutationClient = personalRepositoryMutationClient(queryClient);
+    expect(repositoryMutationClient.getMutationCache().getAll()).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh session" }));
+    expect(await screen.findByText("Signed in as another")).toBeInTheDocument();
+    expect(screen.getByText("Repository mutation result: none")).toBeInTheDocument();
+    expect(repositoryMutationClient.getMutationCache().getAll()).toHaveLength(0);
+  });
+
+  it("clears a settled repository mutation result on logout", async () => {
+    fetchMock.mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/me")) {
+        return Promise.resolve(jsonResponse(user, 200, { "X-CSRF-Token": "csrf-user-1" }));
+      }
+      if (url.endsWith("/api/v1/repositories") && init?.method === "POST") {
+        return Promise.resolve(
+          jsonResponse(
+            {
+              id: "6f577861-febc-4c87-8949-e9201471141f",
+              name: "mutation-result",
+              description: null,
+              visibility: "private",
+              created_at: "2026-11-15T10:00:00Z",
+              updated_at: "2026-11-15T10:00:00Z",
+            } satisfies PersonalRepository,
+            201,
+          ),
+        );
+      }
+      if (url.endsWith("/api/v1/auth/logout")) {
+        return Promise.resolve(jsonResponse({ status: "ok" }, 200));
+      }
+      throw new Error(`Unexpected API request: ${url}`);
+    });
+    const { queryClient } = renderAuthProvider(undefined, true);
+
+    expect(await screen.findByText("Signed in as dev")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Run repository mutation" }));
+    expect(
+      await screen.findByText("Repository mutation result: mutation-result"),
+    ).toBeInTheDocument();
+    const repositoryMutationClient = personalRepositoryMutationClient(queryClient);
+    expect(repositoryMutationClient.getMutationCache().getAll()).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+
+    expect(await screen.findByText("Auth status: anonymous")).toBeInTheDocument();
+    expect(screen.getByText("Repository mutation result: none")).toBeInTheDocument();
+    expect(repositoryMutationClient.getMutationCache().getAll()).toHaveLength(0);
+  });
+
+  it("does not expose or invalidate a new user's cache when an old mutation settles after switching", async () => {
+    let meRequests = 0;
+    const pendingCreate = deferred<Response>();
+    fetchMock.mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/me")) {
+        meRequests += 1;
+        return Promise.resolve(
+          jsonResponse(meRequests === 1 ? user : anotherUser, 200, {
+            "X-CSRF-Token": `csrf-user-${meRequests}`,
+          }),
+        );
+      }
+      if (url.endsWith("/api/v1/repositories") && init?.method === "POST") {
+        return pendingCreate.promise;
+      }
+      throw new Error(`Unexpected API request: ${url}`);
+    });
+    const { queryClient } = renderAuthProvider(undefined, true);
+
+    expect(await screen.findByText("Signed in as dev")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Run repository mutation" }));
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([input, init]) =>
+            String(input).endsWith("/api/v1/repositories") && init?.method === "POST",
+        ),
+      ).toBe(true),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh session" }));
+    expect(await screen.findByText("Signed in as another")).toBeInTheDocument();
+    expect(screen.getByText("Repository mutation result: none")).toBeInTheDocument();
+    const nextUserListKey = personalRepositoryQueryKeys.list(anotherUser.id);
+    queryClient.setQueryData(nextUserListKey, cachedRepositoryList);
+
+    await act(async () => {
+      pendingCreate.resolve(
+        jsonResponse(
+          {
+            id: "6f577861-febc-4c87-8949-e9201471141f",
+            name: "mutation-result",
+            description: null,
+            visibility: "private",
+            created_at: "2026-11-15T10:00:00Z",
+            updated_at: "2026-11-15T10:00:00Z",
+          } satisfies PersonalRepository,
+          201,
+        ),
+      );
+    });
+
+    expect(screen.getByText("Repository mutation result: none")).toBeInTheDocument();
+    expect(queryClient.getQueryState(nextUserListKey)?.isInvalidated).toBe(false);
+    expect(personalRepositoryMutationClient(queryClient).getMutationCache().getAll()).toHaveLength(
+      0,
+    );
   });
 
   it.each(["login", "register"] as const)(
@@ -330,14 +554,17 @@ describe("AuthProvider", () => {
       }
       throw new Error(`Unexpected API request: ${url}`);
     });
-    renderAuthProvider();
+    const { queryClient } = renderAuthProvider();
 
     expect(await screen.findByText("Signed in as dev")).toBeInTheDocument();
+    const repositoryListKey = personalRepositoryQueryKeys.list(user.id);
+    queryClient.setQueryData(repositoryListKey, cachedRepositoryList);
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
 
     expect(await screen.findByText("Auth status: anonymous")).toBeInTheDocument();
     expect(screen.getByText("Auth operation: error logout network_error")).toBeInTheDocument();
     expect(apiClient.hasCsrfToken).toBe(false);
+    expect(queryClient.getQueryData(repositoryListKey)).toBeUndefined();
     expect(
       fetchMock.mock.calls.filter(([input]) => String(input).endsWith("/auth/logout")),
     ).toHaveLength(1);

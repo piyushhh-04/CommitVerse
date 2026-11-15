@@ -119,6 +119,12 @@ describe("authentication pages", () => {
         loginBody = JSON.parse(String(init?.body));
         return userResponse("csrf-after-login");
       }
+      if (url.startsWith("/api/v1/repositories?")) {
+        return new Response(JSON.stringify({ items: [], total: 0, limit: 50, offset: 0 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       throw new Error(`Unexpected API request: ${url}`);
     });
     const userEventInstance = userEvent.setup();

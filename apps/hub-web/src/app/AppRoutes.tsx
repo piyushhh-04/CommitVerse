@@ -5,6 +5,9 @@ import { PlaceholderPage } from "../components/PlaceholderPage";
 import { LoginPage } from "../pages/LoginPage";
 import LandingPage from "../pages/LandingPage";
 import { RegisterPage } from "../pages/RegisterPage";
+import { NewRepositoryPage } from "../pages/NewRepositoryPage";
+import { RepositoriesPage } from "../pages/RepositoriesPage";
+import { RepositoryDetailRoute } from "../pages/RepositoryDetailPage";
 import { AuthenticatedShell } from "./AuthenticatedShell";
 
 function AuthenticationLayout() {
@@ -34,36 +37,9 @@ export function AppRoutes() {
                 />
               }
             />
-            <Route
-              path="repositories"
-              element={
-                <PlaceholderPage
-                  eyebrow="Personal repositories"
-                  title="Repositories"
-                  description="Repository management will be built in a later milestone."
-                />
-              }
-            />
-            <Route
-              path="repositories/new"
-              element={
-                <PlaceholderPage
-                  eyebrow="Personal repositories"
-                  title="New repository"
-                  description="Repository creation will be built in a later milestone."
-                />
-              }
-            />
-            <Route
-              path="repositories/:repositoryId"
-              element={
-                <PlaceholderPage
-                  eyebrow="Personal repositories"
-                  title="Repository details"
-                  description="Repository details will be built in a later milestone."
-                />
-              }
-            />
+            <Route path="repositories" element={<RepositoriesPage />} />
+            <Route path="repositories/new" element={<NewRepositoryPage />} />
+            <Route path="repositories/:repositoryId" element={<RepositoryDetailRoute />} />
             <Route
               path="organizations"
               element={

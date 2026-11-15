@@ -2,6 +2,10 @@ import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, apiClient } from "../api/client";
 import {
+  clearPersonalRepositoryState,
+  setPersonalRepositoryIdentity,
+} from "../repositories/queries";
+import {
   AuthContext,
   type AuthAction,
   type AuthContextValue,
@@ -65,6 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const requestGeneration = sessionRequestGeneration.current;
+      const currentUser = queryClient.getQueryData<AuthUser | null>(SESSION_QUERY_KEY);
       try {
         signal.throwIfAborted();
         const user = requireUser(await apiClient.get<AuthUser>("/me", { signal }));
@@ -73,6 +78,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return queryClient.getQueryData<AuthUser | null>(SESSION_QUERY_KEY) ?? null;
         }
         requireCsrfToken();
+        if (currentUser?.id !== user.id) {
+          await clearPersonalRepositoryState(queryClient, user.id);
+          signal.throwIfAborted();
+          if (requestGeneration !== sessionRequestGeneration.current) {
+            return queryClient.getQueryData<AuthUser | null>(SESSION_QUERY_KEY) ?? null;
+          }
+        } else {
+          setPersonalRepositoryIdentity(queryClient, user.id);
+        }
         return user;
       } catch (error) {
         if (
@@ -85,6 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const apiError = asApiError(error);
         if (apiError.status === 401) {
           apiClient.setCsrfToken(null);
+          await clearPersonalRepositoryState(queryClient, null);
           return null;
         }
         throw apiError;
@@ -94,6 +109,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const updateCurrentUser = useCallback(
     async (user: AuthUser) => {
+      const currentUser = queryClient.getQueryData<AuthUser | null>(SESSION_QUERY_KEY);
+      if (currentUser?.id !== user.id) {
+        await clearPersonalRepositoryState(queryClient, user.id);
+      } else {
+        setPersonalRepositoryIdentity(queryClient, user.id);
+      }
       await queryClient.cancelQueries({ queryKey: SESSION_QUERY_KEY });
       queryClient.setQueryData(SESSION_QUERY_KEY, user);
     },
@@ -168,6 +189,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
         }
         await queryClient.cancelQueries({ queryKey: SESSION_QUERY_KEY });
+        await clearPersonalRepositoryState(queryClient, null);
         apiClient.setCsrfToken(null);
         queryClient.setQueryData(SESSION_QUERY_KEY, null);
       }),

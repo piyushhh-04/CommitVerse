@@ -36,6 +36,13 @@ test("login submits through the API client and returns to a protected destinatio
       body: JSON.stringify(authenticatedUser),
     });
   });
+  await page.route("**/api/v1/repositories*", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ items: [], total: 0, limit: 50, offset: 0 }),
+    }),
+  );
 
   await page.goto("/app/repositories");
   await expect(
@@ -46,7 +53,7 @@ test("login submits through the API client and returns to a protected destinatio
   await page.getByRole("button", { name: "Sign in" }).click();
 
   await expect(page).toHaveURL(/\/app\/repositories$/);
-  await expect(page.getByRole("heading", { name: "Repositories" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Repositories", exact: true })).toBeVisible();
   if (test.info().project.name === "mobile-chromium") {
     await page.locator(".app-menu-toggle").click();
   }
@@ -108,6 +115,13 @@ test("mobile application navigation is keyboard accessible and logout returns to
       body: JSON.stringify({ status: "ok" }),
     });
   });
+  await page.route("**/api/v1/repositories*", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ items: [], total: 0, limit: 50, offset: 0 }),
+    }),
+  );
 
   await page.goto("/app");
   await expect(page.getByRole("heading", { name: "Your workspace" })).toBeVisible();
@@ -124,7 +138,7 @@ test("mobile application navigation is keyboard accessible and logout returns to
   await expect(repositoriesLink).toBeFocused();
   await page.keyboard.press("Enter");
 
-  const destinationHeading = page.getByRole("heading", { name: "Repositories" });
+  const destinationHeading = page.getByRole("heading", { name: "Repositories", exact: true });
   await expect(page).toHaveURL(/\/app\/repositories$/);
   await expect(menuButton).toHaveAttribute("aria-expanded", "false");
   await expect(destinationHeading).toBeVisible();
@@ -165,6 +179,13 @@ test("modified mobile navigation clicks preserve the open menu and visible focus
       contentType: "application/json",
       headers: { "X-CSRF-Token": "browser-csrf" },
       body: JSON.stringify(authenticatedUser),
+    }),
+  );
+  await page.context().route("**/api/v1/repositories*", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ items: [], total: 0, limit: 50, offset: 0 }),
     }),
   );
 
@@ -209,6 +230,13 @@ test("desktop application navigation remains visible and does not steal focus", 
       body: JSON.stringify(authenticatedUser),
     }),
   );
+  await page.route("**/api/v1/repositories*", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ items: [], total: 0, limit: 50, offset: 0 }),
+    }),
+  );
 
   await page.goto("/app");
   const repositoriesLink = page
@@ -220,5 +248,5 @@ test("desktop application navigation remains visible and does not steal focus", 
   await expect(page).toHaveURL(/\/app\/repositories$/);
   await expect(repositoriesLink).toBeVisible();
   await expect(repositoriesLink).toBeFocused();
-  await expect(page.getByRole("heading", { name: "Repositories" })).not.toBeFocused();
+  await expect(page.getByRole("heading", { name: "Repositories", exact: true })).not.toBeFocused();
 });

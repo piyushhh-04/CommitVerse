@@ -41,9 +41,7 @@ def create_organization(
     organization_id = uuid.uuid4()
     try:
         with transactional_session(factory) as db_session:
-            creator = db_session.get(User, creator_user_id)
-            if creator is None or creator.account_state != "active":
-                raise OrganizationNotFoundError("Active user not found.")
+            _require_active_actor(db_session, creator_user_id)
             if db_session.scalar(
                 select(Organization.id).where(
                     func.lower(Organization.slug) == normalized_slug
@@ -96,6 +94,7 @@ def list_user_organizations(
     """List organizations for which the user has a membership, including disabled."""
     try:
         with factory() as db_session:
+            _require_active_actor_for_read(db_session, user_id)
             filters = OrganizationMembership.user_id == user_id
             total = db_session.scalar(
                 select(func.count())
@@ -112,6 +111,8 @@ def list_user_organizations(
                 .offset(offset)
             )
             return [(organization, role) for organization, role in rows], int(total or 0)
+    except OrganizationNotFoundError:
+        raise
     except SQLAlchemyError as exc:
         raise OrganizationOperationError("Organizations could not be listed.") from exc
 
@@ -124,6 +125,7 @@ def get_organization_for_member(
     """Return organization metadata and caller role, scoped to existing membership."""
     try:
         with factory() as db_session:
+            _require_active_actor_for_read(db_session, user_id)
             row = db_session.execute(
                 select(Organization, OrganizationMembership.role)
                 .join(OrganizationMembership)
@@ -164,6 +166,7 @@ def update_organization(
             actor_membership = memberships.get(actor_user_id)
             if actor_membership is None:
                 raise OrganizationNotFoundError("Organization not found.")
+            _require_active_actor(db_session, actor_user_id)
             if actor_membership.role not in {"owner", "admin"}:
                 raise OrganizationPermissionError(
                     "Organization metadata update is not permitted."
@@ -238,7 +241,60 @@ def _require_active_organization(organization: Organization) -> None:
         raise OrganizationDisabledError("Organization is disabled.")
 
 
+def _require_active_actor(db_session: Session, actor_user_id: uuid.UUID) -> User:
+    actor = _lock_users(db_session, [actor_user_id]).get(actor_user_id)
+    return _require_active_actor_record(actor, actor_user_id)
+
+
+def _lock_users(
+    db_session: Session,
+    user_ids: list[uuid.UUID],
+) -> dict[uuid.UUID, User]:
+    ordered_user_ids = sorted(set(user_ids))
+    if not ordered_user_ids:
+        return {}
+    users = db_session.scalars(
+        select(User)
+        .where(User.id.in_(ordered_user_ids))
+        .order_by(User.id)
+        .with_for_update()
+    )
+    return {user.id: user for user in users}
+
+
+def _require_active_actor_record(
+    actor: User | None,
+    actor_user_id: uuid.UUID,
+) -> User:
+    if (
+        actor is None
+        or actor.id != actor_user_id
+        or actor.account_state != "active"
+    ):
+        raise OrganizationNotFoundError("Organization not found.")
+    return actor
+
+
+def _require_active_actor_for_read(
+    db_session: Session,
+    actor_user_id: uuid.UUID,
+) -> None:
+    is_active = db_session.scalar(
+        select(User.id).where(
+            User.id == actor_user_id,
+            User.account_state == "active",
+        )
+    )
+    if is_active is None:
+        raise OrganizationNotFoundError("Organization not found.")
+
+
 def _ensure_eligible_owner(db_session: Session, organization_id: uuid.UUID) -> None:
+    """Require an active owner for serialized org changes.
+
+    Account-state writes do not acquire organization locks; Hub has no
+    deactivation workflow coordinating those writes.
+    """
     eligible_owners = db_session.scalar(
         select(func.count())
         .select_from(OrganizationMembership)

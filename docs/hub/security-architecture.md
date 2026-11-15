@@ -16,6 +16,12 @@ accounts, abusive repository operations, malformed repository data, path
 manipulation, symlink attacks, concurrent requests, partial database/filesystem
 failures, and accidental exposure through logs or API errors.
 
+Historical PostgreSQL 17.11 migration verification covered initial revision
+`40037b3edad7` only. The current source migration head is `a7d4d1d1f7ed`,
+and PostgreSQL verification of that head is not recorded. PostgreSQL
+organization concurrency tests require `HUB_TEST_DATABASE_URL`; without it,
+PostgreSQL row-lock and last-owner concurrency remain unverified.
+
 Trust boundaries:
 
 - The browser and all request values are untrusted.
@@ -123,9 +129,17 @@ metadata only; it does not enable anonymous access.
 
 Use deny-by-default service-level authorization for any added operation. Route
 guards and frontend visibility are not sufficient. Organization reads are
-scoped to active membership, and organization mutations enforce current
-owner/admin restrictions. Direct repository grants and organization-owned
-repository HTTP access are not implemented; future behavior must follow the rules in
+scoped to current membership; disabled organizations remain readable to
+members. Organization mutations revalidate that the actor account is active
+and enforce the current owner/admin/member policy inside the service
+transaction. Owners alone can change roles and transfer ownership; the
+transfer requires current-password reauthentication. Organization mutations
+serialized by the organization lock preserve at least one active owner. Hub
+has no account-deactivation workflow; independent account-state changes that
+bypass this protocol are not covered, and any future deactivation workflow
+must coordinate with organization ownership. Direct repository grants and
+organization-owned repository HTTP access are not implemented; future
+behavior must follow the rules in
 [`database-design.md`](database-design.md#ownership-and-effective-authorization).
 Check lifecycle state and authorization before opening a repository through
 Core. Never trust a client-supplied repository path, owner, or role.
@@ -210,8 +224,21 @@ without verifying the shared repository storage and failure behavior.
 The current tests cover personal and organization lifecycle behavior,
 authorization revalidation, lock ordering, provisioning/publication/cleanup
 failures, retry behavior, idempotent cleanup, path/symlink rejection, and
-audit transitions. Multi-process database contention, automated stale-state
+audit transitions. Multi-user organization mutations acquire user rows in
+ascending UUID order after locking the existing organization and relevant
+memberships.
+The PostgreSQL concurrent-owner test is conditional on
+`HUB_TEST_DATABASE_URL`; without that configuration, last-owner concurrency
+has not been verified against PostgreSQL. The cross-organization multi-user
+lock-order test uses the same conditional database configuration. SQLite does
+not enforce row locks.
+Multi-process database/filesystem coordination, automated stale-state
 reconciliation, and bounded execution remain unverified/unimplemented.
+
+Organization state currently supports `active` and `disabled`; disabled
+organizations reject mutations but remain readable to existing members. This
+scope adds no disable/enable API, terminal organization deletion, or
+organization `deleted` state.
 
 ## Database and filesystem lifecycle
 

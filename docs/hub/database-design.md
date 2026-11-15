@@ -7,21 +7,27 @@ models and Alembic revision `40037b3edad7`
 ([initial migration](../../apps/hub-api/migrations/versions/40037b3edad7_create_initial_hub_schema.py)).
 It defines metadata only; PostgreSQL owns no CommitVerse Core repository
 objects, refs, or bare repository files. Live PostgreSQL migration validation
-is complete against the local PostgreSQL 17.11 development server. Registration,
-session authentication, owner-only personal repository workflows, and
-organization metadata/membership APIs use the existing schema. Invitation and
-direct repository-permission workflows remain unimplemented.
+was recorded against the local PostgreSQL 17.11 development server for the
+initial revision. The current Alembic head is
+`a7d4d1d1f7ed` ([repository deleted-state migration](../../apps/hub-api/migrations/versions/a7d4d1d1f7ed_add_repository_deleted_state.py));
+the earlier PostgreSQL result does not establish that this later revision was
+applied there; no PostgreSQL verification of the current head is recorded.
+Registration, session authentication, owner-only personal
+repository workflows, and organization metadata/membership APIs use the
+existing schema. Invitation and direct repository-permission workflows remain
+unimplemented.
 
 The migration creates `users`, `user_profiles`, `organizations`,
 `organization_memberships`, `repositories`,
 `repository_user_permissions`, `invitations`, `sessions`, and `audit_events`.
 The models share `Base.metadata`; invitations are represented for schema
-consistency, but invitation workflows remain post-MVP. The migration was
-successfully upgraded, downgraded to `base`, and upgraded again against
-PostgreSQL 17.11; `alembic current` confirmed `40037b3edad7 (head)`. The schema
-was also exercised on a temporary SQLite database for isolated tests; that
-test coverage is distinct from, and does not replace, the completed live
-PostgreSQL verification.
+consistency, but invitation workflows remain post-MVP. The initial revision
+was successfully upgraded, downgraded to `base`, and upgraded again against
+PostgreSQL 17.11; at that time `alembic current` confirmed
+`40037b3edad7 (head)`. The migration chain now includes `a7d4d1d1f7ed` after
+the initial revision. The schema and migration chain are also exercised on
+temporary SQLite databases; that coverage is distinct from PostgreSQL
+validation.
 
 ## Verified local PostgreSQL setup
 
@@ -49,7 +55,9 @@ Run migration commands from `apps/hub-api/`:
 ../../.venv/bin/alembic -c alembic.ini current
 ```
 
-The verified current revision is `40037b3edad7 (head)`. Never commit
+`40037b3edad7` is the initial revision, not the current migration head. The
+current source migration head is `a7d4d1d1f7ed`; use `alembic current` against
+the configured database to establish its actual revision. Never commit
 credentials or change PostgreSQL authentication settings as part of this
 documentation.
 
@@ -88,6 +96,21 @@ their lifecycle are designed below, but invitation workflows are post-MVP.
 - An organization must retain at least one active owner. Enforce this through
   a transactional service rule; it cannot be expressed as a simple row-level
   CHECK constraint.
+- Mutations on an existing organization lock it before membership and user
+  rows; multi-user operations acquire user rows in ascending UUID order. They
+  revalidate the active actor and role inside the transaction and write their
+  audit event in that transaction. The PostgreSQL owner-leave and
+  cross-organization multi-user lock-order tests run only when
+  `HUB_TEST_DATABASE_URL` is configured; without it, PostgreSQL row-lock
+  concurrency is unverified. SQLite is not evidence for row-lock behavior.
+- The active-owner invariant is checked by organization service transactions.
+  Hub has no account-deactivation workflow; an independent account-state
+  change that bypasses organization locking is not covered. Any future
+  deactivation workflow must coordinate with organization ownership changes.
+- The organization state constraint currently allows `active` and `disabled`.
+  Disabled organizations remain readable to members but reject mutations.
+  No disable/enable operation or terminal organization deletion/state is
+  implemented in this scope.
 
 Teams and team membership are intentionally outside the MVP schema. Avoid
 implicit organization-wide repository access based only on membership.
@@ -119,7 +142,8 @@ implicit organization-wide repository access based only on membership.
   auditability even when the owner is an organization.
 
 The schema stores repository metadata, not content. Lifecycle states are
-`provisioning`, `ready`, `deleting`, and `error`; see the lifecycle protocol in
+`provisioning`, `ready`, `deleting`, `error`, and `deleted`; the final state
+was added by `a7d4d1d1f7ed`. See the lifecycle protocol in
 [`architecture.md`](architecture.md#repository-storage-and-lifecycle).
 
 ### Direct collaborator permissions

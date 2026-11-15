@@ -32,6 +32,10 @@ from commitverse_hub.organizations.service import (
     _ensure_eligible_owner,
     _lock_memberships,
     _lock_organization,
+    _lock_users,
+    _require_active_actor,
+    _require_active_actor_record,
+    _require_active_actor_for_read,
     _require_active_organization,
 )
 
@@ -92,12 +96,15 @@ def add_organization_member(
             memberships = _lock_memberships(
                 db_session, organization_id, [actor_user_id, target_user_id]
             )
-            actor_membership = _require_actor_membership(memberships, actor_user_id)
+            users = _lock_users(db_session, [actor_user_id, target_user_id])
+            actor_membership = _require_actor_membership(
+                db_session, memberships, actor_user_id, locked_users=users
+            )
             if not can_add_member(actor_membership.role, requested_role):
                 raise OrganizationPermissionError("Adding this member is not permitted.")
             if target_user_id in memberships:
                 raise OrganizationConflictError("User is already an organization member.")
-            target_user = db_session.get(User, target_user_id)
+            target_user = users.get(target_user_id)
             if target_user is None or target_user.account_state != "active":
                 raise OrganizationNotFoundError("Active user not found.")
 
@@ -150,7 +157,10 @@ def change_organization_member_role(
             memberships = _lock_memberships(
                 db_session, organization_id, [actor_user_id, target_user_id]
             )
-            actor_membership = _require_actor_membership(memberships, actor_user_id)
+            users = _lock_users(db_session, [actor_user_id, target_user_id])
+            actor_membership = _require_actor_membership(
+                db_session, memberships, actor_user_id, locked_users=users
+            )
             if actor_membership.role != "owner":
                 raise OrganizationPermissionError(
                     "Only an organization owner may change member roles."
@@ -209,7 +219,10 @@ def remove_organization_member(
             memberships = _lock_memberships(
                 db_session, organization_id, [actor_user_id, target_user_id]
             )
-            actor_membership = _require_actor_membership(memberships, actor_user_id)
+            users = _lock_users(db_session, [actor_user_id, target_user_id])
+            actor_membership = _require_actor_membership(
+                db_session, memberships, actor_user_id, locked_users=users
+            )
             target_membership = memberships.get(target_user_id)
             if target_membership is None:
                 raise OrganizationNotFoundError("Organization member not found.")
@@ -253,7 +266,9 @@ def leave_organization(
             organization = _lock_organization(db_session, organization_id)
             _require_active_organization(organization)
             memberships = _lock_memberships(db_session, organization_id, [actor_user_id])
-            actor_membership = _require_actor_membership(memberships, actor_user_id)
+            actor_membership = _require_actor_membership(
+                db_session, memberships, actor_user_id
+            )
             previous_role = actor_membership.role
             db_session.delete(actor_membership)
             db_session.flush()
@@ -296,7 +311,10 @@ def transfer_organization_ownership(
             memberships = _lock_memberships(
                 db_session, organization_id, [actor_user_id, target_user_id]
             )
-            actor_membership = _require_actor_membership(memberships, actor_user_id)
+            users = _lock_users(db_session, [actor_user_id, target_user_id])
+            actor_membership = _require_actor_membership(
+                db_session, memberships, actor_user_id, locked_users=users
+            )
             if actor_membership.role != "owner":
                 raise OrganizationPermissionError(
                     "Only an organization owner may transfer ownership."
@@ -304,13 +322,11 @@ def transfer_organization_ownership(
             target_membership = memberships.get(target_user_id)
             if target_membership is None or target_membership.role == "owner":
                 raise OrganizationNotFoundError("Eligible organization member not found.")
-            actor_user = db_session.get(User, actor_user_id)
-            target_user = db_session.get(User, target_user_id)
-            if (
-                actor_user is None
-                or actor_user.account_state != "active"
-                or not verify_password(actor_user.password_hash, current_password)
-            ):
+            actor_user = _require_active_actor_record(
+                users.get(actor_user_id), actor_user_id
+            )
+            target_user = users.get(target_user_id)
+            if not verify_password(actor_user.password_hash, current_password):
                 raise OrganizationReauthenticationError(
                     "Current password could not be verified."
                 )
@@ -351,6 +367,7 @@ def _require_member(
     organization_id: uuid.UUID,
     user_id: uuid.UUID,
 ) -> OrganizationMembership:
+    _require_active_actor_for_read(db_session, user_id)
     organization = db_session.get(Organization, organization_id)
     if organization is None:
         raise OrganizationNotFoundError("Organization not found.")
@@ -364,12 +381,21 @@ def _require_member(
 
 
 def _require_actor_membership(
+    db_session: Session,
     memberships: dict[uuid.UUID, OrganizationMembership],
     actor_user_id: uuid.UUID,
+    *,
+    locked_users: dict[uuid.UUID, User] | None = None,
 ) -> OrganizationMembership:
     membership = memberships.get(actor_user_id)
     if membership is None:
         raise OrganizationNotFoundError("Organization not found.")
+    if locked_users is None:
+        _require_active_actor(db_session, actor_user_id)
+    else:
+        _require_active_actor_record(
+            locked_users.get(actor_user_id), actor_user_id
+        )
     return membership
 
 

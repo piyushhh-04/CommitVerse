@@ -12,6 +12,11 @@ browsing, authenticated frontend, and deployment remain planned.
 Each milestone should be independently reviewable and tested before the next
 dependent milestone begins.
 
+The table numbers are this roadmap's sequence, not release labels: for
+example, the personal repository release commit is titled Milestone 4 while
+this table lists that scope as item 6. Do not infer completion from numbering
+alone.
+
 ## Release scope
 
 ### Initial MVP
@@ -55,11 +60,11 @@ work; this roadmap does not imply implementation.
 |---|---|---|---|---|
 | 1 | Architecture and policy approval; no code dependency | Preserve the accepted modular monolith, ownership/permission model, session design, Core boundary, lifecycle, and ₹0 constraints in docs. | Review diagrams, permission rules, deployment blocker, and Core capability claims. | Application scaffolding or deployment. |
 | 2 | Local backend foundation; depends on 1 — **implemented** | Hub API package, FastAPI application factory, validated configuration, `/api/v1/health`, request IDs, safe error mapping, and structured logging. | App construction, invalid config, health route, error redaction, and request logging tests pass. | Auth, database schema, Core operations. |
-| 3 | Database foundation and approved schema; depends on 2 — **implemented and locally PostgreSQL-verified** | Add optional PostgreSQL settings, bounded SQLAlchemy engine/session utilities, lifecycle management, database diagnostic, nine approved metadata models, and initial Alembic revision `40037b3edad7`. | URL validation/redaction, constraints and relationships, migration discovery, SQLite test-database upgrade/downgrade/re-upgrade and metadata comparison, no startup migration, and full Hub/Core suites passed. Against native Homebrew PostgreSQL 17.11 on macOS/Apple Silicon M2, verified SQLAlchemy connectivity to `commitverse` as `commitverse_app`, all nine application tables plus `alembic_version`, upgrade, downgrade to base, re-upgrade, and `alembic current` at `40037b3edad7 (head)`. | Authentication/authorization workflows, application APIs, cloud provisioning, or Git object storage in PostgreSQL. |
+| 3 | Database foundation and approved schema; depends on 2 — **implemented; initial revision historically PostgreSQL-verified** | Add optional PostgreSQL settings, bounded SQLAlchemy engine/session utilities, lifecycle management, database diagnostic, nine approved metadata models, and initial Alembic revision `40037b3edad7`. | URL validation/redaction, constraints and relationships, migration discovery, SQLite test-database upgrade/downgrade/re-upgrade and metadata comparison, no startup migration, and full Hub/Core suites passed. Historical verification against native Homebrew PostgreSQL 17.11 on macOS/Apple Silicon M2 covered `40037b3edad7` only, which was the head at that time. The current source head is `a7d4d1d1f7ed`; its PostgreSQL application status is not verified. See [database-design.md](database-design.md) for the current migration chain. | Authentication/authorization workflows, application APIs, cloud provisioning, or Git object storage in PostgreSQL. |
 | 4 | Authentication; depends on 3 — **implemented** | Implement Argon2id registration/login, opaque server-side sessions, current-user resolution, logout/revocation, secure cookies, and session-bound CSRF/Origin checks. | Password, hash-only persistence, session expiry/revocation, generic login failure, cookie, CSRF, SQLite, and PostgreSQL integration tests. | Password reset, email verification, OAuth, JWT, MFA, and rate limiting. |
 | 5 | Profile editing; depends on 4 | Add profile update service/API and username rules. | Case-insensitive uniqueness, validation, privacy, and authorization tests. | Avatar storage service. |
 | 6 | Personal repository management; depends on 3–4 and existing Core package — **implemented locally** | Add authenticated owner-only create/list/detail/update/delete, safe storage configuration, bare Core provisioning/deletion, lifecycle recovery, and audit events. | API ownership/CSRF/pagination tests; duplicate-name, Core validation, storage containment, symlink, concurrency, failure/retry, and PostgreSQL lifecycle tests. | Organization-owned repository HTTP routes, anonymous public reads, browsing, network Git, cross-process locking, automated reconciliation. |
-| 7 | Organizations and memberships; depends on 4–6 — **implemented locally** | Add organization metadata create/list/detail/update and membership list/add/role-change/remove/leave/ownership-transfer APIs. Shared lifecycle services support organization-owned repositories, but no organization-repository HTTP routes exist. | Owner/admin role restrictions, membership transitions, ownership transfer, disabled organizations, and PostgreSQL concurrency tests. | Teams, invitations, user discovery, direct repository grants, and complex inherited permissions. |
+| 7 | Organizations and memberships; depends on 4–6 — **implemented locally** | Add organization metadata create/list/detail/update and membership list/add/role-change/remove/leave/ownership-transfer APIs. Owners and admins can update metadata; only owners can change roles or transfer ownership. Admins can add ordinary members and remove ordinary members; owners can manage admins. Ownership transfer requires current-password reauthentication. The service preserves at least one active owner. Shared lifecycle services support organization-owned repository create/delete, but no organization-repository HTTP routes exist. | Domain and API tests cover role restrictions, membership transitions, ownership transfer, disabled-organization mutation behavior, and rollback. PostgreSQL owner-leave and cross-organization multi-user lock-order tests require `HUB_TEST_DATABASE_URL`; SQLite does not verify PostgreSQL row-lock concurrency. | Organization disable/enable operations and terminal organization deletion; teams, invitations, user discovery, direct repository grants, and complex inherited permissions. |
 | 8 | Authorization and direct grants; depends on 4, 6–7 | Add direct repository grants and extend effective authorization to repository access. | Matrix tests for public/private, owners, members, direct roles, revocation, and deny-before-Core. | Invitation workflows, teams, broad policy customization. |
 | 9 | Repository browsing API; depends on 6–8 | Add authorized supported Core-backed metadata/browsing operations. | Redaction, malformed objects, authorization-first access, bounded execution, and nonblocking tests. | Git-over-HTTP/SSH, ordinary remote Git clients. |
 | 10 | Frontend foundation; depends on API contract from 2/9 | Add React/Tailwind app shell, routing, API client, accessible shared controls. | Production build, route checks, API client tests, accessibility and responsive checks. | Deployment configuration and excessive global state. |
@@ -84,6 +89,18 @@ work; this roadmap does not imply implementation.
   implemented and tested.
 - Treat PostgreSQL/filesystem workflows as recoverable state machines, not one
   atomic transaction.
+- Mutations on existing organizations lock the organization before
+  membership/user rows; multi-user operations lock user rows in ascending
+  UUID order; validate the actor and role inside the transaction; and commit
+  audit events with their state changes. The active-owner invariant covers
+  organization mutations using this lock protocol. Hub has no
+  account-deactivation workflow; future deactivation must coordinate with
+  organization ownership, and independent account-state writes bypassing the
+  protocol are not covered. PostgreSQL concurrency guarantees require the
+  conditional PostgreSQL tests, not SQLite-only results.
+- PostgreSQL organization concurrency tests require
+  `HUB_TEST_DATABASE_URL`; without it, row-lock and last-owner concurrency
+  remain unverified.
 - Run Core tests without regression when integration changes are made; add Hub
   unit, PostgreSQL integration, API, browser, compatibility, security, and
   failure-injection tests at the appropriate milestone.
@@ -95,10 +112,11 @@ work; this roadmap does not imply implementation.
 - **Deployment blocker:** no verified, approved zero-cost host currently
   supports the complete Python FastAPI application and filesystem-backed Core
   repositories. This blocks deployment readiness, not local development.
-- **Local database verification:** PostgreSQL 17.11 is validated for local
-  development via native Homebrew installation on macOS/Apple Silicon. Docker
-  is not required for this setup and remains an optional future infrastructure
-  tool.
+- **Local database verification:** historical PostgreSQL 17.11 validation
+  covered initial revision `40037b3edad7` via native Homebrew installation on
+  macOS/Apple Silicon. Current source head `a7d4d1d1f7ed` is not verified
+  against PostgreSQL. Docker is not required for this setup and remains an
+  optional future infrastructure tool.
 - **Protocol gap:** local transport and library operations are not network Git
   protocols. Normal Git clients cannot yet clone/fetch/push to Hub.
 - **Cross-store lifecycle:** database and filesystem partial failure requires

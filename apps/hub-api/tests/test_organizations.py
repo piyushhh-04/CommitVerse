@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import os
 import uuid
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, select
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session, sessionmaker
 
 from commitverse_hub.auth.cookies import AuthCookieSettings
@@ -156,7 +158,220 @@ def test_create_organization_rejects_duplicate_slug_and_invalid_creator(
             name="Another",
             request_id=None,
         )
+    with pytest.raises(OrganizationNotFoundError):
+        create_organization(
+            context["factory"],
+            context["users"]["disabled"],
+            slug="disabled-creator-org",
+            name="Disabled Creator Organization",
+            request_id=None,
+        )
     assert len(_audit_events(context["factory"])) == 1
+
+
+def test_disabled_actor_cannot_mutate_organization_or_memberships(
+    organization_context,
+) -> None:
+    context = organization_context
+    organization = _create_organization(context)
+    add_organization_member(
+        context["factory"],
+        organization.id,
+        context["users"]["owner"],
+        context["users"]["admin"],
+        role="admin",
+        request_id=None,
+    )
+    add_organization_member(
+        context["factory"],
+        organization.id,
+        context["users"]["owner"],
+        context["users"]["member"],
+        role="member",
+        request_id=None,
+    )
+    with transactional_session(context["factory"]) as db_session:
+        owner = db_session.get(User, context["users"]["owner"])
+        assert owner is not None
+        owner.account_state = "disabled"
+    prior_events = _audit_events(context["factory"])
+
+    operations = (
+        lambda: update_organization(
+            context["factory"],
+            organization.id,
+            context["users"]["owner"],
+            slug="disabled-owner-update",
+            name=None,
+            request_id="disabled-owner-update",
+        ),
+        lambda: add_organization_member(
+            context["factory"],
+            organization.id,
+            context["users"]["owner"],
+            context["users"]["other"],
+            role="member",
+            request_id="disabled-owner-add",
+        ),
+        lambda: change_organization_member_role(
+            context["factory"],
+            organization.id,
+            context["users"]["owner"],
+            context["users"]["member"],
+            role="admin",
+            request_id="disabled-owner-role",
+        ),
+        lambda: remove_organization_member(
+            context["factory"],
+            organization.id,
+            context["users"]["owner"],
+            context["users"]["member"],
+            request_id="disabled-owner-remove",
+        ),
+        lambda: leave_organization(
+            context["factory"],
+            organization.id,
+            context["users"]["owner"],
+            request_id="disabled-owner-leave",
+        ),
+        lambda: transfer_organization_ownership(
+            context["factory"],
+            organization.id,
+            context["users"]["owner"],
+            context["users"]["member"],
+            current_password="unused-password",
+            request_id="disabled-owner-transfer",
+        ),
+    )
+    for operation in operations:
+        with pytest.raises(OrganizationNotFoundError):
+            operation()
+
+    assert _membership(
+        context["factory"], organization.id, context["users"]["owner"]
+    ).role == "owner"
+    assert _membership(
+        context["factory"], organization.id, context["users"]["member"]
+    ).role == "member"
+    assert len(_audit_events(context["factory"])) == len(prior_events)
+
+
+def test_inactive_accounts_cannot_read_organization_service_data(
+    organization_context,
+) -> None:
+    context = organization_context
+    organization = _create_organization(context)
+    add_organization_member(
+        context["factory"],
+        organization.id,
+        context["users"]["owner"],
+        context["users"]["member"],
+        role="member",
+        request_id=None,
+    )
+    with transactional_session(context["factory"]) as db_session:
+        member = db_session.get(User, context["users"]["member"])
+        assert member is not None
+        member.account_state = "disabled"
+
+    with pytest.raises(OrganizationNotFoundError):
+        list_user_organizations(
+            context["factory"],
+            context["users"]["member"],
+            limit=50,
+            offset=0,
+        )
+    with pytest.raises(OrganizationNotFoundError):
+        get_organization_for_member(
+            context["factory"],
+            organization.id,
+            context["users"]["member"],
+        )
+    with pytest.raises(OrganizationNotFoundError):
+        list_organization_members(
+            context["factory"],
+            organization.id,
+            context["users"]["member"],
+            limit=50,
+            offset=0,
+        )
+
+
+def test_multi_user_mutations_lock_users_in_id_order(
+    organization_context,
+) -> None:
+    context = organization_context
+    organization = _create_organization(context)
+    owner_id = context["users"]["owner"]
+    member_id = context["users"]["member"]
+    password = "current-password-value"
+    with transactional_session(context["factory"]) as db_session:
+        owner = db_session.get(User, owner_id)
+        assert owner is not None
+        owner.password_hash = hash_password(password)
+
+    lock_queries: list[str] = []
+
+    def capture_user_lock_query(
+        _connection,
+        clauseelement,
+        _multiparams,
+        _params,
+        _execution_options,
+    ) -> None:
+        statement = " ".join(
+            str(clauseelement.compile(dialect=postgresql.dialect())).lower().split()
+        )
+        if "from users" in statement and "for update" in statement:
+            lock_queries.append(statement)
+
+    event.listen(context["engine"], "before_execute", capture_user_lock_query)
+    try:
+        add_organization_member(
+            context["factory"],
+            organization.id,
+            owner_id,
+            member_id,
+            role="member",
+            request_id=None,
+        )
+        change_organization_member_role(
+            context["factory"],
+            organization.id,
+            owner_id,
+            member_id,
+            role="admin",
+            request_id=None,
+        )
+        remove_organization_member(
+            context["factory"],
+            organization.id,
+            owner_id,
+            member_id,
+            request_id=None,
+        )
+        add_organization_member(
+            context["factory"],
+            organization.id,
+            owner_id,
+            member_id,
+            role="member",
+            request_id=None,
+        )
+        transfer_organization_ownership(
+            context["factory"],
+            organization.id,
+            owner_id,
+            member_id,
+            current_password=password,
+            request_id=None,
+        )
+    finally:
+        event.remove(context["engine"], "before_execute", capture_user_lock_query)
+
+    assert len(lock_queries) == 5
+    for statement in lock_queries:
+        assert "order by users.id for update" in statement
 
 
 def test_membership_results_remain_readable_with_default_expiring_sessions(
@@ -771,6 +986,109 @@ def _register_api_user(client: TestClient, *, email: str, username: str, passwor
     return response.json(), csrf_token, me.json()
 
 
+def test_postgresql_opposite_multi_user_mutations_do_not_deadlock() -> None:
+    database_url = os.environ.get("HUB_TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("HUB_TEST_DATABASE_URL is not configured.")
+
+    engine = create_engine(database_url)
+    schema = f"hub_organization_lock_test_{uuid.uuid4().hex}"
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(f'CREATE SCHEMA "{schema}"')
+        scoped_engine = engine.execution_options(
+            schema_translate_map={None: schema}
+        )
+        Base.metadata.create_all(scoped_engine)
+        factory = sessionmaker(
+            bind=scoped_engine,
+            autoflush=False,
+            expire_on_commit=False,
+        )
+        user_ids = (uuid.uuid4(), uuid.uuid4())
+        passwords = ("owner-a-password", "owner-b-password")
+        with transactional_session(factory) as db_session:
+            for index, user_id in enumerate(user_ids):
+                db_session.add(
+                    User(
+                        id=user_id,
+                        normalized_email=f"multi-lock-{index}@example.test",
+                        password_hash=hash_password(passwords[index]),
+                    )
+                )
+
+        organization_a = create_organization(
+            factory,
+            user_ids[0],
+            slug="multi-lock-a",
+            name="Multi Lock A",
+            request_id=None,
+        )
+        organization_b = create_organization(
+            factory,
+            user_ids[1],
+            slug="multi-lock-b",
+            name="Multi Lock B",
+            request_id=None,
+        )
+
+        def run_pair(first: Callable[[], object], second: Callable[[], object]) -> None:
+            start = Barrier(2)
+
+            def run(operation: Callable[[], object]) -> object:
+                start.wait(timeout=10)
+                return operation()
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                list(executor.map(run, (first, second)))
+
+        run_pair(
+            lambda: add_organization_member(
+                factory,
+                organization_a.id,
+                user_ids[0],
+                user_ids[1],
+                role="member",
+                request_id=None,
+            ),
+            lambda: add_organization_member(
+                factory,
+                organization_b.id,
+                user_ids[1],
+                user_ids[0],
+                role="member",
+                request_id=None,
+            ),
+        )
+        run_pair(
+            lambda: transfer_organization_ownership(
+                factory,
+                organization_a.id,
+                user_ids[0],
+                user_ids[1],
+                current_password=passwords[0],
+                request_id=None,
+            ),
+            lambda: transfer_organization_ownership(
+                factory,
+                organization_b.id,
+                user_ids[1],
+                user_ids[0],
+                current_password=passwords[1],
+                request_id=None,
+            ),
+        )
+
+        assert _membership(factory, organization_a.id, user_ids[0]).role == "admin"
+        assert _membership(factory, organization_a.id, user_ids[1]).role == "owner"
+        assert _membership(factory, organization_b.id, user_ids[1]).role == "admin"
+        assert _membership(factory, organization_b.id, user_ids[0]).role == "owner"
+    finally:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+        engine.dispose()
+
+
 def test_organization_api_routes_create_list_detail_and_member_management(tmp_path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'organization-api.sqlite'}")
 
@@ -803,6 +1121,25 @@ def test_organization_api_routes_create_list_detail_and_member_management(tmp_pa
             password="member-password",
         )
 
+        wrong_origin = owner_client.post(
+            "/api/v1/organizations",
+            headers={
+                "Origin": "https://attacker.example.test",
+                "X-CSRF-Token": owner_csrf,
+            },
+            json={"slug": "wrong-origin-org", "name": "Wrong Origin"},
+        )
+        assert wrong_origin.status_code == 403
+        assert wrong_origin.json()["error"]["code"] == "origin_not_allowed"
+
+        missing_csrf = owner_client.post(
+            "/api/v1/organizations",
+            headers={"Origin": "https://hub.example.test"},
+            json={"slug": "missing-csrf-org", "name": "Missing CSRF"},
+        )
+        assert missing_csrf.status_code == 403
+        assert missing_csrf.json()["error"]["code"] == "csrf_validation_failed"
+
         create_response = owner_client.post(
             "/api/v1/organizations",
             headers={"Origin": "https://hub.example.test", "X-CSRF-Token": owner_csrf},
@@ -812,6 +1149,20 @@ def test_organization_api_routes_create_list_detail_and_member_management(tmp_pa
         created = create_response.json()
         assert created["slug"] == "demo-org"
         assert created["role"] == "owner"
+
+        missing_csrf_update = owner_client.patch(
+            f"/api/v1/organizations/{created['id']}",
+            headers={"Origin": "https://hub.example.test"},
+            json={"name": "Must Not Update"},
+        )
+        assert missing_csrf_update.status_code == 403
+
+        missing_csrf_add = owner_client.post(
+            f"/api/v1/organizations/{created['id']}/members",
+            headers={"Origin": "https://hub.example.test"},
+            json={"user_id": member_me["id"], "role": "member"},
+        )
+        assert missing_csrf_add.status_code == 403
 
         duplicate_org = owner_client.post(
             "/api/v1/organizations",
@@ -842,6 +1193,38 @@ def test_organization_api_routes_create_list_detail_and_member_management(tmp_pa
         )
         assert member_add.status_code == 200, member_add.text
         assert member_add.json()["role"] == "member"
+
+        member_path = (
+            f"/api/v1/organizations/{created['id']}/members/{member_me['id']}"
+        )
+        missing_csrf_role_change = owner_client.patch(
+            member_path,
+            headers={"Origin": "https://hub.example.test"},
+            json={"role": "admin"},
+        )
+        assert missing_csrf_role_change.status_code == 403
+
+        missing_csrf_remove = owner_client.delete(
+            member_path,
+            headers={"Origin": "https://hub.example.test"},
+        )
+        assert missing_csrf_remove.status_code == 403
+
+        missing_csrf_leave = member_client.post(
+            f"/api/v1/organizations/{created['id']}/leave",
+            headers={"Origin": "https://hub.example.test"},
+        )
+        assert missing_csrf_leave.status_code == 403
+
+        missing_csrf_transfer = owner_client.post(
+            f"/api/v1/organizations/{created['id']}/transfer-ownership",
+            headers={"Origin": "https://hub.example.test"},
+            json={
+                "target_user_id": member_me["id"],
+                "current_password": "owner-password",
+            },
+        )
+        assert missing_csrf_transfer.status_code == 403
 
         member_detail = member_client.get(f"/api/v1/organizations/{created['id']}")
         assert member_detail.status_code == 200, member_detail.text

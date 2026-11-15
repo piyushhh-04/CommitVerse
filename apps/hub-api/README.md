@@ -162,7 +162,11 @@ the configured database URL. Migration `40037b3edad7` was verified on
 PostgreSQL 17.11: SQLAlchemy connected to `commitverse` as `commitverse_app`,
 PostgreSQL reported all nine application tables plus `alembic_version`, and
 Alembic upgrade, downgrade to `base`, re-upgrade, and `current` succeeded.
-The verified revision is `40037b3edad7 (head)`.
+The initial revision is `40037b3edad7`. The current source migration head is
+`a7d4d1d1f7ed` (`add_repository_deleted_state`). The recorded PostgreSQL
+validation predates that second revision; it does not establish that the
+current head has been applied to the configured PostgreSQL database. Check
+the actual database with `alembic current`.
 
 The engine and synchronous session factory are application-lifecycle
 resources. Use `transactional_session` only where the caller explicitly owns a
@@ -245,13 +249,44 @@ Database row locks coordinate metadata transitions across PostgreSQL workers,
 but database and filesystem operations are not atomic and the local filesystem
 does not provide multi-host storage guarantees.
 
+## Organizations and memberships
+
+Authenticated organization routes support create, list, detail, and metadata
+update. Members can list their organization roster and read organization
+metadata; members of active organizations can also leave. Owners can add
+admins or members, change non-owner roles, remove admins or members, and
+transfer ownership after verifying their current password. Admins can update
+metadata, add members only, and remove members only; ordinary members cannot
+administer membership. Organization
+creation inserts its creator as owner in the same transaction. The service
+preserves at least one active owner and writes audit events atomically with
+organization/membership changes.
+
+Organization mutations validate the actor's active account and current role
+inside the transaction. Mutations on an existing organization lock its row
+before membership and user rows; multi-user operations acquire user rows in
+ascending UUID order. The organization state values are `active` and `disabled`;
+disabled organizations remain readable to members but reject mutations.
+Disable/enable operations and terminal organization deletion are not
+implemented. Membership addition requires an existing user ID; user discovery
+and invitations are not included.
+
+Hub has no account-deactivation workflow. The active-owner invariant applies
+to organization mutations using this locking protocol; independent account
+state changes that bypass it are not covered. Any future account-deactivation
+workflow must coordinate with organization ownership changes.
+
+Organization-owned repository creation and deletion remain service-level
+operations. They do not add organization repository HTTP routes. No ordinary
+organization member receives implicit repository access.
+
 ## Tests
 
 From the repository root:
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest \
-  -p no:cacheprovider apps/hub-api/tests -q
+  -p no:cacheprovider apps/hub-api/tests -q -rs
 ```
 
 The default test suite uses an in-process HTTP client and injected resources;
@@ -259,11 +294,16 @@ it requires neither a running PostgreSQL server nor external network access.
 Authentication and session tests use isolated SQLite databases by default.
 Set `HUB_TEST_DATABASE_URL` to run the PostgreSQL session-persistence,
 repository lifecycle, and organization concurrency tests against isolated
-schemas/resources. The repository integration test exercises create,
-list/detail, update, Core bare-repository verification, and delete, then rolls
-back its schema transaction. Duplicate names and retry behavior are covered by
-isolated SQLite tests. Do not claim PostgreSQL integration verification when
-these tests are skipped.
+schemas/resources. In particular,
+`test_postgresql_concurrent_owner_leaves_preserve_one_eligible_owner` is
+skipped without that variable, as is
+`test_postgresql_opposite_multi_user_mutations_do_not_deadlock`; SQLite
+results do not verify row-lock concurrency. Report skipped PostgreSQL tests
+rather than claiming acceptance. The repository integration test exercises
+create, list/detail, update, Core bare-repository verification, and delete,
+then rolls back its schema transaction. Duplicate names and retry behavior
+are covered by isolated SQLite tests. Do not claim PostgreSQL integration
+verification when these tests are skipped.
 For example, after configuring `HUB_DATABASE_URL` for the local server:
 
 ```sh
@@ -277,7 +317,9 @@ Schema tests apply, downgrade, and re-apply the migration against a temporary
 SQLite database, then compare SQLAlchemy metadata and inspect indexes.
 SQLite/Alembic cannot reflect expression-based indexes, so their created SQL
 is checked directly. The isolated SQLite tests complement, but do not
-substitute for, the completed PostgreSQL migration verification above.
+substitute for the historical PostgreSQL verification of initial revision
+`40037b3edad7` described above; it does not verify current head
+`a7d4d1d1f7ed`.
 
 ## Current limitations
 

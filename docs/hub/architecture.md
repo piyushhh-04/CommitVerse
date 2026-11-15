@@ -18,10 +18,12 @@ application, one PostgreSQL metadata database, a separately stored repository
 filesystem, and a React/Tailwind web client. REST endpoints are versioned under
 `/api/v1`. The API package and optional SQLAlchemy/Psycopg/Alembic foundation
 and initial metadata models/migration exist. Local PostgreSQL 17.11 migration
-validation has been completed against a native Homebrew installation on
-macOS/Apple Silicon M2. Organization-owned repository HTTP routes, direct
-repository grants, invitations, hosted runtime services, and deployment
-configuration remain unimplemented or unverified.
+validation against native Homebrew PostgreSQL on macOS/Apple Silicon M2
+historically covered only initial revision `40037b3edad7`. The current source
+migration head is `a7d4d1d1f7ed`; that revision has not been verified against
+PostgreSQL. Organization-owned repository HTTP routes, direct repository
+grants, invitations, hosted runtime services, and deployment configuration
+remain unimplemented or unverified.
 
 ## Goals and boundaries
 
@@ -103,6 +105,33 @@ The table distinguishes existing foundations from planned workflows:
 | `config` | Validated settings from local/deployment environment; never embeds secrets. |
 | `errors` and `logging` | Stable application errors, request correlation, structured logs, and safe diagnostics. |
 
+### Organization and membership rules
+
+Organization creation atomically creates the creator's owner membership.
+Owners and admins may update organization metadata; owners alone may change
+non-owner roles and transfer ownership. Owners may add admins or members;
+admins may add members only. Owners may remove admins or members, while admins
+may remove members only. A member may leave. Ownership transfer requires the
+current owner's password and changes the previous owner to admin.
+
+Mutations revalidate the active actor, organization state, and membership role
+inside a transaction. Mutations on an existing organization lock its row
+before membership and user rows; multi-user operations acquire user rows in
+ascending UUID order.
+Owner-affecting organization operations must leave at least one active owner;
+the invariant is enforced by the service transaction, not a row-level database
+constraint. Hub has no account-deactivation workflow. Independent account-state
+changes that bypass the organization locking protocol are not covered by this
+invariant; any future deactivation workflow must coordinate with organization
+ownership. Audit events are committed atomically with the corresponding
+organization or membership change.
+
+The organization schema permits `active` and `disabled` states. Disabled
+organizations remain readable to existing members, while mutations are
+rejected. There is no organization disable/enable operation, terminal
+organization deletion, or organization `deleted` state in the implemented
+scope.
+
 ## API strategy
 
 Use REST under `/api/v1`, with resource-oriented endpoints for authentication,
@@ -118,6 +147,9 @@ organization metadata/membership operations with role-based authorization.
 The shared lifecycle service also supports organization-owned repository
 creation and deletion for current organization owners/admins; those operations
 do not yet have HTTP routes.
+The organization HTTP API does not include disable/enable or delete routes.
+Membership creation takes an existing user ID; user discovery and invitations
+are deferred.
 Repository visibility is stored as metadata but does not enable anonymous
 access; detail and mutations remain owner-only. Do not advertise normal Git
 client clone, fetch, or push.
@@ -266,7 +298,11 @@ blocker and no deployment configuration is implied.
 - **Implemented locally:** registration/login/logout, current-user resolution,
   owner-only personal repository APIs, and shared Core-backed personal and
   organization repository lifecycle services with transactional audit events
-  and retryable states. Local PostgreSQL 17.11 migration validation is complete.
+  and retryable states. Historical PostgreSQL 17.11 migration validation
+  covered only initial revision `40037b3edad7`; current source head
+  `a7d4d1d1f7ed` is not verified against PostgreSQL. Organization concurrency
+  tests require `HUB_TEST_DATABASE_URL`; without it, PostgreSQL row-lock
+  concurrency is unverified.
 - **Not implemented:** organization-owned repository HTTP routes, direct
   repository grants, invitations, anonymous public access, repository
   browsing, automated lifecycle reconciliation, authenticated frontend, and

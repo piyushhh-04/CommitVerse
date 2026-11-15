@@ -8,6 +8,14 @@ import { RegisterPage } from "../pages/RegisterPage";
 import { NewRepositoryPage } from "../pages/NewRepositoryPage";
 import { RepositoriesPage } from "../pages/RepositoriesPage";
 import { RepositoryDetailRoute } from "../pages/RepositoryDetailPage";
+import { OrganizationsPage } from "../pages/OrganizationsPage";
+import { NewOrganizationPage } from "../pages/NewOrganizationPage";
+import { OrganizationDetailPage } from "../pages/OrganizationDetailPage";
+import { OrganizationRepositoriesPage } from "../pages/OrganizationRepositoriesPage";
+import { NewOrganizationRepositoryPage } from "../pages/NewOrganizationRepositoryPage";
+import { OrganizationRepositoryDetailPage } from "../pages/OrganizationRepositoryDetailPage";
+import { ProfileSettingsPage } from "../pages/ProfileSettingsPage";
+import { InvitationAcceptancePage } from "../pages/InvitationAcceptancePage";
 import { AuthenticatedShell } from "./AuthenticatedShell";
 
 function AuthenticationLayout() {
@@ -37,48 +45,29 @@ export function AppRoutes() {
                 />
               }
             />
+            <Route path="settings/profile" element={<ProfileSettingsPage />} />
+            <Route path="invitations/accept" element={<InvitationAcceptancePage />} />
             <Route path="repositories" element={<RepositoriesPage />} />
             <Route path="repositories/new" element={<NewRepositoryPage />} />
             <Route path="repositories/:repositoryId" element={<RepositoryDetailRoute />} />
-            <Route
-              path="organizations"
-              element={
-                <PlaceholderPage
-                  eyebrow="Organizations"
-                  title="Organizations"
-                  description="Organization management will be built in a later milestone."
-                />
-              }
-            />
-            <Route
-              path="organizations/new"
-              element={
-                <PlaceholderPage
-                  eyebrow="Organizations"
-                  title="New organization"
-                  description="Organization creation will be built in a later milestone."
-                />
-              }
-            />
-            <Route
-              path="organizations/:organizationId"
-              element={
-                <PlaceholderPage
-                  eyebrow="Organizations"
-                  title="Organization details"
-                  description="Organization details will be built in a later milestone."
-                />
-              }
-            />
+            <Route path="organizations" element={<OrganizationsPage />} />
+            <Route path="organizations/new" element={<NewOrganizationPage />} />
+            <Route path="organizations/:organizationId" element={<OrganizationDetailPage />} />
             <Route
               path="organizations/:organizationId/members"
-              element={
-                <PlaceholderPage
-                  eyebrow="Organization members"
-                  title="Membership"
-                  description="Organization membership management will be built in a later milestone."
-                />
-              }
+              element={<OrganizationDetailPage />}
+            />
+            <Route
+              path="organizations/:organizationId/repositories"
+              element={<OrganizationRepositoriesPage />}
+            />
+            <Route
+              path="organizations/:organizationId/repositories/new"
+              element={<NewOrganizationRepositoryPage />}
+            />
+            <Route
+              path="organizations/:organizationId/repositories/:repositoryId"
+              element={<OrganizationRepositoryDetailPage />}
             />
           </Route>
         </Route>

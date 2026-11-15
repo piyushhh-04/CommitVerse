@@ -19,9 +19,21 @@ collaboration platform:
   sessions, plus authenticated owner-only personal repository metadata and
   lifecycle APIs backed by real Core bare repositories on the local filesystem.
   Organization metadata and membership APIs are implemented, including
-  owner/admin controls and ownership transfer. Invitations, user discovery,
-  direct repository grants, organization-owned repository HTTP routes,
-  browsing, and authenticated frontend workflows remain unimplemented. The
+  owner/admin controls and ownership transfer. Organization invitation issuance,
+  revocation, and authenticated acceptance are implemented. Privacy-preserving
+  user discovery is implemented. Advanced diff browsing and broader
+  collaboration workflows remain
+  unimplemented.
+  Authorized tree/blob/history browsing is implemented for HEAD and validated
+  local branches/tags.
+  Organization-owned repository metadata HTTP
+  routes and supported owner/admin frontend workflows are implemented. The
+  frontend implements authentication, personal repository management, and the
+  supported organization/membership and token-based invitation management
+  flows. Repository-scoped invitation APIs support create, list, revoke, and
+  authenticated email-bound acceptance; external email delivery, repository
+  invitation UI, advanced diff operations, and broader direct repository
+  management remain future work. Authorized browse access is implemented. The
   filesystem lifecycle is recoverable but uses only process-local coordination;
   it is not ready for multi-worker or hosted deployment.
 - **CommitVerse AI:** a future AI developer assistant.
@@ -42,9 +54,10 @@ filesystem advertisement, bounded loose-object fetch, fast-forward-only push
 to bare repositories, and safe local clone are implemented as library
 operations, not `cv` CLI commands. Git-over-HTTP, Git-over-SSH, and ordinary
 network-based Git client interoperability are not implemented. Treat Hub
-features beyond its implemented API, authentication, and owner-only
-repository-management workflows, AI, and other unimplemented functionality as
-plans until working implementations and their tests exist.
+features beyond its implemented API, authentication, personal repository
+management, and supported organization metadata/membership/repository-management
+workflows, AI, and other unimplemented functionality as plans until working
+implementations and their tests exist.
 
 ## Architecture
 
@@ -104,8 +117,8 @@ Planned stack:
 These are technology choices, not a declaration that planned application
 services or features are configured. FastAPI, Uvicorn, SQLAlchemy, Alembic,
 Psycopg, and argon2-cffi are dependencies of the Hub API foundation. PostgreSQL 17.11
-has been verified as a local development database; the frontend and hosted
-infrastructure remain planned. Initial schema revision `40037b3edad7` was
+has been verified as a local development database; the frontend foundation is
+implemented and hosted infrastructure remains planned. Initial schema revision `40037b3edad7` was
 validated against this PostgreSQL server through upgrade, downgrade,
 re-upgrade, and current-revision checks. Pytest is installed as Core's and Hub
 API's development dependency. Do not introduce additional technologies
@@ -126,9 +139,12 @@ without a clear project need and an explicit decision.
   variable only when a migration command is invoked. The shared declarative
   metadata and initial Alembic revision define nine Hub metadata tables.
   Account/session, personal-repository, and organization/membership API
-  workflows use these models. Organization-owned repository HTTP routes,
-  direct repository grants, invitations, and authenticated frontend workflows
-  remain unimplemented. Local PostgreSQL 17.11 migration validation is
+  workflows use these models. Organization-owned repository HTTP routes and
+  direct repository grant-management routes and organization invitation API
+  routes and repository invitation lifecycle APIs are implemented locally.
+  Effective access beyond supported browse operations, diff browsing, and
+  authenticated
+  organization workflows beyond the supported organization/membership flows remain unimplemented. Local PostgreSQL 17.11 migration validation is
   complete; hosted database provisioning is not.
 - The scope of any future root-level `pyproject.toml` is undecided. It may
   configure workspace-wide tooling if needed, but must not replace the Core

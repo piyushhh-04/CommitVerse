@@ -3,6 +3,8 @@ export interface AuthUser {
   email: string;
   username: string;
   display_name: string;
+  bio?: string | null;
+  avatar_url?: string | null;
 }
 
 export interface LoginCredentials {

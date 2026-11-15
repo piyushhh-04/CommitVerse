@@ -12,16 +12,15 @@ initial revision. The current Alembic head is
 `a7d4d1d1f7ed` ([repository deleted-state migration](../../apps/hub-api/migrations/versions/a7d4d1d1f7ed_add_repository_deleted_state.py));
 the earlier PostgreSQL result does not establish that this later revision was
 applied there; no PostgreSQL verification of the current head is recorded.
-Registration, session authentication, owner-only personal
-repository workflows, and organization metadata/membership APIs use the
-existing schema. Invitation and direct repository-permission workflows remain
-unimplemented.
+Registration, session authentication, owner-only personal repository
+workflows, organization metadata/membership, direct repository permissions,
+and organization/repository invitation workflows use the existing schema.
 
 The migration creates `users`, `user_profiles`, `organizations`,
 `organization_memberships`, `repositories`,
 `repository_user_permissions`, `invitations`, `sessions`, and `audit_events`.
-The models share `Base.metadata`; invitations are represented for schema
-consistency, but invitation workflows remain post-MVP. The initial revision
+The models share `Base.metadata`; the invitation table supports both
+organization and repository invitation services. The initial revision
 was successfully upgraded, downgraded to `base`, and upgraded again against
 PostgreSQL 17.11; at that time `alembic current` confirmed
 `40037b3edad7 (head)`. The migration chain now includes `a7d4d1d1f7ed` after
@@ -129,10 +128,10 @@ implicit organization-wide repository access based only on membership.
 - `storage_key` is generated independently of the owner and slug, unique, and
   never accepted from an API request. It maps to a path below one configured
   repository root.
-- The repository HTTP API creates personal repositories only. The shared
-  lifecycle service also supports organization-owned repository creation and
-  deletion for current owners/admins, but no organization-repository HTTP
-  routes expose those operations. Repository creation provisions a bare Core
+- The repository HTTP API creates personal repositories and exposes
+  owner/admin-scoped organization repository metadata lifecycle routes. The
+  shared lifecycle service supports organization-owned repository creation and
+  deletion for current owners/admins. Repository creation provisions a bare Core
   repository before marking metadata `ready`; deletion first marks metadata
   `deleting`, removes the verified generated-key path, revokes pending
   invitations/direct grants associated with the row, and keeps a tombstone for
@@ -159,7 +158,7 @@ was added by `a7d4d1d1f7ed`. See the lifecycle protocol in
 - A repository owner is not represented as a collaborator grant. Service logic
   must not allow a direct grant to weaken or override ownership.
 
-### Invitations (post-MVP workflow)
+### Invitations
 
 - `invitations`: UUID primary key; inviter FK; normalized target email;
   nullable `organization_id` and `repository_id` FKs; role appropriate to the
@@ -173,13 +172,14 @@ was added by `a7d4d1d1f7ed`. See the lifecycle protocol in
 - Valid status transitions: `pending -> accepted`, `pending -> revoked`, or
   `pending -> expired`; terminal states cannot be reopened. Acceptance requires
   a matching authenticated account email, a valid unexpired token, and a
-  transaction that creates the membership/grant exactly once.
+  transaction that creates the membership/grant exactly once. Organization
+  and repository invitation lifecycle APIs are implemented; repository
+  invitation web workflows and email delivery are not.
 - Store only the token hash. Revoke/expire pending invitations when their scope
   is deleted or becomes invalid. A partial unique index should prevent
   duplicate pending invitations for the same normalized email and scope.
-- The table and constraints are designed here for consistency, but invitation
-  issuance/acceptance is not required for the initial MVP; implement it with
-  the post-MVP organization collaboration workflows.
+- Pending invitations should be revoked or expired when their scope is deleted
+  or becomes invalid; automated cleanup remains unimplemented.
 
 ### Sessions
 

@@ -19,7 +19,18 @@ def main() -> None:
     if not origin:
         raise RuntimeError("HUB_BROWSER_TEST_ORIGIN must be set for browser tests.")
 
-    with tempfile.TemporaryDirectory(prefix="commitverse-hub-browser-") as directory:
+    # The storage layer rejects symlinked path components. macOS exposes the
+    # default temporary directory as /var/... even though /var is a symlink to
+    # /private/var, so use the canonical system temp location when available.
+    temporary_directory_root = Path("/private/tmp")
+    temporary_directory_kwargs = (
+        {"dir": str(temporary_directory_root)}
+        if temporary_directory_root.is_dir()
+        else {}
+    )
+    with tempfile.TemporaryDirectory(
+        prefix="commitverse-hub-browser-", **temporary_directory_kwargs
+    ) as directory:
         database_path = Path(directory) / "hub-browser.sqlite"
         engine = create_engine(
             f"sqlite:///{database_path}",

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { RepositoryForm, type RepositoryFormValues } from "../components/RepositoryForm";
+import { RepositoryBrowsePanel } from "../components/RepositoryBrowsePanel";
 import { useAuth } from "../auth/AuthContext";
 import {
   personalRepositoryDetailQueryOptions,
@@ -207,6 +208,8 @@ export function RepositoryDetailPage() {
         Public visibility applies to repository metadata only. Anonymous repository access is not
         available.
       </p>
+
+      <RepositoryBrowsePanel repositoryId={repository.id} />
 
       <section className="repository-form-section" aria-labelledby="repository-settings-title">
         <div className="repository-section-heading">

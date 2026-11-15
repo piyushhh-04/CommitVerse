@@ -148,7 +148,10 @@ test("repository create, edit, responsive layout, and delete retry work in the b
   await expect(deleteButton).toBeFocused();
   await deleteButton.click();
   await page.getByRole("button", { name: "Confirm deletion" }).click();
-  await expect(page.getByRole("alert")).toContainText("deletion may still be pending");
+  const deletionConfirmation = page.getByRole("region", { name: "Delete renamed-project?" });
+  await expect(deletionConfirmation.getByRole("alert")).toContainText(
+    "deletion may still be pending",
+  );
   await page.getByRole("button", { name: "Retry deletion" }).click();
 
   await expect(page).toHaveURL(/\/app\/repositories$/);

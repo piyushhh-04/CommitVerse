@@ -262,3 +262,24 @@ test("personal repository creation, editing, and deletion use the real API", asy
     page.getByRole("heading", { name: "Your repositories will live here." }),
   ).toBeVisible();
 });
+
+test("profile settings update the authenticated account through the real API", async ({ page }) => {
+  const suffix = Date.now().toString();
+  await page.goto("/register");
+  await page.getByLabel("Email address").fill(`profile-${suffix}@example.test`);
+  await page.getByLabel("Username").fill(`profile${suffix}`);
+  await page.getByLabel("Display name (optional)").fill("Profile Developer");
+  await page.getByRole("textbox", { name: "Password" }).fill("profile integration password");
+  await page.getByRole("button", { name: "Create your account" }).click();
+  await expect(page).toHaveURL(/\/app$/);
+
+  await page.getByRole("link", { name: "Profile settings" }).click();
+  await expect(page).toHaveURL(/\/app\/settings\/profile$/);
+  await page.getByLabel("Username").fill(`updatedprofile${suffix}`);
+  await page.getByLabel("Display name").fill("Updated Profile Developer");
+  await page.getByLabel(/Bio/).fill("Building a more personal CommitVerse.");
+  await page.getByRole("button", { name: "Save profile" }).click();
+
+  await expect(page.getByRole("status")).toHaveText("Profile saved.");
+  await expect(page.getByRole("link", { name: "Profile settings" })).toBeVisible();
+});

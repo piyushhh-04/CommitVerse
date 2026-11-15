@@ -140,6 +140,9 @@ export function AuthenticatedShell() {
                 <span className="app-user-name">{auth.user.display_name}</span>
                 <span className="app-user-email">{auth.user.email}</span>
               </div>
+              <Link className="app-account-link" to="/app/settings/profile">
+                Profile settings
+              </Link>
               <ThemeToggle />
               <button
                 className="app-logout-button"

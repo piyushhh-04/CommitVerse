@@ -7,10 +7,12 @@ implemented Hub controls from remaining requirements.
 Registration/login/logout, session authentication, and owner-only personal
 repository lifecycle routes exist, as do organization metadata and membership
 routes with membership-scoped reads and role-gated mutations. The shared
-repository lifecycle service also supports organization repositories with
-current owner/admin membership checks; organization repository HTTP routes,
-direct repository grants, and broader repository operations remain
-unimplemented. The initial schema alone is not a security guarantee.
+repository lifecycle service and organization repository HTTP routes support
+current owner/admin membership checks; direct repository grant management is
+implemented for repository owners and organization owners/admins, while
+advanced content operations and broader repository operations remain
+unimplemented. The initial schema alone is not a
+security guarantee.
 The threat model covers unauthenticated and malicious clients, compromised
 accounts, abusive repository operations, malformed repository data, path
 manipulation, symlink attacks, concurrent requests, partial database/filesystem
@@ -120,7 +122,7 @@ Revisit only for a concrete client/integration requirement.
 
 ## Authorization
 
-The implemented repository routes are limited to authenticated personal
+The implemented personal repository routes are limited to authenticated
 owners: list/detail/update/delete queries constrain both repository ID and
 `owner_user_id`, require lifecycle state `ready` for normal access, and return
 the same not-found response for absent, non-ready, and other-owner records.
@@ -138,8 +140,10 @@ serialized by the organization lock preserve at least one active owner. Hub
 has no account-deactivation workflow; independent account-state changes that
 bypass this protocol are not covered, and any future deactivation workflow
 must coordinate with organization ownership. Direct repository grants and
-organization-owned repository HTTP access are not implemented; future
-behavior must follow the rules in
+organization-owned repository metadata access is restricted to current
+owner/admin routes. Direct grant management and authorization for supported
+HEAD browsing are restricted to repository owners, direct readers, and
+organization owners/admins; future advanced content authorization must follow the rules in
 [`database-design.md`](database-design.md#ownership-and-effective-authorization).
 Check lifecycle state and authorization before opening a repository through
 Core. Never trust a client-supplied repository path, owner, or role.

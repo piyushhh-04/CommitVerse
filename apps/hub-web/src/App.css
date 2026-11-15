@@ -2343,6 +2343,55 @@ h2 em {
   border-color: var(--cv-peach-strong);
 }
 
+.organization-inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  align-items: center;
+  max-width: 58rem;
+}
+
+.organization-inline-form input,
+.organization-inline-form select {
+  min-height: 2.75rem;
+  min-width: min(100%, 18rem);
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--cv-border-strong);
+  border-radius: var(--radius-xs);
+  background: var(--cv-surface);
+  color: var(--cv-ink);
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.organization-inline-form input:focus-visible,
+.organization-inline-form select:focus-visible {
+  border-color: var(--cv-focus);
+}
+
+.organization-member-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+}
+
+.organization-member-actions .repository-secondary-action,
+.organization-member-actions .repository-danger-action {
+  min-height: 2.3rem;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.68rem;
+}
+
+.organization-transfer-form input {
+  min-width: min(100%, 16rem);
+}
+
+.organization-repository-link-row {
+  margin: 1.25rem 0 0;
+}
+
 .repository-primary-action:disabled,
 .repository-secondary-action:disabled,
 .repository-danger-action:disabled {
@@ -2863,6 +2912,141 @@ h2 em {
 .repository-state-page > .repository-secondary-action {
   margin-top: 1rem;
   margin-right: 0.5rem;
+}
+
+.repository-browse-section,
+.repository-history-section,
+.repository-file-viewer {
+  display: grid;
+  gap: 1rem;
+  margin-top: 2rem;
+  padding: 1.25rem;
+  border: 1px solid var(--cv-border);
+  border-radius: var(--radius-sm);
+  background: var(--cv-surface);
+}
+
+.repository-browse-section > .repository-section-heading,
+.repository-history-section > .repository-section-heading,
+.repository-file-viewer > .repository-section-heading {
+  margin: 0;
+}
+
+.repository-browse-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  color: var(--cv-muted);
+  font-size: 0.76rem;
+}
+
+.repository-browse-toolbar code {
+  flex: 1 1 12rem;
+  color: var(--cv-text);
+  overflow-wrap: anywhere;
+}
+
+.repository-browse-list,
+.repository-history-list {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.repository-browse-list li,
+.repository-history-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 2.5rem;
+  padding: 0.45rem 0.65rem;
+  border-bottom: 1px solid var(--cv-border);
+  color: var(--cv-muted);
+  font-size: 0.78rem;
+}
+
+.repository-history-commit {
+  display: grid;
+  gap: 0.2rem;
+  flex: 1;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.repository-history-commit:hover,
+.repository-history-commit:focus-visible {
+  color: var(--color-charcoal);
+  text-decoration: underline;
+}
+
+.repository-diff-list {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.repository-diff-list li {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.repository-diff-list li > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.repository-browse-list li > button {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--cv-text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.repository-browse-list li > button:hover {
+  color: var(--cv-peach-strong);
+}
+
+.repository-history-list li > span {
+  flex: 1;
+  color: var(--cv-text);
+  overflow-wrap: anywhere;
+}
+
+.repository-history-list code {
+  color: var(--cv-peach-strong);
+}
+
+.repository-file-content {
+  max-height: 32rem;
+  margin: 0;
+  padding: 1rem;
+  overflow: auto;
+  border: 1px solid var(--cv-border);
+  border-radius: var(--radius-sm);
+  background: var(--cv-ivory-deep);
+  color: var(--cv-text);
+  font:
+    0.78rem/1.65 "JetBrains Mono",
+    monospace;
+  white-space: pre;
 }
 
 @media (max-width: 760px) {

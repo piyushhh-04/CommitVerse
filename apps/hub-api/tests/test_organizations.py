@@ -6,6 +6,7 @@ import os
 import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 from threading import Barrier
 
 import pytest
@@ -20,6 +21,7 @@ from commitverse_hub.config import Settings
 from commitverse_hub.db.base import Base
 from commitverse_hub.db.models import (
     AuditEvent,
+    Invitation,
     Organization,
     OrganizationMembership,
     User,
@@ -34,14 +36,18 @@ from commitverse_hub.organizations import (
     OrganizationPermissionError,
     OrganizationReauthenticationError,
     OrganizationValidationError,
+    accept_organization_invitation,
     add_organization_member,
     change_organization_member_role,
     create_organization,
+    create_organization_invitation,
     get_organization_for_member,
     leave_organization,
     list_organization_members,
+    list_organization_invitations,
     list_user_organizations,
     remove_organization_member,
+    revoke_organization_invitation,
     transfer_organization_ownership,
     update_organization,
 )
@@ -167,6 +173,124 @@ def test_create_organization_rejects_duplicate_slug_and_invalid_creator(
             request_id=None,
         )
     assert len(_audit_events(context["factory"])) == 1
+
+
+def test_organization_invitations_are_hashed_single_use_and_email_bound(
+    organization_context,
+) -> None:
+    context = organization_context
+    organization = _create_organization(context)
+    issued = create_organization_invitation(
+        context["factory"],
+        organization.id,
+        context["users"]["owner"],
+        target_email=" member@example.test ",
+        role="member",
+        expires_in_days=7,
+        request_id="invite-1",
+    )
+    assert issued.token
+    with context["factory"]() as db_session:
+        stored = db_session.get(Invitation, issued.invitation.id)
+        assert stored is not None
+        assert stored.token_hash != issued.token
+        assert stored.target_email == "member@example.test"
+
+    invitations, total = list_organization_invitations(
+        context["factory"],
+        organization.id,
+        context["users"]["owner"],
+        limit=50,
+        offset=0,
+    )
+    assert total == 1
+    assert invitations[0].id == issued.invitation.id
+    assert not hasattr(invitations[0], "token")
+
+    membership = accept_organization_invitation(
+        context["factory"],
+        issued.token,
+        context["users"]["member"],
+        request_id="accept-1",
+    )
+    assert membership.role == "member"
+    with pytest.raises(OrganizationNotFoundError):
+        accept_organization_invitation(
+            context["factory"],
+            issued.token,
+            context["users"]["member"],
+            request_id="accept-replay",
+        )
+
+    mismatch = create_organization_invitation(
+        context["factory"],
+        organization.id,
+        context["users"]["owner"],
+        target_email="other@example.test",
+        role="member",
+        expires_in_days=1,
+        request_id="invite-2",
+    )
+    with pytest.raises(OrganizationPermissionError):
+        accept_organization_invitation(
+            context["factory"],
+            mismatch.token,
+            context["users"]["member"],
+            request_id="accept-mismatch",
+        )
+    revoke_organization_invitation(
+        context["factory"],
+        organization.id,
+        context["users"]["owner"],
+        mismatch.invitation.id,
+        request_id="revoke-2",
+    )
+    with pytest.raises(OrganizationNotFoundError):
+        accept_organization_invitation(
+            context["factory"],
+            mismatch.token,
+            context["users"]["other"],
+            request_id="accept-revoked",
+        )
+
+
+def test_expired_organization_invitation_status_is_committed(
+    organization_context,
+) -> None:
+    context = organization_context
+    organization = _create_organization(context)
+    issued = create_organization_invitation(
+        context["factory"],
+        organization.id,
+        context["users"]["owner"],
+        target_email="other@example.test",
+        role="member",
+        expires_in_days=7,
+        request_id="expired-organization-invitation",
+    )
+    with transactional_session(context["factory"]) as db_session:
+        invitation = db_session.get(Invitation, issued.invitation.id)
+        assert invitation is not None
+        invitation.created_at = datetime(2000, 1, 1, tzinfo=UTC)
+        invitation.expires_at = datetime(2000, 1, 2, tzinfo=UTC)
+
+    with pytest.raises(OrganizationNotFoundError):
+        accept_organization_invitation(
+            context["factory"],
+            issued.token,
+            context["users"]["other"],
+            request_id="accept-expired-organization-invitation",
+        )
+
+    with context["factory"]() as db_session:
+        invitation = db_session.get(Invitation, issued.invitation.id)
+        assert invitation is not None
+        assert invitation.status == "expired"
+        assert invitation.accepted_at is None
+        assert db_session.get(
+            OrganizationMembership,
+            {"organization_id": organization.id, "user_id": context["users"]["other"]},
+        ) is None
 
 
 def test_disabled_actor_cannot_mutate_organization_or_memberships(
@@ -1107,7 +1231,11 @@ def test_organization_api_routes_create_list_detail_and_member_management(tmp_pa
     )
     app = create_app(settings=settings, database_engine_factory=lambda _url: engine)
 
-    with TestClient(app) as owner_client, TestClient(app) as member_client:
+    with (
+        TestClient(app) as owner_client,
+        TestClient(app) as member_client,
+        TestClient(app) as invitee_client,
+    ):
         _, owner_csrf, owner_me = _register_api_user(
             owner_client,
             email="owner-org@example.test",
@@ -1119,6 +1247,12 @@ def test_organization_api_routes_create_list_detail_and_member_management(tmp_pa
             email="member-org@example.test",
             username="memberorg",
             password="member-password",
+        )
+        _, invitee_csrf, invitee_me = _register_api_user(
+            invitee_client,
+            email="invitee-org@example.test",
+            username="inviteeorg",
+            password="invitee-password",
         )
 
         wrong_origin = owner_client.post(
@@ -1149,6 +1283,31 @@ def test_organization_api_routes_create_list_detail_and_member_management(tmp_pa
         created = create_response.json()
         assert created["slug"] == "demo-org"
         assert created["role"] == "owner"
+
+        invitation_response = owner_client.post(
+            f"/api/v1/organizations/{created['id']}/invitations",
+            headers={"Origin": "https://hub.example.test", "X-CSRF-Token": owner_csrf},
+            json={"target_email": "INVITEE-ORG@EXAMPLE.TEST", "role": "member"},
+        )
+        assert invitation_response.status_code == 201, invitation_response.text
+        invitation = invitation_response.json()
+        assert invitation["target_email"] == "invitee-org@example.test"
+        assert invitation["token"]
+        assert invitation["expires_at"].endswith("Z")
+        assert invitation["created_at"].endswith("Z")
+        invitation_list = owner_client.get(
+            f"/api/v1/organizations/{created['id']}/invitations"
+        )
+        assert invitation_list.status_code == 200
+        assert "token" not in invitation_list.json()["items"][0]
+        assert invitation_list.json()["items"][0]["expires_at"].endswith("Z")
+        assert invitation_list.json()["items"][0]["created_at"].endswith("Z")
+        accepted = invitee_client.post(
+            f"/api/v1/invitations/{invitation['token']}/accept",
+            headers={"Origin": "https://hub.example.test", "X-CSRF-Token": invitee_csrf},
+        )
+        assert accepted.status_code == 200, accepted.text
+        assert accepted.json()["role"] == "member"
 
         missing_csrf_update = owner_client.patch(
             f"/api/v1/organizations/{created['id']}",
@@ -1235,7 +1394,7 @@ def test_organization_api_routes_create_list_detail_and_member_management(tmp_pa
             params={"limit": 10, "offset": 0},
         )
         assert member_list.status_code == 200, member_list.text
-        assert member_list.json()["total"] == 2
+        assert member_list.json()["total"] == 3
 
         bad_role = member_client.patch(
             f"/api/v1/organizations/{created['id']}/members/{owner_me['id']}",

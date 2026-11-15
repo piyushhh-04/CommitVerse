@@ -7,7 +7,7 @@ import uuid
 from datetime import timedelta
 
 from fastapi import APIRouter, Request, Response
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
@@ -20,7 +20,7 @@ from commitverse_hub.auth.csrf import (
 from commitverse_hub.auth.passwords import hash_password, verify_password
 from commitverse_hub.auth.sessions import create_session_record, get_active_session, revoke_session
 from commitverse_hub.auth.tokens import validate_session_token
-from commitverse_hub.db.models import User, UserProfile
+from commitverse_hub.db.models import AuditEvent, User, UserProfile
 from commitverse_hub.db.session import transactional_session
 from commitverse_hub.errors.handlers import HubApplicationError
 
@@ -36,6 +36,8 @@ class AuthUserResponse(BaseModel):
     email: str
     username: str
     display_name: str
+    bio: str | None = None
+    avatar_url: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -91,6 +93,33 @@ class AuthStatusResponse(BaseModel):
     """Generic operation result for safe session lifecycle calls."""
 
     status: str = "ok"
+
+
+class ProfileUpdateRequest(BaseModel):
+    """Allow-listed editable fields for the current user's public profile."""
+
+    username: str | None = Field(default=None, min_length=1, max_length=39)
+    display_name: str | None = Field(default=None, min_length=1, max_length=120)
+    bio: str | None = Field(default=None, max_length=500)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("username", "display_name", "bio")
+    @classmethod
+    def trim_values(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip()
+
+    @model_validator(mode="after")
+    def validate_changes(self) -> ProfileUpdateRequest:
+        if not self.model_fields_set:
+            raise ValueError("At least one profile field is required.")
+        if "username" in self.model_fields_set and not self.username:
+            raise ValueError("Username must not be empty.")
+        if "display_name" in self.model_fields_set and not self.display_name:
+            raise ValueError("Display name must not be empty.")
+        return self
 
 
 def _session_factory(request: Request):
@@ -150,11 +179,15 @@ def _user_payload(user: User, profile: UserProfile | None = None) -> AuthUserRes
     else:
         base_username = profile.username
         display_name = profile.display_name
+    bio = profile.bio if profile is not None else None
+    avatar_url = profile.avatar_url if profile is not None else None
     return AuthUserResponse(
         id=user.id,
         email=user.normalized_email,
         username=base_username,
         display_name=display_name,
+        bio=bio,
+        avatar_url=avatar_url,
     )
 
 
@@ -175,6 +208,23 @@ def get_authenticated_user(request: Request) -> User:
         user = db_session.get(User, active_session.user_id)
         if user is None or user.account_state != "active":
             raise HubApplicationError(401, "authentication_failed", "Authentication failed.")
+        return user
+
+
+def get_optional_authenticated_user(request: Request) -> User | None:
+    """Resolve an active session when present, without requiring one."""
+    settings = _cookie_settings(request)
+    token = request.cookies.get(settings.name)
+    if not token or not validate_session_token(token):
+        return None
+    factory = _session_factory(request)
+    with factory() as db_session:
+        active_session = get_active_session(db_session, token)
+        if active_session is None:
+            return None
+        user = db_session.get(User, active_session.user_id)
+        if user is None or user.account_state != "active":
+            return None
         return user
 
 
@@ -350,6 +400,89 @@ def me(request: Request, response: Response) -> AuthUserResponse:
     response.headers["X-CSRF-Token"] = generate_csrf_token(session_token)
     response.headers["Cache-Control"] = "no-store"
     return user_response
+
+
+@me_router.patch("/me", response_model=AuthUserResponse)
+def update_current_user(
+    payload: ProfileUpdateRequest,
+    request: Request,
+) -> AuthUserResponse:
+    """Update the authenticated user's editable public profile fields."""
+    require_authenticated_csrf(request)
+    factory = _session_factory(request)
+    user = get_authenticated_user(request)
+    request_id = request.headers.get("x-request-id")
+
+    try:
+        with transactional_session(factory) as db_session:
+            profile = db_session.scalar(
+                select(UserProfile)
+                .where(UserProfile.user_id == user.id)
+                .with_for_update()
+            )
+            if profile is None:
+                fallback_username = user.normalized_email.split("@", 1)[0][:39]
+                profile = UserProfile(
+                    user_id=user.id,
+                    username=payload.username or fallback_username,
+                    display_name=payload.display_name or fallback_username,
+                )
+                db_session.add(profile)
+
+            changed_fields: list[str] = []
+            if "username" in payload.model_fields_set:
+                username_match = db_session.scalar(
+                    select(UserProfile.user_id).where(
+                        func.lower(UserProfile.username) == payload.username.lower(),
+                        UserProfile.user_id != user.id,
+                    )
+                )
+                if username_match is not None:
+                    raise HubApplicationError(
+                        409,
+                        "username_taken",
+                        "This username is already taken.",
+                    )
+                if profile.username != payload.username:
+                    profile.username = payload.username
+                    changed_fields.append("username")
+            if "display_name" in payload.model_fields_set:
+                if profile.display_name != payload.display_name:
+                    profile.display_name = payload.display_name
+                    changed_fields.append("display_name")
+            if "bio" in payload.model_fields_set:
+                normalized_bio = payload.bio or None
+                if profile.bio != normalized_bio:
+                    profile.bio = normalized_bio
+                    changed_fields.append("bio")
+
+            if changed_fields:
+                db_session.add(
+                    AuditEvent(
+                        actor_user_id=user.id,
+                        action="profile.updated",
+                        target_type="user",
+                        target_id=str(user.id),
+                        request_id=request_id,
+                        event_metadata={"fields": changed_fields},
+                    )
+                )
+            db_session.flush()
+            return _user_payload(user, profile)
+    except HubApplicationError:
+        raise
+    except IntegrityError as exc:
+        raise HubApplicationError(
+            409,
+            "username_taken",
+            "This username is already taken.",
+        ) from exc
+    except SQLAlchemyError as exc:
+        raise HubApplicationError(
+            503,
+            "profile_update_failed",
+            "The profile could not be updated.",
+        ) from exc
 
 
 @router.post("/logout", response_model=AuthStatusResponse)

@@ -28,19 +28,21 @@ read-only status/diff, local advertisement, bounded fetch, fast-forward-only
 push, safe local clone, and `cv` commands are implemented and tested. Hub now
 provides a local-development API foundation, browser-session authentication,
 authenticated owner-only personal repository management through Core, and
-organization and membership API endpoints. Organization-management workflows
-in the frontend, broader collaboration, repository browsing, an authenticated
-product UI, and deployment remain future work. `apps/hub-web/` contains a
-standalone informational landing page and design system; it does not call the
-Hub API.
+organization and membership API endpoints. The frontend includes authenticated
+personal repository and organization-management foundations, plus authorized
+repository tree/blob/history browsing; broader collaboration and deployment
+remain future work.
+`apps/hub-web/` contains the public landing page plus the authenticated Hub
+application.
 
 ## Technology direction
 
 - **Backend:** Python, FastAPI, PostgreSQL, SQLAlchemy, and Pydantic.
 - **Version control engine:** Python standard library wherever practical.
 - **Frontend:** React and Tailwind CSS.
-- **Infrastructure and testing:** Docker is mandatory infrastructure; Pytest is
-  used for Core's Python tests.
+- **Infrastructure and testing:** Pytest is used for Core and Hub API tests;
+  Docker/Compose remain optional future infrastructure for reproducible
+  multi-service environments.
 - **Future AI:** PyTorch and Hugging Face Transformers.
 
 Hub API and the standalone Hub Web landing page have package-level dependencies
@@ -56,9 +58,9 @@ development dependencies separated. Core is installed in editable mode in the
 local development environment. The `dev` extra includes Pytest. Whether the
 monorepo needs a root-level `pyproject.toml` for workspace-wide configuration
 remains undecided; it would not replace Core's package-level configuration.
-Docker complements local development and provides reproducible environments
-and containerized application services; the standalone Core engine does not
-initially need to run in Docker.
+Docker may complement local development and provide reproducible environments
+and containerized application services; no Docker configuration is currently
+checked in, and the standalone Core engine does not require Docker.
 
 ## Status
 

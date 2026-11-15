@@ -3,12 +3,16 @@
 ## Status
 
 This roadmap sequences local Hub development without changing Core's completed
-scope. Milestones 2–4 (backend, database, and authentication) and milestone 6
+scope. Milestones 2–5 (backend, database, authentication, and profile editing) and milestone 6
 (owner-only personal repository management integrated with Core) are
 implemented locally. The organization metadata and membership API scope of
-milestone 7 is also implemented. Profile editing, invitations, direct
-repository grants, organization-owned repository HTTP routes, repository
-browsing, authenticated frontend, and deployment remain planned.
+milestone 7 is also implemented. Direct grant management and bounded repository
+browsing, including validated local branch/tag selection, are implemented
+locally. Organization invitation API and token-based frontend workflows are
+implemented; repository invitation APIs are implemented without web workflows
+or email delivery. Broader collaboration and deployment remain planned. Authentication,
+personal repository management, organization metadata/membership workflows, and
+owner/admin organization-repository metadata workflows are implemented.
 Each milestone should be independently reviewable and tested before the next
 dependent milestone begins.
 
@@ -27,9 +31,16 @@ alone.
 - Authenticated owner-only personal repository metadata and Core-backed
   lifecycle operations.
 - Organization metadata and membership APIs with owner/admin role checks.
-- Public/private metadata (public anonymous access is not implemented).
-- Organization-owned repository HTTP routes, direct collaborator grants,
-  repository browsing, and authenticated frontend remain future work.
+- Public/private repository visibility with anonymous read-only browsing for
+  ready public repositories.
+- Direct grant management, repository invitation APIs, and bounded
+  tree/blob/history browsing, reachable
+  commit details, and first-parent diffs from HEAD and validated local
+  branches/tags and privacy-preserving user discovery are implemented.
+  Repository invitation UI, advanced diff operations, and broader
+  collaboration remain future work.
+  Authentication, personal repository management, organization metadata/membership,
+  and owner/admin organization-repository metadata workflows are implemented.
 - Basic React authentication, dashboard, repository list, and repository
   overview.
 
@@ -40,7 +51,7 @@ packfile transfer, or normal remote Git client interoperability.
 
 ### Post-MVP
 
-- Organization membership invitations, user discovery, and refined
+- External email delivery, repository invitation web workflows, and refined
   administration workflows.
 - Teams only after their membership and permission inheritance rules are
   designed.
@@ -62,12 +73,12 @@ work; this roadmap does not imply implementation.
 | 2 | Local backend foundation; depends on 1 — **implemented** | Hub API package, FastAPI application factory, validated configuration, `/api/v1/health`, request IDs, safe error mapping, and structured logging. | App construction, invalid config, health route, error redaction, and request logging tests pass. | Auth, database schema, Core operations. |
 | 3 | Database foundation and approved schema; depends on 2 — **implemented; initial revision historically PostgreSQL-verified** | Add optional PostgreSQL settings, bounded SQLAlchemy engine/session utilities, lifecycle management, database diagnostic, nine approved metadata models, and initial Alembic revision `40037b3edad7`. | URL validation/redaction, constraints and relationships, migration discovery, SQLite test-database upgrade/downgrade/re-upgrade and metadata comparison, no startup migration, and full Hub/Core suites passed. Historical verification against native Homebrew PostgreSQL 17.11 on macOS/Apple Silicon M2 covered `40037b3edad7` only, which was the head at that time. The current source head is `a7d4d1d1f7ed`; its PostgreSQL application status is not verified. See [database-design.md](database-design.md) for the current migration chain. | Authentication/authorization workflows, application APIs, cloud provisioning, or Git object storage in PostgreSQL. |
 | 4 | Authentication; depends on 3 — **implemented** | Implement Argon2id registration/login, opaque server-side sessions, current-user resolution, logout/revocation, secure cookies, and session-bound CSRF/Origin checks. | Password, hash-only persistence, session expiry/revocation, generic login failure, cookie, CSRF, SQLite, and PostgreSQL integration tests. | Password reset, email verification, OAuth, JWT, MFA, and rate limiting. |
-| 5 | Profile editing; depends on 4 | Add profile update service/API and username rules. | Case-insensitive uniqueness, validation, privacy, and authorization tests. | Avatar storage service. |
-| 6 | Personal repository management; depends on 3–4 and existing Core package — **implemented locally** | Add authenticated owner-only create/list/detail/update/delete, safe storage configuration, bare Core provisioning/deletion, lifecycle recovery, and audit events. | API ownership/CSRF/pagination tests; duplicate-name, Core validation, storage containment, symlink, concurrency, failure/retry, and PostgreSQL lifecycle tests. | Organization-owned repository HTTP routes, anonymous public reads, browsing, network Git, cross-process locking, automated reconciliation. |
-| 7 | Organizations and memberships; depends on 4–6 — **implemented locally** | Add organization metadata create/list/detail/update and membership list/add/role-change/remove/leave/ownership-transfer APIs. Owners and admins can update metadata; only owners can change roles or transfer ownership. Admins can add ordinary members and remove ordinary members; owners can manage admins. Ownership transfer requires current-password reauthentication. The service preserves at least one active owner. Shared lifecycle services support organization-owned repository create/delete, but no organization-repository HTTP routes exist. | Domain and API tests cover role restrictions, membership transitions, ownership transfer, disabled-organization mutation behavior, and rollback. PostgreSQL owner-leave and cross-organization multi-user lock-order tests require `HUB_TEST_DATABASE_URL`; SQLite does not verify PostgreSQL row-lock concurrency. | Organization disable/enable operations and terminal organization deletion; teams, invitations, user discovery, direct repository grants, and complex inherited permissions. |
-| 8 | Authorization and direct grants; depends on 4, 6–7 | Add direct repository grants and extend effective authorization to repository access. | Matrix tests for public/private, owners, members, direct roles, revocation, and deny-before-Core. | Invitation workflows, teams, broad policy customization. |
-| 9 | Repository browsing API; depends on 6–8 | Add authorized supported Core-backed metadata/browsing operations. | Redaction, malformed objects, authorization-first access, bounded execution, and nonblocking tests. | Git-over-HTTP/SSH, ordinary remote Git clients. |
-| 10 | Frontend foundation; depends on API contract from 2/9 | Add React/Tailwind app shell, routing, API client, accessible shared controls. | Production build, route checks, API client tests, accessibility and responsive checks. | Deployment configuration and excessive global state. |
+| 5 | Profile editing; depends on 4 — **implemented locally** | Add profile update service/API and username rules. | Case-insensitive uniqueness, validation, CSRF, privacy, audit logging, frontend settings, and browser integration tests. | Avatar storage service and account recovery. |
+| 6 | Personal repository management; depends on 3–4 and existing Core package — **implemented locally** | Add authenticated owner-only create/list/detail/update/delete, safe storage configuration, bare Core provisioning/deletion, lifecycle recovery, and audit events. | API ownership/CSRF/pagination tests; duplicate-name, Core validation, storage containment, symlink, concurrency, failure/retry, and PostgreSQL lifecycle tests. | Network Git, cross-process locking, automated reconciliation. |
+| 7 | Organizations and memberships; depends on 4–6 — **implemented locally** | Add organization metadata, membership, scoped invitation create/list/revoke/accept APIs plus token-based frontend workflows, and bounded privacy-preserving user discovery. Owners and admins can update metadata; only owners can change roles or transfer ownership. Admins can add ordinary members and remove ordinary members; owners can manage admins. Ownership transfer requires current-password reauthentication. The service preserves at least one active owner. Owner/admin organization repository metadata HTTP routes and frontend lifecycle workflows are also implemented; ordinary members do not receive implicit repository access. | Domain and API tests cover role restrictions, membership transitions, invitation hashing, expiry, replay, email binding, revocation, user search privacy/bounds, ownership transfer, disabled-organization mutation behavior, repository lifecycle, repository authorization, and rollback. PostgreSQL owner-leave and cross-organization multi-user lock-order tests require `HUB_TEST_DATABASE_URL`; SQLite does not verify PostgreSQL row-lock concurrency. | Organization disable/enable operations and terminal organization deletion; external email delivery, teams, repository invitation web workflows, repository contents, and complex inherited permissions. |
+| 8 | Authorization and direct grants; depends on 4, 6–7 — **implemented locally for current browse operations** | Add manager-controlled direct repository grants with reader/writer/admin roles, revocation, audit events, and effective authorization for supported reads. | Owner/admin authorization, duplicate and inactive-user rejection, role changes, revocation, CSRF, audit, deny-before-manager, and direct-reader browse tests pass. | Teams, broad policy customization. |
+| 9 | Repository browsing API; depends on 6–8 — **partially implemented locally** | Add authorized supported Core-backed metadata, tree, bounded text-blob, commit-history, reachable commit-detail, and first-parent diff operations for HEAD and validated local branches/tags. | Redaction, malformed objects, traversal rejection, authorization-first access, bounded execution, empty repository behavior, ref selection, commit detail/diff, frontend detail integration, and browser/API suites pass. | Advanced diff workflows, Git-over-HTTP/SSH, ordinary remote Git clients. |
+| 10 | Frontend foundation; depends on API contract from 2/9 — **implemented locally** | Add React/Tailwind app shell, routing, API client, accessible shared controls. | Production build, route checks, API client tests, accessibility and responsive checks. | Deployment configuration and excessive global state. |
 | 11 | Authentication/dashboard UI; depends on 4–5 and 10 | Implement sign-in/up, session bootstrap/logout, profile and dashboard. | Browser tests for session expiry, form errors, loading/empty/error states, keyboard navigation. | Social login and unrelated product screens. |
 | 12 | Repository UI; depends on 8–10 | Implement repository list, creation, and overview screens. | Browser/API integration tests for owner/visibility/permission combinations and lifecycle errors. | Network Git clone/fetch/push controls. |
 | 13 | MVP security/reliability audit; depends on 1–12 | Review threat model, authorization, concurrency, lifecycle recovery, logs, data retention and backup/restore. | Explicit path/symlink, contention, failure-injection, recovery, redaction, and restore exercises; resolve high-risk findings before release. | Unsupported security guarantees. |

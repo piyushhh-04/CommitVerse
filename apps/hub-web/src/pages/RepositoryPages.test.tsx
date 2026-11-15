@@ -353,7 +353,11 @@ describe("personal repository pages", () => {
 
     await userEventInstance.click(deleteButton);
     await userEventInstance.click(screen.getByRole("button", { name: "Confirm deletion" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("deletion may still be pending");
+    expect(
+      await screen.findByText(
+        "The deletion may still be pending. Retry here before leaving this page.",
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retry deletion" })).toBeInTheDocument();
     expect(
       screen.getByText(/reloading may make a pending deletion unavailable/i),

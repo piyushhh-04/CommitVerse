@@ -17,7 +17,8 @@ from commitverse_hub.logging.context import RequestContextMiddleware
 
 _DESCRIPTION = (
     "The CommitVerse Hub API. The current backend foundation provides "
-    "health diagnostics and does not connect to CommitVerse Core."
+    "health diagnostics and application workflows. Core repository lifecycle "
+    "operations are invoked through the Hub repository service boundary."
 )
 
 

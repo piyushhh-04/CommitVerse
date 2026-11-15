@@ -1,9 +1,17 @@
 # CommitVerse Hub Web
 
 The CommitVerse landing page and authenticated Hub application. Sign-in,
-registration, session restoration, and the authenticated application shell are
-implemented. Repository and organization data views remain neutral
-placeholders; product-management workflows are not implemented yet.
+registration, session restoration, the authenticated application shell, and
+personal repository management, supported organization/membership management,
+owner/admin organization repository management, and profile settings are
+implemented.
+Token-based organization invitation issue/list/revoke/accept flows are
+implemented locally. Repository invitation lifecycle APIs are available in
+the Hub backend, but repository invitation web workflows and external email
+delivery are not implemented; advanced diff workflows and broader
+collaboration remain future work. Read-only tree, text-blob, commit-history, reachable
+commit-detail browsing is implemented for HEAD and validated local branches/
+tags on authorized repository detail pages.
 
 ## Requirements
 
@@ -41,8 +49,13 @@ in browser storage. The proxy is not included in production builds.
   submitted through `AuthProvider` and are not written to browser storage.
 - Protected `/app/*` routes share a responsive shell with dashboard,
   repository, and organization navigation, current-user information, theme
-  control, and logout. Dashboard, repository, and organization content is
-  still placeholder-only; no product-management workflow is implemented.
+  control, and logout. Personal repository listing, creation, editing, detail,
+  and deletion use the live Hub API. Dashboard content is still
+  placeholder-only. Organization creation, metadata, membership listing,
+  supported membership changes, leaving, ownership transfer, owner/admin
+  organization repository lifecycle, token-based invitations, and public-profile
+  user discovery use the live Hub API; repository-content flows are implemented
+  on repository detail pages.
 
 ## Checks
 

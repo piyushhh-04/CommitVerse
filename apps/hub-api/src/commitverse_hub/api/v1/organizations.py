@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
@@ -22,13 +22,17 @@ from commitverse_hub.organizations import (
     OrganizationReauthenticationError,
     OrganizationValidationError,
     add_organization_member,
+    accept_organization_invitation,
+    create_organization_invitation,
     change_organization_member_role,
     create_organization,
     get_organization_for_member,
     leave_organization,
     list_organization_members,
+    list_organization_invitations,
     list_user_organizations,
     remove_organization_member,
+    revoke_organization_invitation,
     transfer_organization_ownership,
     update_organization,
 )
@@ -39,6 +43,7 @@ from commitverse_hub.organizations.policy import (
 )
 
 router = APIRouter(prefix="/organizations", tags=["organizations"])
+invitations_router = APIRouter(prefix="/invitations", tags=["invitations"])
 
 
 class OrganizationCreateRequest(BaseModel):
@@ -129,6 +134,16 @@ class OwnershipTransferRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class InvitationCreateRequest(BaseModel):
+    """Fields accepted when inviting an email to an organization."""
+
+    target_email: str = Field(..., min_length=3, max_length=320)
+    role: Literal["admin", "member"] = "member"
+    expires_in_days: int = Field(default=7, ge=1, le=30)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class OrganizationResponse(BaseModel):
     """Public organization metadata returned to members."""
 
@@ -200,6 +215,54 @@ class StatusResponse(BaseModel):
     """Generic success payload for lifecycle operations."""
 
     status: str = "ok"
+
+
+class InvitationResponse(BaseModel):
+    id: uuid.UUID
+    target_email: str
+    role: str
+    status: str
+    expires_at: datetime
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("expires_at", "created_at")
+    @classmethod
+    def normalize_timestamps_to_utc(cls, value: datetime) -> datetime:
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+class InvitationCreateResponse(InvitationResponse):
+    token: str
+
+
+class InvitationListResponse(BaseModel):
+    items: list[InvitationResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+class InvitationAcceptResponse(BaseModel):
+    organization_id: uuid.UUID
+    role: str
+
+
+def _invitation_error(exc: Exception) -> HubApplicationError:
+    if isinstance(exc, OrganizationDisabledError):
+        return HubApplicationError(409, "organization_disabled", "Organization is disabled.")
+    if isinstance(exc, OrganizationConflictError):
+        return HubApplicationError(409, "invitation_conflict", str(exc))
+    if isinstance(exc, OrganizationNotFoundError):
+        return HubApplicationError(404, "invitation_not_found", "Invitation not found.")
+    if isinstance(exc, OrganizationPermissionError):
+        return HubApplicationError(403, "organization_permission_denied", str(exc))
+    if isinstance(exc, OrganizationValidationError):
+        return HubApplicationError(422, "validation_error", str(exc))
+    if isinstance(exc, OrganizationOperationError):
+        return HubApplicationError(503, "organization_unavailable", str(exc))
+    raise TypeError("Unsupported invitation exception.")
 
 
 def _session_factory(request: Request) -> sessionmaker[Session]:
@@ -352,6 +415,125 @@ def list_members_route(
         total=total,
         limit=limit,
         offset=offset,
+    )
+
+
+@router.post(
+    "/{organization_id}/invitations",
+    response_model=InvitationCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_invitation_route(
+    organization_id: uuid.UUID,
+    payload: InvitationCreateRequest,
+    request: Request,
+    user: User = Depends(get_authenticated_user),
+) -> InvitationCreateResponse:
+    require_authenticated_csrf(request)
+    factory = _session_factory(request)
+    try:
+        issued = create_organization_invitation(
+            factory,
+            organization_id,
+            user.id,
+            target_email=payload.target_email,
+            role=payload.role,
+            expires_in_days=payload.expires_in_days,
+            request_id=getattr(request.state, "request_id", None),
+        )
+    except (
+        OrganizationConflictError,
+        OrganizationDisabledError,
+        OrganizationNotFoundError,
+        OrganizationOperationError,
+        OrganizationPermissionError,
+        OrganizationValidationError,
+    ) as exc:
+        raise _invitation_error(exc) from exc
+    response = InvitationResponse.model_validate(issued.invitation, from_attributes=True)
+    return InvitationCreateResponse(**response.model_dump(), token=issued.token)
+
+
+@router.get("/{organization_id}/invitations", response_model=InvitationListResponse)
+def list_invitations_route(
+    organization_id: uuid.UUID,
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=1_000_000),
+    user: User = Depends(get_authenticated_user),
+) -> InvitationListResponse:
+    factory = _session_factory(request)
+    try:
+        invitations, total = list_organization_invitations(
+            factory, organization_id, user.id, limit=limit, offset=offset
+        )
+    except (
+        OrganizationDisabledError,
+        OrganizationNotFoundError,
+        OrganizationOperationError,
+        OrganizationPermissionError,
+    ) as exc:
+        raise _invitation_error(exc) from exc
+    return InvitationListResponse(
+        items=[InvitationResponse.model_validate(item, from_attributes=True) for item in invitations],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.delete("/{organization_id}/invitations/{invitation_id}", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_invitation_route(
+    organization_id: uuid.UUID,
+    invitation_id: uuid.UUID,
+    request: Request,
+    user: User = Depends(get_authenticated_user),
+) -> Response:
+    require_authenticated_csrf(request)
+    factory = _session_factory(request)
+    try:
+        revoke_organization_invitation(
+            factory,
+            organization_id,
+            user.id,
+            invitation_id,
+            request_id=getattr(request.state, "request_id", None),
+        )
+    except (
+        OrganizationDisabledError,
+        OrganizationNotFoundError,
+        OrganizationOperationError,
+    ) as exc:
+        raise _invitation_error(exc) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@invitations_router.post("/{token}/accept", response_model=InvitationAcceptResponse)
+def accept_invitation_route(
+    token: str,
+    request: Request,
+    user: User = Depends(get_authenticated_user),
+) -> InvitationAcceptResponse:
+    require_authenticated_csrf(request)
+    factory = _session_factory(request)
+    try:
+        membership = accept_organization_invitation(
+            factory,
+            token,
+            user.id,
+            request_id=getattr(request.state, "request_id", None),
+        )
+    except (
+        OrganizationConflictError,
+        OrganizationDisabledError,
+        OrganizationNotFoundError,
+        OrganizationOperationError,
+        OrganizationPermissionError,
+    ) as exc:
+        raise _invitation_error(exc) from exc
+    return InvitationAcceptResponse(
+        organization_id=membership.organization_id,
+        role=membership.role,
     )
 
 

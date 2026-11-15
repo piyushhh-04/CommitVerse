@@ -45,7 +45,7 @@ from commitverse_hub.config import Settings
 from commitverse_hub.api.v1 import auth as auth_api
 from commitverse_hub.db.base import Base
 from commitverse_hub.main import create_app
-from commitverse_hub.db.models import SessionRecord, User
+from commitverse_hub.db.models import AuditEvent, SessionRecord, User, UserProfile
 from commitverse_hub.db.session import create_session_factory, transactional_session
 
 
@@ -549,6 +549,94 @@ def test_me_does_not_issue_csrf_token_without_a_session(auth_api_client) -> None
 
     assert response.status_code == 401
     assert response.headers.get("X-CSRF-Token") is None
+
+
+def test_current_user_profile_can_be_updated_and_cleared(auth_api_client) -> None:
+    client, factory = auth_api_client
+    registration = register_auth_test_user(client)
+    session_token = client.cookies.get("commitverse_session")
+    assert session_token is not None
+    csrf_token = generate_csrf_token(session_token)
+
+    response = client.patch(
+        "/api/v1/me",
+        headers={
+            "Origin": "https://hub.example.test",
+            "X-CSRF-Token": csrf_token,
+        },
+        json={
+            "username": "  updated-user  ",
+            "display_name": " Updated User ",
+            "bio": "  Building reliable repositories. ",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["username"] == "updated-user"
+    assert response.json()["display_name"] == "Updated User"
+    assert response.json()["bio"] == "Building reliable repositories."
+
+    cleared = client.patch(
+        "/api/v1/me",
+        headers={
+            "Origin": "https://hub.example.test",
+            "X-CSRF-Token": csrf_token,
+        },
+        json={"bio": None},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["bio"] is None
+
+    user_id = uuid.UUID(registration.json()["id"])
+    with factory() as db_session:
+        profile = db_session.get(UserProfile, user_id)
+        assert profile is not None
+        assert profile.username == "updated-user"
+        assert profile.bio is None
+        audit = db_session.scalar(
+            select(AuditEvent).where(
+                AuditEvent.actor_user_id == user_id,
+                AuditEvent.action == "profile.updated",
+            )
+        )
+        assert audit is not None
+
+
+def test_current_user_profile_update_requires_csrf_and_unique_username(auth_api_client) -> None:
+    client, _ = auth_api_client
+    register_auth_test_user(client)
+    session_token = client.cookies.get("commitverse_session")
+    assert session_token is not None
+
+    missing_csrf = client.patch(
+        "/api/v1/me",
+        headers={"Origin": "https://hub.example.test"},
+        json={"display_name": "Nope"},
+    )
+    assert missing_csrf.status_code == 403
+    assert missing_csrf.json()["error"]["code"] == "csrf_validation_failed"
+
+    second = client.post(
+        "/api/v1/auth/register",
+        headers={"Origin": "https://hub.example.test"},
+        json={
+            "email": "second-profile@example.test",
+            "password": "strong password",
+            "username": "second-user",
+        },
+    )
+    assert second.status_code == 200
+    client.cookies.set("commitverse_session", session_token, domain="testserver.local", path="/")
+    conflict = client.patch(
+        "/api/v1/me",
+        headers={
+            "Origin": "https://hub.example.test",
+            "X-CSRF-Token": generate_csrf_token(session_token),
+        },
+        json={"username": "second-user"},
+    )
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "username_taken"
 
 
 @pytest.mark.parametrize("cookie_value", ["malformed", generate_session_token()])

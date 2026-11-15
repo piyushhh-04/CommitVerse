@@ -127,11 +127,11 @@ The scope of a root-level `pyproject.toml` is undecided. If introduced, it may
 hold workspace-wide configuration but must not replace Core's
 independently-installable package configuration.
 
-Docker is mandatory infrastructure for reproducible environments and
-containerized application services. Keep its configuration modular. Use
-Docker Compose when integrating Hub's FastAPI, PostgreSQL, and frontend
-services, but do not require Core itself to run in a container during initial
-development.
+Docker/Compose are optional future infrastructure for reproducible environments
+and containerized application services. Keep any future configuration modular.
+Use Docker Compose when integrating Hub's FastAPI, PostgreSQL, and frontend
+services if that improves reproducibility, but do not require Core itself to run
+in a container during local development.
 
 The package's `pyproject.toml`, development dependency, and `cv` console entry
 point are present. The entry point provides the implemented commands described

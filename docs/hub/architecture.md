@@ -7,9 +7,12 @@ This document records the reviewed architecture for CommitVerse Hub. The
 current-user APIs, authenticated owner-only personal repository metadata CRUD,
 organization metadata and membership APIs, and shared
 personal/organization bare-repository lifecycle integration with Core.
-Organization-owned repository HTTP routes, direct repository grants,
-invitations, repository browsing, and the authenticated frontend are not
-implemented. Hub is a local-development-first application that builds on, but
+Organization-owned repository HTTP routes, direct repository grant management,
+and repository-scoped invitation APIs are implemented. Bounded authorized
+repository browsing is implemented; repository invitation web workflows,
+external email delivery, advanced browsing, and broader collaboration remain
+unimplemented. The frontend authentication foundation, personal repository
+workflows, and supported organization/membership workflows are implemented. Hub is a local-development-first application that builds on, but
 does not absorb or replace, CommitVerse Core. CommitVerse AI remains future
 scope.
 
@@ -21,9 +24,11 @@ and initial metadata models/migration exist. Local PostgreSQL 17.11 migration
 validation against native Homebrew PostgreSQL on macOS/Apple Silicon M2
 historically covered only initial revision `40037b3edad7`. The current source
 migration head is `a7d4d1d1f7ed`; that revision has not been verified against
-PostgreSQL. Organization-owned repository HTTP routes, direct repository
-grants, invitations, hosted runtime services, and deployment configuration
-remain unimplemented or unverified.
+PostgreSQL. Organization-owned repository HTTP routes and direct repository
+  grant-management and organization- and repository-invitation routes are
+  implemented locally. Supported content authorization is implemented;
+  hosted runtime services and deployment configuration remain unimplemented
+  or unverified.
 
 ## Goals and boundaries
 
@@ -95,8 +100,8 @@ The table distinguishes existing foundations from planned workflows:
 | `schemas` | Pydantic request/response models and validation; no database or filesystem access. |
 | `auth` | **Implemented:** Argon2id registration/login, opaque server-side sessions, current-principal resolution, logout/revocation, validated cookies, and exact-Origin/session-bound CSRF checks for state-changing requests. |
 | `users` | Account state and profile workflows. |
-| `organizations` | **Implemented API:** organization metadata create/list/detail/update and membership list/add/role-change/remove/leave/ownership-transfer workflows; teams and invitations are deferred. |
-| `repositories` | **Implemented:** personal owner-scoped metadata APIs and a shared Core-backed lifecycle service for personal and organization-owned repository creation/deletion. Organization repository HTTP routes remain unimplemented. |
+| `organizations` | **Implemented API:** organization metadata, membership, and organization-scoped invitation create/list/revoke/accept workflows; teams remain deferred. |
+| `repositories` | **Implemented:** personal and owner/admin organization-scoped metadata APIs, repository invitation create/list/revoke/accept APIs, and Core-backed repository lifecycle operations. |
 | `permissions` | Central deny-by-default policy evaluation for public/private access, ownership, memberships, and direct grants. |
 | `repository_ops` | **Implemented for repository lifecycle:** current personal-owner or organization owner/admin authorization, database row locks, safe provisioning/deletion, and explicit retryable failure states. General repository operations remain planned. |
 | `core_adapter` | **Implemented:** calls Core bare initialization/discovery APIs in-process and maps failures to safe Hub outcomes. |
@@ -144,14 +149,17 @@ without a demonstrated need.
 The API currently provides account registration/login/logout, current-user
 resolution, owner-only personal repository metadata/lifecycle routes, and
 organization metadata/membership operations with role-based authorization.
-The shared lifecycle service also supports organization-owned repository
-creation and deletion for current organization owners/admins; those operations
-do not yet have HTTP routes.
+The shared lifecycle service and HTTP API support organization-owned repository
+creation and deletion for current organization owners/admins.
 The organization HTTP API does not include disable/enable or delete routes.
-Membership creation takes an existing user ID; user discovery and invitations
-are deferred.
-Repository visibility is stored as metadata but does not enable anonymous
-access; detail and mutations remain owner-only. Do not advertise normal Git
+Direct membership creation takes an existing user ID; organization invitation
+routes support email-bound acceptance, repository invitation routes support
+manager-controlled issue/list/revoke and authenticated email-bound acceptance,
+and the user directory supports bounded public-profile prefix search. No
+repository-invitation web workflows or email delivery are implemented.
+Repository visibility enables anonymous read-only
+browsing only for ready public repositories; detail and mutations remain
+authenticated. Do not advertise normal Git
 client clone, fetch, or push.
 
 ## CommitVerse Core integration
@@ -202,8 +210,9 @@ The shared repository metadata record has lifecycle states `provisioning`,
 `ready`, `error`, `deleting`, and `deleted`. Personal repositories have a
 `owner_user_id`; organization repositories have an `owner_organization_id`;
 exactly one owner is set. Both use the same opaque storage key format, storage
-root, and lifecycle service. Organization-owned lifecycle operations are
-service-level only; no organization repository API routes are implemented.
+root, and lifecycle service. Organization-owned lifecycle operations are exposed
+through owner/admin-scoped organization repository API routes. Ordinary members
+do not receive implicit repository visibility.
 
 Creation is recoverable, not an atomic database/filesystem transaction:
 
@@ -296,17 +305,22 @@ blocker and no deployment configuration is implied.
   filesystem-backed bare repositories during development, dedicated Core
   adapter.
 - **Implemented locally:** registration/login/logout, current-user resolution,
-  owner-only personal repository APIs, and shared Core-backed personal and
-  organization repository lifecycle services with transactional audit events
-  and retryable states. Historical PostgreSQL 17.11 migration validation
+  owner-only personal repository APIs, owner/admin organization repository
+  metadata APIs, and shared Core-backed personal and organization repository
+  lifecycle services with transactional audit events and retryable states.
+  Historical PostgreSQL 17.11 migration validation
   covered only initial revision `40037b3edad7`; current source head
   `a7d4d1d1f7ed` is not verified against PostgreSQL. Organization concurrency
   tests require `HUB_TEST_DATABASE_URL`; without it, PostgreSQL row-lock
   concurrency is unverified.
-- **Not implemented:** organization-owned repository HTTP routes, direct
-  repository grants, invitations, anonymous public access, repository
-  browsing, automated lifecycle reconciliation, authenticated frontend, and
-  deployment. No hosted deployment has been verified.
+- **Implemented locally:** authenticated bounded tree/blob/history browsing,
+  reachable commit details, and first-parent diffs from HEAD, local branches,
+  and direct-commit tags.
+- **Not implemented:** repository invitation web workflows and email delivery,
+  advanced diff workflows,
+  automated lifecycle
+  reconciliation, broader collaboration workflows, and deployment. No hosted
+  deployment has been verified.
 - **Not available from Core:** network Git protocols, packfiles, and ordinary
   remote-client interoperability.
 - **Operational limitations:** DB/filesystem operations are not atomic;

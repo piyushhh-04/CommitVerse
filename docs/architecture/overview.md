@@ -113,9 +113,12 @@ Supported commands in the current implementation:
 Hub coordinates personal repository metadata and bare-repository lifecycle
 workflows with Core through a narrow in-process adapter. Its API includes
 organization metadata and membership operations with role-based authorization.
-Repository HTTP operations remain limited to personal owners; organization-
-owned repository routes, direct repository grants, repository browsing, and
-network Git operations are not implemented.
+Repository HTTP operations include personal-owner and organization-owner/admin
+metadata lifecycle routes plus manager-controlled direct permission grants;
+HEAD tree/blob/history browsing is implemented for authorized users, with
+validated local branch/tag selection, reachable commit details, and bounded
+first-parent diffs; network Git and advanced diff operations are not
+implemented.
 
 The Hub design is a Python/FastAPI modular monolith with a React/Tailwind
 frontend, PostgreSQL application metadata, SQLAlchemy, Alembic, REST under
@@ -143,10 +146,11 @@ repository API, or runtime integration in the current codebase.
 - **Core:** Python standard library wherever practical.
 - **Hub:** Python, FastAPI, PostgreSQL, SQLAlchemy, and Pydantic are used by
   the local API foundation.
-- **Frontend:** React and Tailwind CSS are planned.
-- **Infrastructure:** Docker is mandatory infrastructure for reproducible
-  environments and later service composition, but the standalone Core engine
-  remains usable without Docker.
+- **Frontend:** React, TypeScript, Vite, and Tailwind CSS implement the current
+  Hub Web landing page, authentication foundation, and personal repository
+  workflows.
+- **Infrastructure:** Docker/Compose are optional future tools for reproducible
+  multi-service environments; the current local workflow does not require them.
 - **AI:** PyTorch and Hugging Face Transformers are planned for future work only.
 
 These technology choices are not a claim that the referenced services are
@@ -207,10 +211,10 @@ Known limitations include:
 
 Planned work beyond the implemented Core and Hub API scopes includes:
 
-- organization-owned repository HTTP routes, direct repository grants, and
-  invitation workflows
-- authenticated frontend interfaces for repository and organization
-  management
+- broader effective repository authorization policies
+- repository invitation web workflows and external email delivery
+- advanced diff browsing and broader
+  collaboration interfaces
 - AI-assisted developer workflows and repository analysis
 - richer Git compatibility and advanced VCS operations
 
@@ -220,6 +224,11 @@ These are future capabilities and are not implemented in the current repository.
 
 CommitVerse Core is currently a Git-like version-control engine with a working
 object database, Git index, tree and staging logic, commit/ref handling, history
-traversal, read-only status/diff, and a CLI. Hub's authenticated web product and
-AI remain future scope. The Core does not claim full Git compatibility and
+traversal, read-only status/diff, and a CLI. Hub's authenticated web foundation
+and personal repository workflows are implemented; supported organization
+metadata, membership, and owner/admin repository-management flows are also
+implemented. Organization and repository invitation APIs are implemented;
+repository invitation UI, external email delivery, broader organization
+collaboration, advanced repository browsing, and AI remain future scope. The
+Core does not claim full Git compatibility and
 intentionally keeps its scope bounded to the implemented Milestones 1–4.

@@ -87,13 +87,13 @@ The initial commands are:
 discover the repository by walking parent directories from the current working
 directory.
 
-Docker is mandatory infrastructure for reproducible environments and
-containerized application services, and complements local Core development.
-Do not require the standalone Python engine to run in Docker during initial
-development. Keep Docker configuration modular. When integrated application
-services are available, use Docker Compose for the FastAPI, PostgreSQL, and
-frontend services. Run these planned commands from the directory containing
-the Compose project file once that configuration exists:
+Docker/Compose are optional future infrastructure for reproducible environments
+and containerized application services, and complement local Core development.
+Do not require the standalone Python engine to run in Docker. When integrated
+application services are available and containerization is justified, use
+Docker Compose for the FastAPI, PostgreSQL, and frontend services. Run these
+planned commands from the directory containing the Compose project file once
+that configuration exists:
 
 ```sh
 docker compose up --build

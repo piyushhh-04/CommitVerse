@@ -356,6 +356,142 @@ def list_personal_repositories(
         raise RepositoryOperationError("Repository list could not be loaded.") from exc
 
 
+def list_organization_repositories(
+    factory: sessionmaker[Session],
+    organization_id: uuid.UUID,
+    actor_user_id: uuid.UUID,
+    *,
+    limit: int,
+    offset: int,
+) -> tuple[list[Repository], int]:
+    """List ready organization repositories for an owner or administrator."""
+    try:
+        with factory() as db_session:
+            organization = _lock_organization(db_session, organization_id)
+            _require_active_organization(organization)
+            _lock_authorized_organization_member(db_session, organization_id, actor_user_id)
+            filters = (
+                Repository.owner_user_id.is_(None),
+                Repository.owner_organization_id == organization_id,
+                Repository.lifecycle_state == "ready",
+            )
+            total = db_session.scalar(
+                select(func.count()).select_from(Repository).where(*filters)
+            )
+            items = list(
+                db_session.scalars(
+                    select(Repository)
+                    .where(*filters)
+                    .order_by(Repository.created_at.desc(), Repository.id.desc())
+                    .limit(limit)
+                    .offset(offset)
+                )
+            )
+            return items, int(total or 0)
+    except (RepositoryNotFoundError, RepositoryPermissionError):
+        raise
+    except SQLAlchemyError as exc:
+        raise RepositoryOperationError("Organization repository list could not be loaded.") from exc
+
+
+def get_organization_repository(
+    factory: sessionmaker[Session],
+    repository_id: uuid.UUID,
+    organization_id: uuid.UUID,
+    actor_user_id: uuid.UUID,
+) -> Repository:
+    """Return ready organization repository metadata for an owner/admin."""
+    try:
+        with factory() as db_session:
+            organization = _lock_organization(db_session, organization_id)
+            _require_active_organization(organization)
+            _lock_authorized_organization_member(db_session, organization_id, actor_user_id)
+            repository = db_session.scalar(
+                select(Repository).where(
+                    Repository.id == repository_id,
+                    Repository.owner_user_id.is_(None),
+                    Repository.owner_organization_id == organization_id,
+                    Repository.lifecycle_state == "ready",
+                )
+            )
+            if repository is None:
+                raise RepositoryNotFoundError("Repository not found.")
+            return repository
+    except (RepositoryNotFoundError, RepositoryPermissionError):
+        raise
+    except SQLAlchemyError as exc:
+        raise RepositoryOperationError("Organization repository metadata could not be loaded.") from exc
+
+
+def update_organization_repository(
+    factory: sessionmaker[Session],
+    repository_id: uuid.UUID,
+    organization_id: uuid.UUID,
+    actor_user_id: uuid.UUID,
+    *,
+    name: str | None,
+    description: str | None,
+    description_provided: bool,
+    visibility: str | None,
+    request_id: str | None,
+) -> Repository:
+    """Update organization repository metadata for an owner or administrator."""
+    normalized_name = normalize_repository_name(name) if name is not None else None
+    clean_description = validate_description(description) if description_provided else None
+    if visibility is not None and visibility not in {"public", "private"}:
+        raise ValueError("Repository visibility is invalid.")
+
+    try:
+        with transactional_session(factory) as db_session:
+            organization = _lock_organization(db_session, organization_id)
+            _require_active_organization(organization)
+            _lock_authorized_organization_member(db_session, organization_id, actor_user_id)
+            repository = db_session.scalar(
+                select(Repository)
+                .where(
+                    Repository.id == repository_id,
+                    Repository.owner_user_id.is_(None),
+                    Repository.owner_organization_id == organization_id,
+                    Repository.lifecycle_state == "ready",
+                )
+                .with_for_update()
+            )
+            if repository is None:
+                raise RepositoryNotFoundError("Repository not found.")
+            old_name = repository.slug
+            old_visibility = repository.visibility
+            if normalized_name is not None:
+                repository.slug = normalized_name
+            if description_provided:
+                repository.description = clean_description
+            if visibility is not None:
+                repository.visibility = visibility
+            db_session.flush()
+            db_session.add(
+                _audit_event(
+                    actor_user_id,
+                    "repository.updated",
+                    repository_id,
+                    request_id,
+                    {
+                        "name_changed": old_name != repository.slug,
+                        "visibility_changed": old_visibility != repository.visibility,
+                        "description_changed": description_provided,
+                        "owner_type": "organization",
+                    },
+                )
+            )
+    except (RepositoryNotFoundError, RepositoryPermissionError):
+        raise
+    except IntegrityError as exc:
+        raise RepositoryConflictError("Repository name is already in use.") from exc
+    except SQLAlchemyError as exc:
+        raise RepositoryOperationError(
+            "Organization repository metadata could not be updated."
+        ) from exc
+    return _load_repository(factory, repository_id)
+
+
 def get_personal_repository(
     factory: sessionmaker[Session],
     repository_id: uuid.UUID,
@@ -378,6 +514,273 @@ def get_personal_repository(
         raise
     except SQLAlchemyError as exc:
         raise RepositoryOperationError("Repository metadata could not be loaded.") from exc
+
+
+def get_repository_for_access(
+    factory: sessionmaker[Session],
+    repository_id: uuid.UUID,
+    actor_user_id: uuid.UUID,
+) -> Repository:
+    """Return a ready repository for its owner or an effective reader grant."""
+    try:
+        with factory() as db_session:
+            actor = db_session.scalar(
+                select(User).where(User.id == actor_user_id).with_for_update()
+            )
+            if actor is None or actor.account_state != "active":
+                raise RepositoryNotFoundError("Repository not found.")
+            repository = db_session.scalar(
+                select(Repository).where(Repository.id == repository_id)
+            )
+            if repository is None or repository.lifecycle_state != "ready":
+                raise RepositoryNotFoundError("Repository not found.")
+
+            if repository.owner_organization_id is not None:
+                organization = _lock_organization(
+                    db_session, repository.owner_organization_id
+                )
+                if organization.state != "active":
+                    raise RepositoryNotFoundError("Repository not found.")
+                membership = db_session.scalar(
+                    select(OrganizationMembership)
+                    .where(
+                        OrganizationMembership.organization_id
+                        == repository.owner_organization_id,
+                        OrganizationMembership.user_id == actor_user_id,
+                    )
+                    .with_for_update()
+                )
+                if membership is None or membership.role not in {"owner", "admin"}:
+                    permission = db_session.get(
+                        RepositoryUserPermission,
+                        (repository_id, actor_user_id),
+                    )
+                    if permission is None:
+                        raise RepositoryNotFoundError("Repository not found.")
+            elif repository.owner_user_id != actor_user_id:
+                permission = db_session.get(
+                    RepositoryUserPermission,
+                    (repository_id, actor_user_id),
+                )
+                if permission is None:
+                    raise RepositoryNotFoundError("Repository not found.")
+
+            return _lock_repository(db_session, repository_id)
+    except RepositoryNotFoundError:
+        raise
+    except SQLAlchemyError as exc:
+        raise RepositoryOperationError("Repository access could not be verified.") from exc
+
+
+def get_public_repository_for_access(
+    factory: sessionmaker[Session],
+    repository_id: uuid.UUID,
+) -> Repository:
+    """Return a ready public repository without requiring an authenticated user."""
+    try:
+        with factory() as db_session:
+            repository = db_session.scalar(
+                select(Repository).where(
+                    Repository.id == repository_id,
+                    Repository.visibility == "public",
+                    Repository.lifecycle_state == "ready",
+                )
+            )
+            if repository is None:
+                raise RepositoryNotFoundError("Repository not found.")
+            if repository.owner_organization_id is not None:
+                organization = db_session.get(Organization, repository.owner_organization_id)
+                if organization is None or organization.state != "active":
+                    raise RepositoryNotFoundError("Repository not found.")
+            return repository
+    except RepositoryNotFoundError:
+        raise
+    except SQLAlchemyError as exc:
+        raise RepositoryOperationError("Public repository access could not be verified.") from exc
+
+
+def list_repository_permissions(
+    factory: sessionmaker[Session],
+    repository_id: uuid.UUID,
+    actor_user_id: uuid.UUID,
+) -> list[RepositoryUserPermission]:
+    """List direct user grants for a repository manager."""
+    try:
+        with factory() as db_session:
+            _lock_repository_for_permission_manager(
+                db_session, repository_id, actor_user_id
+            )
+            return list(
+                db_session.scalars(
+                    select(RepositoryUserPermission)
+                    .where(RepositoryUserPermission.repository_id == repository_id)
+                    .order_by(RepositoryUserPermission.created_at, RepositoryUserPermission.user_id)
+                )
+            )
+    except (RepositoryNotFoundError, RepositoryPermissionError):
+        raise
+    except SQLAlchemyError as exc:
+        raise RepositoryOperationError("Repository permissions could not be loaded.") from exc
+
+
+def grant_repository_permission(
+    factory: sessionmaker[Session],
+    repository_id: uuid.UUID,
+    actor_user_id: uuid.UUID,
+    target_user_id: uuid.UUID,
+    *,
+    role: str,
+    request_id: str | None,
+) -> RepositoryUserPermission:
+    """Grant one active user a direct repository role."""
+    _validate_repository_permission_role(role)
+    try:
+        with transactional_session(factory) as db_session:
+            repository = _lock_repository_for_permission_manager(
+                db_session, repository_id, actor_user_id
+            )
+            if repository.owner_user_id == target_user_id:
+                raise RepositoryConflictError("The repository owner already has full access.")
+            target = db_session.scalar(
+                select(User)
+                .where(User.id == target_user_id)
+                .with_for_update()
+            )
+            if target is None or target.account_state != "active":
+                raise RepositoryNotFoundError("User not found.")
+            existing = db_session.get(
+                RepositoryUserPermission,
+                (repository_id, target_user_id),
+            )
+            if existing is not None:
+                raise RepositoryConflictError("A permission for this user already exists.")
+            permission = RepositoryUserPermission(
+                repository_id=repository_id,
+                user_id=target_user_id,
+                role=role,
+                granted_by=actor_user_id,
+            )
+            db_session.add(permission)
+            db_session.flush()
+            db_session.add(
+                _audit_event(
+                    actor_user_id,
+                    "repository.permission_granted",
+                    repository_id,
+                    request_id,
+                    {"user_id": str(target_user_id), "role": role},
+                )
+            )
+            db_session.refresh(permission)
+            return permission
+    except (
+        RepositoryConflictError,
+        RepositoryNotFoundError,
+        RepositoryPermissionError,
+    ):
+        raise
+    except IntegrityError as exc:
+        raise RepositoryConflictError("A permission for this user already exists.") from exc
+    except SQLAlchemyError as exc:
+        raise RepositoryOperationError("Repository permission could not be granted.") from exc
+
+
+def update_repository_permission(
+    factory: sessionmaker[Session],
+    repository_id: uuid.UUID,
+    actor_user_id: uuid.UUID,
+    target_user_id: uuid.UUID,
+    *,
+    role: str,
+    request_id: str | None,
+) -> RepositoryUserPermission:
+    """Change one direct repository role."""
+    _validate_repository_permission_role(role)
+    try:
+        with transactional_session(factory) as db_session:
+            repository = _lock_repository_for_permission_manager(
+                db_session, repository_id, actor_user_id
+            )
+            if repository.owner_user_id == target_user_id:
+                raise RepositoryConflictError("The repository owner already has full access.")
+            permission = db_session.scalar(
+                select(RepositoryUserPermission)
+                .where(
+                    RepositoryUserPermission.repository_id == repository_id,
+                    RepositoryUserPermission.user_id == target_user_id,
+                )
+                .with_for_update()
+            )
+            if permission is None:
+                raise RepositoryNotFoundError("Repository permission not found.")
+            if permission.role != role:
+                permission.role = role
+                db_session.add(
+                    _audit_event(
+                        actor_user_id,
+                        "repository.permission_updated",
+                        repository_id,
+                        request_id,
+                        {"user_id": str(target_user_id), "role": role},
+                    )
+                )
+            db_session.flush()
+            db_session.refresh(permission)
+            return permission
+    except (
+        RepositoryNotFoundError,
+        RepositoryConflictError,
+        RepositoryPermissionError,
+    ):
+        raise
+    except SQLAlchemyError as exc:
+        raise RepositoryOperationError("Repository permission could not be updated.") from exc
+
+
+def revoke_repository_permission(
+    factory: sessionmaker[Session],
+    repository_id: uuid.UUID,
+    actor_user_id: uuid.UUID,
+    target_user_id: uuid.UUID,
+    *,
+    request_id: str | None,
+) -> None:
+    """Revoke one direct repository role."""
+    try:
+        with transactional_session(factory) as db_session:
+            repository = _lock_repository_for_permission_manager(
+                db_session, repository_id, actor_user_id
+            )
+            if repository.owner_user_id == target_user_id:
+                raise RepositoryConflictError("The repository owner already has full access.")
+            permission = db_session.scalar(
+                select(RepositoryUserPermission)
+                .where(
+                    RepositoryUserPermission.repository_id == repository_id,
+                    RepositoryUserPermission.user_id == target_user_id,
+                )
+                .with_for_update()
+            )
+            if permission is None:
+                raise RepositoryNotFoundError("Repository permission not found.")
+            db_session.delete(permission)
+            db_session.add(
+                _audit_event(
+                    actor_user_id,
+                    "repository.permission_revoked",
+                    repository_id,
+                    request_id,
+                    {"user_id": str(target_user_id), "role": permission.role},
+                )
+            )
+    except (
+        RepositoryNotFoundError,
+        RepositoryConflictError,
+        RepositoryPermissionError,
+    ):
+        raise
+    except SQLAlchemyError as exc:
+        raise RepositoryOperationError("Repository permission could not be revoked.") from exc
 
 
 def update_personal_repository(
@@ -682,6 +1085,40 @@ def _require_personal_owner(
 ) -> None:
     if actor_user_id != owner_user_id:
         raise RepositoryNotFoundError("Repository not found.")
+
+
+def _validate_repository_permission_role(role: str) -> None:
+    if role not in {"reader", "writer", "admin"}:
+        raise ValueError("Repository permission role is invalid.")
+
+
+def _lock_repository_for_permission_manager(
+    db_session: Session,
+    repository_id: uuid.UUID,
+    actor_user_id: uuid.UUID,
+) -> Repository:
+    """Lock a repository and authorize its owner or organization manager."""
+    repository = db_session.scalar(
+        select(Repository).where(Repository.id == repository_id)
+    )
+    if repository is None:
+        raise RepositoryNotFoundError("Repository not found.")
+    if repository.owner_organization_id is not None:
+        organization = _lock_organization(db_session, repository.owner_organization_id)
+        _require_active_organization(organization)
+        _lock_authorized_organization_member(
+            db_session, repository.owner_organization_id, actor_user_id
+        )
+    elif repository.owner_user_id is not None:
+        actor = db_session.scalar(
+            select(User).where(User.id == actor_user_id).with_for_update()
+        )
+        if actor is None or actor.account_state != "active":
+            raise RepositoryNotFoundError("Repository not found.")
+        _require_personal_owner(repository.owner_user_id, actor_user_id)
+    else:
+        raise RepositoryOperationError("Repository ownership is inconsistent.")
+    return _lock_repository(db_session, repository_id)
 
 
 def _lock_repository(

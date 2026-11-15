@@ -6,7 +6,7 @@ import os
 import shutil
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -15,16 +15,20 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from commitverse_core.repository import discover_repository, initialize_repository
+from commitverse_core.commits import Commit, CommitIdentity, write_commit
 from commitverse_hub.auth.cookies import AuthCookieSettings
 from commitverse_hub.auth.csrf import generate_csrf_token
 from commitverse_hub.auth.sessions import create_session_record
+from commitverse_hub.auth.tokens import hash_session_token, validate_session_token
 from commitverse_hub.config import Settings
 from commitverse_hub.db.base import Base
 from commitverse_hub.db.models import (
     AuditEvent,
+    Invitation,
     Organization,
     OrganizationMembership,
     Repository,
+    RepositoryUserPermission,
     User,
     UserProfile,
 )
@@ -32,6 +36,7 @@ from commitverse_hub.db.session import transactional_session
 from commitverse_hub.main import create_app
 from commitverse_hub.repositories.service import (
     RepositoryConflictError,
+    RepositoryNotFoundError,
     RepositoryOperationError,
     RepositoryPermissionError,
     create_organization_repository,
@@ -42,11 +47,19 @@ from commitverse_hub.repositories.service import (
     list_personal_repositories,
     update_personal_repository,
 )
+from commitverse_hub.repositories.invitations import (
+    accept_repository_invitation,
+    create_repository_invitation,
+    revoke_repository_invitation,
+)
 from commitverse_hub.repositories.storage import (
     RepositoryStorageError,
     create_bare_repository,
     delete_bare_repository,
 )
+from commitverse_core.objects.store import write_object
+from commitverse_core.trees import TreeEntry, serialize_tree
+from commitverse_core.refs import write_ref
 
 
 @pytest.fixture
@@ -118,6 +131,14 @@ def _create(client, csrf_token: str, name: str, **fields):
         "/api/v1/repositories",
         headers=_browser_headers(csrf_token),
         json={"name": name, **fields},
+    )
+
+
+def _create_invitation(client, repository_id: str, csrf_token: str, *, email: str, role: str = "reader"):
+    return client.post(
+        f"/api/v1/repositories/{repository_id}/invitations",
+        headers=_browser_headers(csrf_token),
+        json={"target_email": email, "role": role},
     )
 
 
@@ -205,6 +226,77 @@ def test_repository_creation_uses_authenticated_owner_and_core(repository_client
         ) == 1
 
 
+def test_organization_repository_routes_manage_core_backed_storage(repository_client) -> None:
+    organization_id = _create_test_organization(
+        repository_client["factory"], repository_client["user_ids"], second_role="admin"
+    )
+    client = repository_client["client"]
+    csrf = repository_client["csrf_tokens"][0]
+    base_path = f"/api/v1/organizations/{organization_id}/repositories"
+
+    created = client.post(
+        base_path,
+        headers=_browser_headers(csrf),
+        json={"name": "shared-repo", "description": "shared", "visibility": "private"},
+    )
+    assert created.status_code == 201
+    repository_id = created.json()["id"]
+    assert created.json()["name"] == "shared-repo"
+
+    listed = client.get(base_path)
+    assert listed.status_code == 200
+    assert listed.json()["total"] == 1
+    assert listed.json()["items"][0]["id"] == repository_id
+
+    detail_path = f"{base_path}/{repository_id}"
+    detail = client.get(detail_path)
+    assert detail.status_code == 200
+    assert detail.json()["description"] == "shared"
+
+    updated = client.patch(
+        detail_path,
+        headers=_browser_headers(csrf),
+        json={"name": "shared-renamed", "description": None, "visibility": "public"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["name"] == "shared-renamed"
+    assert updated.json()["description"] is None
+    assert updated.json()["visibility"] == "public"
+
+    with repository_client["factory"]() as db_session:
+        repository = db_session.get(Repository, uuid.UUID(repository_id))
+        assert repository is not None
+        storage_path = repository_client["storage_root"] / f"{repository.storage_key}.git"
+        assert discover_repository(storage_path).bare
+
+    deleted = client.delete(detail_path, headers=_browser_headers(csrf))
+    assert deleted.status_code == 204
+    assert not storage_path.exists()
+
+
+def test_organization_repository_routes_do_not_grant_member_visibility(repository_client) -> None:
+    organization_id = _create_test_organization(
+        repository_client["factory"], repository_client["user_ids"], second_role="member"
+    )
+    client = repository_client["client"]
+    csrf = repository_client["csrf_tokens"][0]
+    base_path = f"/api/v1/organizations/{organization_id}/repositories"
+    created = client.post(
+        base_path,
+        headers=_browser_headers(csrf),
+        json={"name": "owner-only-repo"},
+    )
+    assert created.status_code == 201
+
+    client.cookies.set(
+        repository_client["settings"].auth_cookie.name,
+        repository_client["session_tokens"][1],
+    )
+    member_list = client.get(base_path)
+    assert member_list.status_code == 403
+    assert member_list.json()["error"]["code"] == "repository_permission_denied"
+
+
 def test_repository_listing_paginates_and_hides_other_users(repository_client) -> None:
     client = repository_client["client"]
     csrf = repository_client["csrf_tokens"][0]
@@ -229,6 +321,652 @@ def test_repository_listing_paginates_and_hides_other_users(repository_client) -
     assert other_user.status_code == 200
     assert other_user.json()["items"] == []
     assert other_user.json()["total"] == 0
+
+
+def test_repository_direct_permissions_are_owner_managed_and_audited(repository_client) -> None:
+    client = repository_client["client"]
+    csrf = repository_client["csrf_tokens"][0]
+    target_user_id = str(repository_client["user_ids"][1])
+    created = _create(client, csrf, "permissioned-repo")
+    assert created.status_code == 201
+    repository_id = created.json()["id"]
+    permissions_path = f"/api/v1/repositories/{repository_id}/permissions"
+
+    assert client.get(permissions_path).json() == []
+    granted = client.post(
+        permissions_path,
+        headers=_browser_headers(csrf),
+        json={"user_id": target_user_id, "role": "reader"},
+    )
+    assert granted.status_code == 201
+    assert granted.json()["user_id"] == target_user_id
+    assert granted.json()["role"] == "reader"
+
+    duplicate = client.post(
+        permissions_path,
+        headers=_browser_headers(csrf),
+        json={"user_id": target_user_id, "role": "writer"},
+    )
+    assert duplicate.status_code == 409
+    assert duplicate.json()["error"]["code"] == "repository_conflict"
+
+    updated = client.patch(
+        f"{permissions_path}/{target_user_id}",
+        headers=_browser_headers(csrf),
+        json={"role": "admin"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["role"] == "admin"
+
+    revoked = client.delete(
+        f"{permissions_path}/{target_user_id}",
+        headers=_browser_headers(csrf),
+    )
+    assert revoked.status_code == 204
+    assert client.get(permissions_path).json() == []
+
+    with repository_client["factory"]() as db_session:
+        audit_actions = db_session.scalars(
+            select(AuditEvent.action).where(
+                AuditEvent.target_id == repository_id,
+                AuditEvent.action.like("repository.permission_%"),
+            )
+        ).all()
+    assert audit_actions == [
+        "repository.permission_granted",
+        "repository.permission_updated",
+        "repository.permission_revoked",
+    ]
+
+
+def test_repository_invitation_http_lifecycle_is_private_email_bound_and_audited(
+    repository_client,
+) -> None:
+    client = repository_client["client"]
+    owner_id, invited_user_id = repository_client["user_ids"]
+    owner_csrf, invited_user_csrf = repository_client["csrf_tokens"]
+    created = _create(client, owner_csrf, "invitation-lifecycle")
+    assert created.status_code == 201
+    repository_id = created.json()["id"]
+    invitations_path = f"/api/v1/repositories/{repository_id}/invitations"
+
+    issued = _create_invitation(
+        client,
+        repository_id,
+        owner_csrf,
+        email="  REPO-USER-1@EXAMPLE.TEST ",
+        role="writer",
+    )
+    assert issued.status_code == 201
+    created_payload = issued.json()
+    token = created_payload["token"]
+    invitation_id = created_payload["id"]
+    assert validate_session_token(token)
+    assert created_payload["target_email"] == "repo-user-1@example.test"
+    assert created_payload["role"] == "writer"
+
+    with repository_client["factory"]() as db_session:
+        invitation = db_session.get(Invitation, uuid.UUID(invitation_id))
+        assert invitation is not None
+        assert invitation.token_hash == hash_session_token(token)
+        assert invitation.token_hash != token
+        assert len(invitation.token_hash) == 64
+
+    listed = client.get(invitations_path)
+    assert listed.status_code == 200
+    listed_payload = listed.json()
+    assert listed_payload["total"] == 1
+    assert len(listed_payload["items"]) == 1
+    assert listed_payload["items"][0] == {
+        "id": invitation_id,
+        "target_email": "repo-user-1@example.test",
+        "role": "writer",
+        "status": "pending",
+        "expires_at": created_payload["expires_at"],
+        "created_at": created_payload["created_at"],
+    }
+    assert "token" not in listed_payload["items"][0]
+    assert "token_hash" not in listed_payload["items"][0]
+    assert token not in listed.text
+
+    duplicate = _create_invitation(
+        client,
+        repository_id,
+        owner_csrf,
+        email="repo-user-1@example.test",
+    )
+    assert duplicate.status_code == 409
+    assert duplicate.json()["error"]["message"] == (
+        "Invitation conflicts with existing repository access or invitation."
+    )
+    assert "repo-user-1@example.test" not in duplicate.text
+    assert token not in duplicate.text
+    invalid_email = _create_invitation(
+        client,
+        repository_id,
+        owner_csrf,
+        email="not-an-email",
+    )
+    assert invalid_email.status_code == 422
+    assert "not-an-email" not in invalid_email.text
+
+    client.cookies.set(
+        repository_client["settings"].auth_cookie.name,
+        repository_client["session_tokens"][1],
+    )
+    unauthorized_list = client.get(invitations_path)
+    assert unauthorized_list.status_code == 404
+    assert "repo-user-1@example.test" not in unauthorized_list.text
+    unauthorized_revoke = client.delete(
+        f"{invitations_path}/{invitation_id}",
+        headers=_browser_headers(invited_user_csrf),
+    )
+    assert unauthorized_revoke.status_code == 404
+    assert "repo-user-1@example.test" not in unauthorized_revoke.text
+    unauthorized_create = _create_invitation(
+        client,
+        repository_id,
+        invited_user_csrf,
+        email="unauthorized@example.test",
+    )
+    assert unauthorized_create.status_code == 404
+    assert "unauthorized@example.test" not in unauthorized_create.text
+    missing_accept_csrf = client.post(
+        f"/api/v1/repositories/invitations/{token}/accept",
+        headers={"Origin": "https://hub.example.test"},
+    )
+    assert missing_accept_csrf.status_code == 403
+    assert token not in missing_accept_csrf.text
+
+    accepted = client.post(
+        f"/api/v1/repositories/invitations/{token}/accept",
+        headers=_browser_headers(invited_user_csrf),
+    )
+    assert accepted.status_code == 200
+    assert accepted.json() == {"repository_id": repository_id, "role": "writer"}
+    replayed = client.post(
+        f"/api/v1/repositories/invitations/{token}/accept",
+        headers=_browser_headers(invited_user_csrf),
+    )
+    assert replayed.status_code == 404
+    assert token not in replayed.text
+
+    with repository_client["factory"]() as db_session:
+        permission = db_session.get(
+            RepositoryUserPermission,
+            (uuid.UUID(repository_id), invited_user_id),
+        )
+        invitation = db_session.get(Invitation, uuid.UUID(invitation_id))
+        assert permission is not None
+        assert permission.role == "writer"
+        assert permission.granted_by == owner_id
+        assert invitation is not None
+        assert invitation.status == "accepted"
+        assert invitation.accepted_at is not None
+        events = db_session.scalars(
+            select(AuditEvent).where(
+                AuditEvent.target_id == repository_id,
+                AuditEvent.action.in_(
+                    ["repository.invitation_created", "repository.invitation_accepted"]
+                ),
+            )
+        ).all()
+    assert {
+        event.action: event.event_metadata for event in events
+    } == {
+        "repository.invitation_created": {
+            "invitation_id": invitation_id,
+            "role": "writer",
+        },
+        "repository.invitation_accepted": {
+            "invitation_id": invitation_id,
+            "role": "writer",
+        },
+    }
+
+    client.cookies.set(
+        repository_client["settings"].auth_cookie.name,
+        repository_client["session_tokens"][0],
+    )
+    mismatched_email = "not-the-invited-user@example.test"
+    mismatched = _create_invitation(
+        client,
+        repository_id,
+        owner_csrf,
+        email=mismatched_email,
+    )
+    assert mismatched.status_code == 201
+    mismatch_token = mismatched.json()["token"]
+    client.cookies.set(
+        repository_client["settings"].auth_cookie.name,
+        repository_client["session_tokens"][1],
+    )
+    mismatch_response = client.post(
+        f"/api/v1/repositories/invitations/{mismatch_token}/accept",
+        headers=_browser_headers(invited_user_csrf),
+    )
+    assert mismatch_response.status_code == 403
+    assert mismatched_email not in mismatch_response.text
+    assert mismatch_token not in mismatch_response.text
+
+    client.cookies.set(
+        repository_client["settings"].auth_cookie.name,
+        repository_client["session_tokens"][0],
+    )
+    revoked = client.delete(
+        f"{invitations_path}/{mismatched.json()['id']}",
+        headers=_browser_headers(owner_csrf),
+    )
+    assert revoked.status_code == 204
+    client.cookies.set(
+        repository_client["settings"].auth_cookie.name,
+        repository_client["session_tokens"][1],
+    )
+    revoked_response = client.post(
+        f"/api/v1/repositories/invitations/{mismatch_token}/accept",
+        headers=_browser_headers(invited_user_csrf),
+    )
+    assert revoked_response.status_code == 404
+    assert mismatch_token not in revoked_response.text
+
+    client.cookies.set(
+        repository_client["settings"].auth_cookie.name,
+        repository_client["session_tokens"][0],
+    )
+    already_has_access = _create_invitation(
+        client,
+        repository_id,
+        owner_csrf,
+        email="repo-user-1@example.test",
+    )
+    assert already_has_access.status_code == 409
+
+
+def test_repository_invitations_reject_invalid_mismatched_revoked_expired_and_unready(
+    repository_client,
+) -> None:
+    factory = repository_client["factory"]
+    owner_id, invited_user_id = repository_client["user_ids"]
+    client = repository_client["client"]
+    owner_csrf, _ = repository_client["csrf_tokens"]
+    created = _create(client, owner_csrf, "invitation-validation")
+    assert created.status_code == 201
+    repository_id = uuid.UUID(created.json()["id"])
+
+    revoked = create_repository_invitation(
+        factory,
+        repository_id,
+        owner_id,
+        target_email="repo-user-1@example.test",
+        role="admin",
+        expires_in_days=7,
+        request_id="repository-invite-revoked",
+    )
+    with pytest.raises(RepositoryPermissionError):
+        accept_repository_invitation(
+            factory,
+            revoked.token,
+            owner_id,
+            request_id="repository-invite-mismatch",
+        )
+    with factory() as db_session:
+        stored = db_session.get(Invitation, revoked.invitation.id)
+        assert stored is not None
+        assert stored.status == "pending"
+
+    revoke_repository_invitation(
+        factory,
+        repository_id,
+        owner_id,
+        revoked.invitation.id,
+        request_id="repository-invite-revoke",
+    )
+    with pytest.raises(RepositoryNotFoundError):
+        accept_repository_invitation(
+            factory,
+            revoked.token,
+            invited_user_id,
+            request_id="repository-invite-revoked-accept",
+        )
+    with pytest.raises(RepositoryNotFoundError):
+        accept_repository_invitation(
+            factory,
+            "malformed-token",
+            invited_user_id,
+            request_id="repository-invite-malformed",
+        )
+
+    expired = create_repository_invitation(
+        factory,
+        repository_id,
+        owner_id,
+        target_email="expired-invite@example.test",
+        role="reader",
+        expires_in_days=7,
+        request_id="repository-invite-expired",
+    )
+    with transactional_session(factory) as db_session:
+        stored = db_session.get(Invitation, expired.invitation.id)
+        assert stored is not None
+        stored.created_at = datetime.now(UTC) - timedelta(days=3)
+        stored.expires_at = datetime.now(UTC) - timedelta(days=1)
+    with pytest.raises(RepositoryNotFoundError):
+        accept_repository_invitation(
+            factory,
+            expired.token,
+            invited_user_id,
+            request_id="repository-invite-expired-accept",
+        )
+    with factory() as db_session:
+        stored = db_session.get(Invitation, expired.invitation.id)
+        assert stored is not None
+        assert stored.status == "expired"
+        assert stored.accepted_at is None
+
+    unavailable = create_repository_invitation(
+        factory,
+        repository_id,
+        owner_id,
+        target_email="repo-user-1@example.test",
+        role="reader",
+        expires_in_days=7,
+        request_id="repository-invite-lifecycle",
+    )
+    with transactional_session(factory) as db_session:
+        repository = db_session.get(Repository, repository_id)
+        assert repository is not None
+        repository.lifecycle_state = "deleting"
+    with pytest.raises(RepositoryNotFoundError):
+        accept_repository_invitation(
+            factory,
+            unavailable.token,
+            invited_user_id,
+            request_id="repository-invite-unready",
+        )
+    with factory() as db_session:
+        stored = db_session.get(Invitation, unavailable.invitation.id)
+        assert stored is not None
+        assert stored.status == "pending"
+    with transactional_session(factory) as db_session:
+        repository = db_session.get(Repository, repository_id)
+        assert repository is not None
+        repository.lifecycle_state = "ready"
+    permission = accept_repository_invitation(
+        factory,
+        unavailable.token,
+        invited_user_id,
+        request_id="repository-invite-ready",
+    )
+    assert permission.role == "reader"
+
+    pending_delete = create_repository_invitation(
+        factory,
+        repository_id,
+        owner_id,
+        target_email="pending-deletion@example.test",
+        role="reader",
+        expires_in_days=7,
+        request_id="repository-invite-pending-delete",
+    )
+    with transactional_session(factory) as db_session:
+        repository = db_session.get(Repository, repository_id)
+        assert repository is not None
+        repository.lifecycle_state = "deleting"
+    with pytest.raises(RepositoryNotFoundError):
+        create_repository_invitation(
+            factory,
+            repository_id,
+            owner_id,
+            target_email="cannot-invite@example.test",
+            role="reader",
+            expires_in_days=7,
+            request_id="repository-invite-create-deleting",
+        )
+    with pytest.raises(RepositoryNotFoundError):
+        accept_repository_invitation(
+            factory,
+            pending_delete.token,
+            invited_user_id,
+            request_id="repository-invite-accept-deleting",
+        )
+    with factory() as db_session:
+        stored = db_session.get(Invitation, pending_delete.invitation.id)
+        assert stored is not None
+        assert stored.status == "pending"
+
+
+def test_repository_invitation_mutations_require_origin_and_csrf(repository_client) -> None:
+    client = repository_client["client"]
+    csrf = repository_client["csrf_tokens"][0]
+    created = _create(client, csrf, "invitation-csrf")
+    assert created.status_code == 201
+    repository_id = created.json()["id"]
+    invitations_path = f"/api/v1/repositories/{repository_id}/invitations"
+
+    missing_origin = client.post(
+        invitations_path,
+        json={"target_email": "csrf@example.test", "role": "reader"},
+    )
+    assert missing_origin.status_code == 403
+    missing_csrf = client.post(
+        invitations_path,
+        headers={"Origin": "https://hub.example.test"},
+        json={"target_email": "csrf@example.test", "role": "reader"},
+    )
+    assert missing_csrf.status_code == 403
+
+    issued = _create_invitation(
+        client, repository_id, csrf, email="csrf@example.test"
+    )
+    assert issued.status_code == 201
+    token = issued.json()["token"]
+    invitation_id = issued.json()["id"]
+    missing_revoke_origin = client.delete(f"{invitations_path}/{invitation_id}")
+    assert missing_revoke_origin.status_code == 403
+    missing_revoke_csrf = client.delete(
+        f"{invitations_path}/{invitation_id}",
+        headers={"Origin": "https://hub.example.test"},
+    )
+    assert missing_revoke_csrf.status_code == 403
+    missing_accept_origin = client.post(
+        f"/api/v1/repositories/invitations/{token}/accept",
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert missing_accept_origin.status_code == 403
+    assert token not in missing_accept_origin.text
+
+    revoked = client.delete(
+        f"{invitations_path}/{invitation_id}",
+        headers=_browser_headers(csrf),
+    )
+    assert revoked.status_code == 204
+    with repository_client["factory"]() as db_session:
+        audit_event = db_session.scalar(
+            select(AuditEvent).where(
+                AuditEvent.target_id == repository_id,
+                AuditEvent.action == "repository.invitation_revoked",
+            )
+        )
+    assert audit_event is not None
+    assert audit_event.event_metadata == {"invitation_id": invitation_id}
+    with pytest.raises(RepositoryNotFoundError):
+        accept_repository_invitation(
+            repository_client["factory"],
+            token,
+            repository_client["user_ids"][1],
+            request_id="repository-invite-csrf-revoked",
+        )
+
+
+def test_repository_direct_permissions_do_not_grant_management_to_recipient(repository_client) -> None:
+    client = repository_client["client"]
+    csrf = repository_client["csrf_tokens"][0]
+    target_user_id = str(repository_client["user_ids"][1])
+    created = _create(client, csrf, "permission-management-boundary")
+    assert created.status_code == 201
+    repository_id = created.json()["id"]
+    permissions_path = f"/api/v1/repositories/{repository_id}/permissions"
+    granted = client.post(
+        permissions_path,
+        headers=_browser_headers(csrf),
+        json={"user_id": target_user_id, "role": "writer"},
+    )
+    assert granted.status_code == 201
+
+    client.cookies.set(
+        repository_client["settings"].auth_cookie.name,
+        repository_client["session_tokens"][1],
+    )
+    recipient_list = client.get(permissions_path)
+    assert recipient_list.status_code == 404
+    assert recipient_list.json()["error"]["code"] == "repository_not_found"
+
+
+def test_repository_browse_requires_effective_access_and_reads_core_objects(repository_client) -> None:
+    client = repository_client["client"]
+    csrf = repository_client["csrf_tokens"][0]
+    target_user_id = str(repository_client["user_ids"][1])
+    created = _create(client, csrf, "browse-repo")
+    assert created.status_code == 201
+    repository_id = created.json()["id"]
+    with repository_client["factory"]() as db_session:
+        repository = db_session.get(Repository, uuid.UUID(repository_id))
+        assert repository is not None
+        storage_path = repository_client["storage_root"] / f"{repository.storage_key}.git"
+
+    core_repository = discover_repository(storage_path)
+    readme_id = write_object(core_repository.objects_dir, "blob", b"Hello CommitVerse\n")
+    nested_id = write_object(core_repository.objects_dir, "blob", b"nested content\n")
+    nested_tree_id = write_object(
+        core_repository.objects_dir,
+        "tree",
+        serialize_tree((TreeEntry("100644", b"note.txt", nested_id),)),
+    )
+    root_tree_id = write_object(
+        core_repository.objects_dir,
+        "tree",
+        serialize_tree(
+            (
+                TreeEntry("100644", b"README.md", readme_id),
+                TreeEntry("40000", b"docs", nested_tree_id),
+            )
+        ),
+    )
+    identity = CommitIdentity("CommitVerse Test", "test@example.test", 1_700_000_000, 0)
+    commit_id = write_commit(
+        core_repository.objects_dir,
+        Commit(root_tree_id, (), identity, identity, b"Initial browser snapshot\n"),
+    )
+    write_ref(core_repository, "refs/heads/main", commit_id)
+    write_ref(core_repository, "refs/heads/feature/docs", commit_id)
+    write_ref(core_repository, "refs/tags/v1.0.0", commit_id)
+
+    base_path = f"/api/v1/repositories/{repository_id}"
+    refs = client.get(f"{base_path}/refs")
+    assert refs.status_code == 200
+    assert [(item["kind"], item["name"]) for item in refs.json()["refs"]] == [
+        ("branch", "feature/docs"),
+        ("branch", "main"),
+        ("tag", "v1.0.0"),
+    ]
+    tree = client.get(f"{base_path}/tree")
+    assert tree.status_code == 200
+    assert tree.json()["commit_id"] == commit_id
+    assert {entry["name"] for entry in tree.json()["entries"]} == {"README.md", "docs"}
+
+    nested_tree = client.get(f"{base_path}/tree", params={"path": "docs"})
+    assert nested_tree.status_code == 200
+    assert nested_tree.json()["entries"][0]["name"] == "note.txt"
+    blob = client.get(f"{base_path}/blob", params={"path": "README.md"})
+    assert blob.status_code == 200
+    assert blob.json()["content"] == "Hello CommitVerse\n"
+    history = client.get(f"{base_path}/commits")
+    assert history.status_code == 200
+    assert history.json()["commits"][0]["object_id"] == commit_id
+    detail = client.get(f"{base_path}/commits/{commit_id}")
+    assert detail.status_code == 200
+    assert detail.json()["tree_id"] == root_tree_id
+    assert detail.json()["message"] == "Initial browser snapshot\n"
+    unreachable = client.get(f"{base_path}/commits/{'f' * 40}")
+    assert unreachable.status_code == 404
+    selected = client.get(f"{base_path}/tree", params={"ref": "refs/tags/v1.0.0"})
+    assert selected.status_code == 200
+    assert selected.json()["commit_id"] == commit_id
+    invalid_ref = client.get(f"{base_path}/tree", params={"ref": "refs/remotes/origin/main"})
+    assert invalid_ref.status_code == 404
+
+    updated_readme_id = write_object(core_repository.objects_dir, "blob", b"Updated CommitVerse\n")
+    updated_root_tree_id = write_object(
+        core_repository.objects_dir,
+        "tree",
+        serialize_tree(
+            (
+                TreeEntry("100644", b"README.md", updated_readme_id),
+                TreeEntry("40000", b"docs", nested_tree_id),
+            )
+        ),
+    )
+    updated_commit_id = write_commit(
+        core_repository.objects_dir,
+        Commit(updated_root_tree_id, (commit_id,), identity, identity, b"Update README\n"),
+    )
+    write_ref(core_repository, "refs/heads/main", updated_commit_id)
+    diff = client.get(f"{base_path}/commits/{updated_commit_id}/diff")
+    assert diff.status_code == 200
+    assert diff.json()["base_commit_id"] == commit_id
+    assert diff.json()["files"][0]["path"] == "README.md"
+    assert "-Hello CommitVerse" in diff.json()["files"][0]["patch"]
+    assert "+Updated CommitVerse" in diff.json()["files"][0]["patch"]
+
+    traversal = client.get(f"{base_path}/blob", params={"path": "../README.md"})
+    assert traversal.status_code == 404
+
+    client.cookies.set(
+        repository_client["settings"].auth_cookie.name,
+        repository_client["session_tokens"][1],
+    )
+    denied = client.get(f"{base_path}/tree")
+    assert denied.status_code == 404
+
+    client.cookies.set(
+        repository_client["settings"].auth_cookie.name,
+        repository_client["session_tokens"][0],
+    )
+    granted = client.post(
+        f"{base_path}/permissions",
+        headers=_browser_headers(csrf),
+        json={"user_id": target_user_id, "role": "reader"},
+    )
+    assert granted.status_code == 201
+    client.cookies.set(
+        repository_client["settings"].auth_cookie.name,
+        repository_client["session_tokens"][1],
+    )
+    permitted = client.get(f"{base_path}/tree")
+    assert permitted.status_code == 200
+
+    client.cookies.delete(repository_client["settings"].auth_cookie.name)
+    anonymous_private = client.get(f"{base_path}/tree")
+    assert anonymous_private.status_code == 404
+    made_public = client.patch(
+        base_path,
+        headers=_browser_headers(csrf),
+        json={"visibility": "public"},
+    )
+    assert made_public.status_code == 401
+    client.cookies.set(
+        repository_client["settings"].auth_cookie.name,
+        repository_client["session_tokens"][0],
+    )
+    made_public = client.patch(
+        base_path,
+        headers=_browser_headers(csrf),
+        json={"visibility": "public"},
+    )
+    assert made_public.status_code == 200
+    client.cookies.delete(repository_client["settings"].auth_cookie.name)
+    anonymous_public = client.get(f"{base_path}/tree")
+    assert anonymous_public.status_code == 200
 
 
 def test_repository_detail_and_updates_require_owner(repository_client) -> None:

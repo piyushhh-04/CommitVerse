@@ -13,8 +13,22 @@ their own personal repositories; lifecycle operations initialize or remove
 bare repositories through CommitVerse Core.
 The API also supports organization metadata creation/list/detail/update and
 organization membership listing, addition, role changes, removal, leaving, and
-ownership transfer. Invitations and organization-owned repository HTTP routes
-are not implemented.
+ownership transfer. Organization owners and admins can also create, list,
+inspect, update, and delete organization-owned repository metadata through
+Core-backed HTTP routes. Authenticated users can update their username, display
+name, and bio through the CSRF-protected `/api/v1/me` profile route. Repository
+owners and organization owners/admins can manage direct user permission grants
+through repository permission routes. Authenticated repository content browsing
+is implemented for bounded tree, blob, commit-history, commit-detail, and
+first-parent diff reads from HEAD, local branches, and direct-commit tags.
+Anonymous browsing is supported only for ready public repositories; private
+repositories remain non-enumerable. Organization and repository invitation
+issuance, listing, revocation, and authenticated email-bound acceptance are
+implemented. Invitation tokens are returned only at creation and stored as
+hashes; email delivery and repository-invitation frontend workflows are not
+implemented. Advanced diff workflows remain future work. The authenticated
+user directory exposes only active username/display-name prefix matches and
+never returns email addresses.
 
 ## Requirements
 
@@ -231,13 +245,20 @@ Core repository contents:
 - `DELETE /api/v1/repositories/{repository_id}` removes the verified bare
   repository and retains a metadata tombstone.
 
-Every route requires a valid active browser session. Mutations also require
+Metadata and mutation routes require a valid active browser session. Browse
+routes allow anonymous access only after verifying public repository visibility.
+Mutations also require
 the exact allow-listed `Origin` and a session-bound `X-CSRF-Token`. Responses
-never include a filesystem path or storage key. `public` is currently only a
-metadata setting; anonymous reads and repository browsing are not implemented.
-The shared repository lifecycle service also supports organization-owned
-repository creation/deletion for current organization owners and admins, but
-organization repository HTTP routes are not implemented.
+never include a filesystem path or storage key. `public` repositories support
+anonymous read-only browsing when ready; private repositories require
+authorization. Authorized users can
+read the current HEAD tree, bounded text blobs, and recent commit history.
+Organization repository routes support create/list/detail/update/delete for
+current organization owners and admins. Ordinary organization membership does
+not imply repository visibility; direct grant management is restricted to
+repository managers. Authorized browsing supports HEAD, validated local
+branches/tags, bounded trees/blobs/history, and reachable commit details; diff
+browsing remains future work.
 
 The storage root is created with private permissions when needed. Repository
 creation publishes a verified Core bare repository from a temporary sibling
@@ -268,17 +289,17 @@ before membership and user rows; multi-user operations acquire user rows in
 ascending UUID order. The organization state values are `active` and `disabled`;
 disabled organizations remain readable to members but reject mutations.
 Disable/enable operations and terminal organization deletion are not
-implemented. Membership addition requires an existing user ID; user discovery
-and invitations are not included.
+implemented. Direct membership addition requires an existing user ID; the
+organization invitation API separately supports email-bound invitations.
 
 Hub has no account-deactivation workflow. The active-owner invariant applies
 to organization mutations using this locking protocol; independent account
 state changes that bypass it are not covered. Any future account-deactivation
 workflow must coordinate with organization ownership changes.
 
-Organization-owned repository creation and deletion remain service-level
-operations. They do not add organization repository HTTP routes. No ordinary
-organization member receives implicit repository access.
+Organization-owned repository creation, listing, metadata updates, and deletion
+use the shared lifecycle service through HTTP routes. No ordinary organization
+member receives implicit repository access.
 
 ## Tests
 
@@ -323,11 +344,13 @@ substitute for the historical PostgreSQL verification of initial revision
 
 ## Current limitations
 
-Organization metadata and membership APIs are implemented, but invitations,
-user discovery, organization-owned repository HTTP routes, direct repository
-grants, anonymous public reads, repository browsing, automated reconciliation,
-cross-process repository coordination, network Git protocols, authenticated
-frontend workflows, and deployment are not implemented. There are no
+Organization metadata, membership, owner/admin organization-repository metadata,
+direct grant management, and bounded authorized repository browsing APIs are
+implemented for HEAD, validated local branches/tags, and reachable commit
+details. Repository invitation APIs are implemented without email delivery or
+web issue/list/revoke/accept workflows. Advanced diff browsing,
+automated reconciliation, cross-process repository
+coordination, network Git protocols, and deployment are not implemented. There are no
 configured rate limits or production backup/restore procedures. Local
 PostgreSQL validation does not establish cloud deployment readiness; hosting
 and repository storage remain subject to the project's strict ₹0 policy.

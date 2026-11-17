@@ -19,10 +19,12 @@ manipulation, symlink attacks, concurrent requests, partial database/filesystem
 failures, and accidental exposure through logs or API errors.
 
 Historical PostgreSQL 17.11 migration verification covered initial revision
-`40037b3edad7` only. The current source migration head is `a7d4d1d1f7ed`,
-and PostgreSQL verification of that head is not recorded. PostgreSQL
-organization concurrency tests require `HUB_TEST_DATABASE_URL`; without it,
-PostgreSQL row-lock and last-owner concurrency remain unverified.
+`40037b3edad7`. During final release-readiness verification, current head
+`a7d4d1d1f7ed` was applied to an isolated local PostgreSQL 17.11 database, and
+the session, repository lifecycle, organization owner-concurrency and
+lock-order, invitation single-use, and repository-lifecycle rechecks after
+lock waits passed for the exercised cases. This does not establish hosted,
+multi-host, or untested concurrency behavior.
 
 Trust boundaries:
 
@@ -120,14 +122,29 @@ Revisit only for a concrete client/integration requirement.
 - Apply request/body/time limits where operations can consume significant
   resources.
 
+The current browser client keeps the session-bound CSRF token in memory and
+restores it through the authenticated current-user request after reload. The
+API middleware sets `Cache-Control: no-store` on all responses. Protected
+frontend queries are scoped to the authenticated user and canceled/cleared on
+identity changes; anonymous public-browse queries use a separate cache
+namespace and omit cookies. These controls do not replace server-side
+authorization.
+
 ## Authorization
 
-The implemented personal repository routes are limited to authenticated
-owners: list/detail/update/delete queries constrain both repository ID and
-`owner_user_id`, require lifecycle state `ready` for normal access, and return
-the same not-found response for absent, non-ready, and other-owner records.
-Every repository mutation also enforces CSRF/Origin. Public visibility is
-metadata only; it does not enable anonymous access.
+The implemented personal repository management routes are limited to
+authenticated owners: list/detail/update/delete queries constrain both
+repository ID and `owner_user_id`, require lifecycle state `ready` for normal
+access, and return the same not-found response for absent, non-ready, and
+other-owner records. Every repository mutation also enforces CSRF/Origin.
+Ready public repositories additionally allow bounded, anonymous, read-only
+content browsing by repository ID. The public browser omits cookies and does
+not expose a discovery listing or repository name, description, or owner
+metadata. Private browsing requires an authenticated owner, organization
+owner/admin, or direct collaborator grant. Organization members do not
+automatically gain repository access. Direct grants use reader, writer, and
+admin roles; browser-based Git writes and network Git operations are not
+implemented, so a `writer` grant does not imply an available push workflow.
 
 Use deny-by-default service-level authorization for any added operation. Route
 guards and frontend visibility are not sufficient. Organization reads are
@@ -140,10 +157,12 @@ serialized by the organization lock preserve at least one active owner. Hub
 has no account-deactivation workflow; independent account-state changes that
 bypass this protocol are not covered, and any future deactivation workflow
 must coordinate with organization ownership. Direct repository grants and
-organization-owned repository metadata access is restricted to current
-owner/admin routes. Direct grant management and authorization for supported
-HEAD browsing are restricted to repository owners, direct readers, and
-organization owners/admins; future advanced content authorization must follow the rules in
+organization-owned repository metadata access are restricted to current
+owner/admin routes. Direct grant management is restricted to repository
+owners and organization owners/admins. Supported browsing of HEAD, validated
+local branches, and direct-commit tags is available to repository owners,
+organization owners/admins, and users with a direct collaborator grant;
+future advanced content authorization must follow the rules in
 [`database-design.md`](database-design.md#ownership-and-effective-authorization).
 Check lifecycle state and authorization before opening a repository through
 Core. Never trust a client-supplied repository path, owner, or role.
@@ -179,6 +198,15 @@ audit access and define retention before production.
 Return stable external error codes and generic path-independent messages.
 Keep detailed exceptions in access-controlled logs; do not expose local paths,
 SQL, stack traces, object contents, or secret values.
+
+Invitation acceptance URLs contain bearer tokens in path segments. The
+application request middleware logs route templates rather than raw paths,
+and Uvicorn access logging is disabled in the application and browser API test
+server. No production reverse-proxy, gateway, CDN, or hosted deployment
+configuration is checked in or verified; the Vite proxy is for local
+development only. Any external production layer must redact token-bearing
+path segments before access logs, traces, analytics, or error reports are
+stored; operators must not record raw invitation tokens.
 
 ## Repository filesystem isolation
 
@@ -230,12 +258,16 @@ authorization revalidation, lock ordering, provisioning/publication/cleanup
 failures, retry behavior, idempotent cleanup, path/symlink rejection, and
 audit transitions. Multi-user organization mutations acquire user rows in
 ascending UUID order after locking the existing organization and relevant
-memberships.
-The PostgreSQL concurrent-owner test is conditional on
-`HUB_TEST_DATABASE_URL`; without that configuration, last-owner concurrency
-has not been verified against PostgreSQL. The cross-organization multi-user
-lock-order test uses the same conditional database configuration. SQLite does
-not enforce row locks.
+memberships. Final release-readiness verification passed the PostgreSQL
+session-lifecycle, repository-lifecycle, concurrent-owner, cross-organization
+lock-order, concurrent single-use invitation-acceptance, and repository
+lifecycle recheck after a lock wait tests against an isolated local PostgreSQL
+17.11 database. These results verify only the exercised cases; SQLite does not
+enforce row locks, and deployment-specific storage or multi-host behavior
+remains unverified.
+
+These PostgreSQL tests are conditional on `HUB_TEST_DATABASE_URL`. Use a
+dedicated test database, never a development or production database.
 Multi-process database/filesystem coordination, automated stale-state
 reconciliation, and bounded execution remain unverified/unimplemented.
 

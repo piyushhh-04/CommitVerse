@@ -1,7 +1,13 @@
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client";
+import {
+  getProtectedQueryIdentityGeneration,
+  isProtectedQueryIdentity,
+  protectedQueryKey,
+} from "../app/protectedQueryCache";
+import { useAuth } from "../auth/AuthContext";
 import { acceptOrganizationInvitation } from "../api/organizations";
 
 function asApiError(error: unknown): ApiError {
@@ -16,12 +22,18 @@ function asApiError(error: unknown): ApiError {
 }
 
 export function InvitationAcceptancePage() {
+  const auth = useAuth();
+  const userId = auth.status === "authenticated" ? auth.user.id : "";
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [token, setToken] = useState("");
   const mutation = useMutation({
-    mutationFn: () => acceptOrganizationInvitation(token.trim()),
+    mutationKey: protectedQueryKey(userId, "organization-invitations", "mutation", "accept"),
+    mutationFn: ({ invitationToken }: { invitationToken: string; identityGeneration: number }) =>
+      acceptOrganizationInvitation(invitationToken),
     retry: false,
-    onSuccess: (result) => {
+    onSuccess: (result, variables: { invitationToken: string; identityGeneration: number }) => {
+      if (!isProtectedQueryIdentity(queryClient, userId, variables.identityGeneration)) return;
       void navigate(`/app/organizations/${result.organization_id}`);
     },
   });
@@ -61,7 +73,12 @@ export function InvitationAcceptancePage() {
             className="repository-primary-action"
             type="button"
             disabled={!token.trim() || mutation.isPending}
-            onClick={() => mutation.mutate()}
+            onClick={() => {
+              const identityGeneration = getProtectedQueryIdentityGeneration(queryClient, userId);
+              if (identityGeneration !== null) {
+                mutation.mutate({ invitationToken: token.trim(), identityGeneration });
+              }
+            }}
           >
             {mutation.isPending ? "Accepting…" : "Accept invitation"}
           </button>

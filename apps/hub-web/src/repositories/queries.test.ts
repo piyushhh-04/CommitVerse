@@ -1,9 +1,10 @@
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiClient } from "../api/client";
+import { transitionProtectedQueryIdentity } from "../app/protectedQueryCache";
 import type { PersonalRepository, PersonalRepositoryListResponse } from "../api/repositories";
 import {
-  clearPersonalRepositoryState,
+  clearPersonalRepositoryMutationState,
   personalRepositoryDetailQueryOptions,
   personalRepositoryListQueryOptions,
   personalRepositoryMutationClient,
@@ -66,8 +67,9 @@ afterEach(() => {
 describe("personal repository queries", () => {
   it("uses stable keys with user and normalized pagination scope", () => {
     expect(personalRepositoryQueryKeys.list("user-1")).toEqual([
-      "repositories",
+      "protected",
       "user-1",
+      "repositories",
       "list",
       { limit: 50, offset: 0 },
     ]);
@@ -177,7 +179,7 @@ describe("personal repository queries", () => {
     const mutationClient = personalRepositoryMutationClient(queryClient);
     mutationClients.push(mutationClient);
     const listKeyForNextUser = personalRepositoryQueryKeys.list("user-2");
-    const unrelatedMutation = queryClient.getMutationCache().build(queryClient, {
+    queryClient.getMutationCache().build(queryClient, {
       mutationFn: async () => "unrelated",
     });
     const mutation = mutationClient
@@ -186,13 +188,14 @@ describe("personal repository queries", () => {
     const mutationPromise = mutation.execute({ name: repository.name });
     await vi.waitFor(() => expect(resolveResponse).toBeTypeOf("function"));
 
-    await clearPersonalRepositoryState(queryClient, "user-2");
+    await transitionProtectedQueryIdentity(queryClient, "user-2");
+    clearPersonalRepositoryMutationState(queryClient, "user-2");
     queryClient.setQueryData(listKeyForNextUser, emptyList);
     resolveResponse(jsonResponse(repository, 201));
     await expect(mutationPromise).resolves.toEqual(repository);
 
     expect(mutationClient.getMutationCache().getAll()).toHaveLength(0);
-    expect(queryClient.getMutationCache().getAll()).toContain(unrelatedMutation);
+    expect(queryClient.getMutationCache().getAll()).toHaveLength(0);
     expect(queryClient.getQueryState(listKeyForNextUser)?.isInvalidated).toBe(false);
   });
 });

@@ -165,7 +165,7 @@ export function AuthenticatedShell() {
             {logoutError.requestId ? <span>Reference: {logoutError.requestId}</span> : null}
           </div>
         ) : null}
-        <Outlet />
+        <Outlet key={auth.user.id} />
       </div>
     </div>
   );

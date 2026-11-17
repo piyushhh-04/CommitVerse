@@ -53,12 +53,17 @@ export function RepositoriesPage() {
             A considered home for the repositories you manage.
           </p>
         </div>
-        <Link
-          className="repository-primary-action repository-create-link"
-          to="/app/repositories/new"
-        >
-          New repository <span aria-hidden="true">↗</span>
-        </Link>
+        <div className="repository-header-actions">
+          <Link className="repository-secondary-action" to="/app/repositories/invitations/accept">
+            Accept invitation
+          </Link>
+          <Link
+            className="repository-primary-action repository-create-link"
+            to="/app/repositories/new"
+          >
+            New repository <span aria-hidden="true">↗</span>
+          </Link>
+        </div>
       </header>
 
       <aside className="repository-visibility-note">
@@ -66,8 +71,8 @@ export function RepositoriesPage() {
           i
         </span>
         <p>
-          Public visibility applies to repository metadata only. Anonymous repository access is not
-          available.
+          Ready public repositories allow anonymous read-only API access. Browsing in the Hub web
+          app requires sign-in; private repositories remain protected.
         </p>
       </aside>
 
@@ -101,8 +106,9 @@ export function RepositoriesPage() {
           <p className="eyebrow">A clear beginning</p>
           <h2 id="repository-empty-title">Your repositories will live here.</h2>
           <p>
-            Create a personal repository to start organizing your work. Hub currently manages
-            repository metadata; repository contents are not browsable here.
+            Create a personal repository to start organizing your work. Once ready, its contents can
+            be browsed in the signed-in Hub web app; public repositories also allow read-only access
+            through the API.
           </p>
           <Link className="repository-secondary-action" to="/app/repositories/new">
             Create your first repository

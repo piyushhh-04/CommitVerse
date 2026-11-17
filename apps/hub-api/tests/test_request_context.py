@@ -48,11 +48,31 @@ def test_request_log_contains_route_status_and_correlation_id(
         record for record in caplog.records if record.getMessage() == "http_request"
     )
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
     assert record.request_id == "log-check"
     assert record.http_method == "GET"
     assert record.route == "/health"
     assert record.status_code == 200
     assert record.duration_ms >= 0
+
+
+def test_request_log_redacts_invitation_token_paths(app, client, caplog) -> None:
+    caplog.set_level(logging.INFO, logger="commitverse_hub.request")
+    app.add_api_route(
+        "/_test/invitations/{token}",
+        lambda token: {"status": "ok"},
+        methods=["GET"],
+    )
+    token = "sensitive-invitation-token"
+
+    response = client.get(f"/_test/invitations/{token}")
+
+    record = next(
+        record for record in caplog.records if record.getMessage() == "http_request"
+    )
+    assert response.status_code == 200
+    assert record.route == "/_test/invitations/{token}"
+    assert token not in caplog.text
 
 
 def test_request_context_is_isolated_between_concurrent_requests(app) -> None:

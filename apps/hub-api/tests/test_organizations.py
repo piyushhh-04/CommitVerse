@@ -6,12 +6,12 @@ import os
 import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from threading import Barrier
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event, select
+from sqlalchemy import create_engine, event, func, select, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -51,6 +51,7 @@ from commitverse_hub.organizations import (
     transfer_organization_ownership,
     update_organization,
 )
+from commitverse_hub.organizations import invitations as invitation_service
 from commitverse_hub.organizations import memberships as membership_service
 
 
@@ -254,6 +255,50 @@ def test_organization_invitations_are_hashed_single_use_and_email_bound(
         )
 
 
+def test_organization_invitation_accept_reloads_status_after_scope_lock(
+    organization_context,
+    monkeypatch,
+) -> None:
+    context = organization_context
+    organization = _create_organization(context)
+    issued = create_organization_invitation(
+        context["factory"],
+        organization.id,
+        context["users"]["owner"],
+        target_email="other@example.test",
+        role="member",
+        expires_in_days=7,
+        request_id="invitation-lock-recheck",
+    )
+    original_lock = invitation_service._lock_organization
+
+    def revoke_after_scope_lock(db_session, organization_id):
+        locked_organization = original_lock(db_session, organization_id)
+        db_session.execute(
+            update(Invitation)
+            .where(Invitation.id == issued.invitation.id)
+            .values(status="revoked", revoked_at=datetime.now(UTC)),
+            execution_options={"synchronize_session": False},
+        )
+        return locked_organization
+
+    monkeypatch.setattr(invitation_service, "_lock_organization", revoke_after_scope_lock)
+
+    with pytest.raises(OrganizationNotFoundError):
+        accept_organization_invitation(
+            context["factory"],
+            issued.token,
+            context["users"]["other"],
+            request_id="accept-revoked-during-lock",
+        )
+
+    with context["factory"]() as db_session:
+        assert db_session.get(
+            OrganizationMembership,
+            {"organization_id": organization.id, "user_id": context["users"]["other"]},
+        ) is None
+
+
 def test_expired_organization_invitation_status_is_committed(
     organization_context,
 ) -> None:
@@ -291,6 +336,50 @@ def test_expired_organization_invitation_status_is_committed(
             OrganizationMembership,
             {"organization_id": organization.id, "user_id": context["users"]["other"]},
         ) is None
+
+
+def test_expired_organization_invitations_do_not_block_reissue_or_appear_pending(
+    organization_context,
+) -> None:
+    context = organization_context
+    organization = _create_organization(context)
+    stale = create_organization_invitation(
+        context["factory"],
+        organization.id,
+        context["users"]["owner"],
+        target_email="stale-organization-invite@example.test",
+        role="member",
+        expires_in_days=7,
+        request_id="stale-organization-invitation",
+    )
+    with transactional_session(context["factory"]) as db_session:
+        invitation = db_session.get(Invitation, stale.invitation.id)
+        assert invitation is not None
+        invitation.created_at = datetime.now(UTC) - timedelta(days=3)
+        invitation.expires_at = datetime.now(UTC) - timedelta(days=2)
+
+    listed, total = list_organization_invitations(
+        context["factory"],
+        organization.id,
+        context["users"]["owner"],
+        limit=100,
+        offset=0,
+    )
+    assert total == 0
+    assert listed == []
+
+    replacement = create_organization_invitation(
+        context["factory"],
+        organization.id,
+        context["users"]["owner"],
+        target_email="stale-organization-invite@example.test",
+        role="admin",
+        expires_in_days=7,
+        request_id="replacement-organization-invitation",
+    )
+    with context["factory"]() as db_session:
+        assert db_session.get(Invitation, stale.invitation.id).status == "expired"
+        assert db_session.get(Invitation, replacement.invitation.id).status == "pending"
 
 
 def test_disabled_actor_cannot_mutate_organization_or_memberships(
@@ -1207,6 +1296,98 @@ def test_postgresql_opposite_multi_user_mutations_do_not_deadlock() -> None:
         assert _membership(factory, organization_a.id, user_ids[1]).role == "owner"
         assert _membership(factory, organization_b.id, user_ids[1]).role == "admin"
         assert _membership(factory, organization_b.id, user_ids[0]).role == "owner"
+    finally:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+        engine.dispose()
+
+
+def test_postgresql_concurrent_organization_invitation_acceptance_is_single_use() -> None:
+    database_url = os.environ.get("HUB_TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("HUB_TEST_DATABASE_URL is not configured.")
+
+    engine = create_engine(database_url)
+    schema = f"hub_org_invite_{uuid.uuid4().hex}"
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(f'CREATE SCHEMA "{schema}"')
+        scoped_engine = engine.execution_options(
+            schema_translate_map={None: schema}
+        )
+        Base.metadata.create_all(scoped_engine)
+        factory = sessionmaker(
+            bind=scoped_engine,
+            autoflush=False,
+            expire_on_commit=False,
+        )
+        owner_id, invitee_id = uuid.uuid4(), uuid.uuid4()
+        with transactional_session(factory) as db_session:
+            db_session.add_all(
+                [
+                    User(
+                        id=owner_id,
+                        normalized_email="postgres-org-owner@example.test",
+                        password_hash="test-only-placeholder-hash",
+                    ),
+                    User(
+                        id=invitee_id,
+                        normalized_email="postgres-org-invitee@example.test",
+                        password_hash="test-only-placeholder-hash",
+                    ),
+                ]
+            )
+        organization = create_organization(
+            factory,
+            owner_id,
+            slug="postgres-invitation",
+            name="PostgreSQL Invitation",
+            request_id="postgres-invitation-test",
+        )
+        invitation = create_organization_invitation(
+            factory,
+            organization.id,
+            owner_id,
+            target_email="postgres-org-invitee@example.test",
+            role="member",
+            expires_in_days=7,
+            request_id="postgres-invitation-test",
+        )
+        start = Barrier(2)
+
+        def accept() -> bool:
+            start.wait(timeout=10)
+            try:
+                accept_organization_invitation(
+                    factory,
+                    invitation.token,
+                    invitee_id,
+                    request_id="postgres-concurrent-invitation-accept",
+                )
+            except OrganizationNotFoundError:
+                return False
+            return True
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            outcomes = list(executor.map(lambda _index: accept(), range(2)))
+
+        assert sum(outcomes) == 1
+        with factory() as db_session:
+            stored_invitation = db_session.get(Invitation, invitation.invitation.id)
+            assert stored_invitation is not None
+            assert stored_invitation.status == "accepted"
+            membership = db_session.get(
+                OrganizationMembership,
+                {"organization_id": organization.id, "user_id": invitee_id},
+            )
+            assert membership is not None
+            assert membership.role == "member"
+            assert db_session.scalar(
+                select(func.count()).select_from(AuditEvent).where(
+                    AuditEvent.action == "organization.invitation_accepted",
+                    AuditEvent.target_id == str(organization.id),
+                )
+            ) == 1
     finally:
         with engine.begin() as connection:
             connection.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')

@@ -115,10 +115,13 @@ workflows with Core through a narrow in-process adapter. Its API includes
 organization metadata and membership operations with role-based authorization.
 Repository HTTP operations include personal-owner and organization-owner/admin
 metadata lifecycle routes plus manager-controlled direct permission grants;
-HEAD tree/blob/history browsing is implemented for authorized users, with
+bounded tree/blob/history browsing is implemented for authorized users, with
 validated local branch/tag selection, reachable commit details, and bounded
-first-parent diffs; network Git and advanced diff operations are not
-implemented.
+first-parent diffs. Ready public repositories can be browsed anonymously in
+read-only mode by repository ID; public discovery and repository owner/name
+metadata are not exposed. Organization and repository invitation web
+workflows support manual token sharing and authenticated acceptance. Network
+Git and advanced diff operations are not implemented.
 
 The Hub design is a Python/FastAPI modular monolith with a React/Tailwind
 frontend, PostgreSQL application metadata, SQLAlchemy, Alembic, REST under
@@ -212,7 +215,7 @@ Known limitations include:
 Planned work beyond the implemented Core and Hub API scopes includes:
 
 - broader effective repository authorization policies
-- repository invitation web workflows and external email delivery
+- public repository discovery and external email delivery for invitations
 - advanced diff browsing and broader
   collaboration interfaces
 - AI-assisted developer workflows and repository analysis
@@ -227,8 +230,9 @@ object database, Git index, tree and staging logic, commit/ref handling, history
 traversal, read-only status/diff, and a CLI. Hub's authenticated web foundation
 and personal repository workflows are implemented; supported organization
 metadata, membership, and owner/admin repository-management flows are also
-implemented. Organization and repository invitation APIs are implemented;
-repository invitation UI, external email delivery, broader organization
-collaboration, advanced repository browsing, and AI remain future scope. The
-Core does not claim full Git compatibility and
+implemented. Organization and repository invitation web workflows are
+implemented with manually shared tokens. Bounded public and authenticated
+repository browsing is implemented; public discovery, external email delivery,
+broader organization collaboration, advanced repository browsing, and AI
+remain future scope. The Core does not claim full Git compatibility and
 intentionally keeps its scope bounded to the implemented Milestones 1–4.

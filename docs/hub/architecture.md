@@ -8,11 +8,16 @@ current-user APIs, authenticated owner-only personal repository metadata CRUD,
 organization metadata and membership APIs, and shared
 personal/organization bare-repository lifecycle integration with Core.
 Organization-owned repository HTTP routes, direct repository grant management,
-and repository-scoped invitation APIs are implemented. Bounded authorized
-repository browsing is implemented; repository invitation web workflows,
-external email delivery, advanced browsing, and broader collaboration remain
-unimplemented. The frontend authentication foundation, personal repository
-workflows, and supported organization/membership workflows are implemented. Hub is a local-development-first application that builds on, but
+and repository-scoped invitation APIs, bounded repository browsing, and the
+corresponding web workflows are implemented. The web app supports organization
+and repository invitation creation, listing, revocation, and authenticated
+acceptance; tokens are shared manually and external email delivery is not
+implemented. A cookie-free public browser reads supported content from ready
+public repositories by repository ID; public discovery and repository metadata
+exposure are not implemented. Advanced browsing and broader collaboration
+remain unimplemented. The frontend authentication foundation, personal
+repository workflows, and supported organization/membership workflows are
+implemented. Hub is a local-development-first application that builds on, but
 does not absorb or replace, CommitVerse Core. CommitVerse AI remains future
 scope.
 
@@ -22,13 +27,16 @@ filesystem, and a React/Tailwind web client. REST endpoints are versioned under
 `/api/v1`. The API package and optional SQLAlchemy/Psycopg/Alembic foundation
 and initial metadata models/migration exist. Local PostgreSQL 17.11 migration
 validation against native Homebrew PostgreSQL on macOS/Apple Silicon M2
-historically covered only initial revision `40037b3edad7`. The current source
-migration head is `a7d4d1d1f7ed`; that revision has not been verified against
-PostgreSQL. Organization-owned repository HTTP routes and direct repository
-  grant-management and organization- and repository-invitation routes are
-  implemented locally. Supported content authorization is implemented;
-  hosted runtime services and deployment configuration remain unimplemented
-  or unverified.
+historically covered initial revision `40037b3edad7`. During final
+release-readiness verification, current head `a7d4d1d1f7ed` was applied to an
+isolated local PostgreSQL 17.11 database. PostgreSQL session, repository
+lifecycle, organization owner-concurrency and lock-order, and invitation
+single-use and repository-lifecycle rechecks after lock waits passed for the
+exercised cases; this does not establish hosted or multi-host behavior.
+Organization-owned repository HTTP routes, direct repository grant management,
+and organization- and repository-invitation routes are implemented locally.
+Hosted runtime services and deployment configuration remain unimplemented or
+unverified.
 
 ## Goals and boundaries
 
@@ -155,12 +163,14 @@ The organization HTTP API does not include disable/enable or delete routes.
 Direct membership creation takes an existing user ID; organization invitation
 routes support email-bound acceptance, repository invitation routes support
 manager-controlled issue/list/revoke and authenticated email-bound acceptance,
-and the user directory supports bounded public-profile prefix search. No
-repository-invitation web workflows or email delivery are implemented.
-Repository visibility enables anonymous read-only
-browsing only for ready public repositories; detail and mutations remain
-authenticated. Do not advertise normal Git
-client clone, fetch, or push.
+and the user directory supports bounded public-profile prefix search. The web
+app supports both invitation lifecycles; tokens are shared manually and there
+is no email delivery. A public browser at `/browse/{repositoryId}` makes
+cookie-free, read-only requests for supported content from ready public
+repositories. It does not provide repository discovery or expose repository
+name, description, or owner metadata. Private browsing and repository
+management require authentication and effective authorization. Do not
+advertise normal Git client clone, fetch, or push.
 
 ## CommitVerse Core integration
 
@@ -308,19 +318,19 @@ blocker and no deployment configuration is implied.
   owner-only personal repository APIs, owner/admin organization repository
   metadata APIs, and shared Core-backed personal and organization repository
   lifecycle services with transactional audit events and retryable states.
-  Historical PostgreSQL 17.11 migration validation
-  covered only initial revision `40037b3edad7`; current source head
-  `a7d4d1d1f7ed` is not verified against PostgreSQL. Organization concurrency
-  tests require `HUB_TEST_DATABASE_URL`; without it, PostgreSQL row-lock
-  concurrency is unverified.
+  During final release-readiness verification, current migration head
+  `a7d4d1d1f7ed` and the session, repository lifecycle, organization
+  concurrency, invitation single-use, and repository-lifecycle recheck after
+  lock-wait PostgreSQL tests passed against an isolated local PostgreSQL 17.11
+  database. These results cover the tested paths only; hosted and multi-host
+  behavior remains unverified.
 - **Implemented locally:** authenticated bounded tree/blob/history browsing,
   reachable commit details, and first-parent diffs from HEAD, local branches,
   and direct-commit tags.
-- **Not implemented:** repository invitation web workflows and email delivery,
-  advanced diff workflows,
-  automated lifecycle
-  reconciliation, broader collaboration workflows, and deployment. No hosted
-  deployment has been verified.
+- **Not implemented:** external email delivery, advanced diff workflows,
+  automated lifecycle reconciliation, broader collaboration workflows, and
+  deployment. Invitation web workflows are implemented and rely on manually
+  shared tokens. No hosted deployment has been verified.
 - **Not available from Core:** network Git protocols, packfiles, and ordinary
   remote-client interoperability.
 - **Operational limitations:** DB/filesystem operations are not atomic;

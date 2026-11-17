@@ -63,6 +63,7 @@ def main() -> None:
                 host="127.0.0.1",
                 port=8001,
                 log_level="warning",
+                access_log=False,
             )
         finally:
             engine.dispose()

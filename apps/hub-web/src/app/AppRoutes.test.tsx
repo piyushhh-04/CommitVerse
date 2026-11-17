@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { apiClient } from "../api/client";
@@ -40,6 +41,123 @@ describe("application routes", () => {
 
     expect(screen.getByRole("heading", { name: /Version control/ })).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("browses public repositories anonymously without sending session cookies", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/repositories/public-repo/refs")) {
+        return new Response(JSON.stringify({ repository_id: "public-repo", refs: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/repositories/public-repo/tree")) {
+        return new Response(
+          JSON.stringify({
+            repository_id: "public-repo",
+            commit_id: null,
+            path: "",
+            entries: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.endsWith("/repositories/public-repo/commits?limit=50")) {
+        return new Response(
+          JSON.stringify({
+            repository_id: "public-repo",
+            commits: [],
+            limit: 50,
+            truncated: false,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      throw new Error(`Unexpected API request: ${url}`);
+    });
+
+    renderAtPath("/browse/public-repo");
+
+    expect(await screen.findByText(/anonymous, read-only API requests/i)).toBeInTheDocument();
+    await screen.findByText("Empty repository");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    for (const [, options] of fetchMock.mock.calls) {
+      expect(options?.credentials).toBe("omit");
+    }
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/v1/me", expect.anything());
+  });
+
+  it("accepts a repository invitation and opens the authenticated browser", async () => {
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/me")) {
+        return new Response(
+          JSON.stringify({
+            id: "user-1",
+            email: "developer@example.test",
+            username: "developer",
+            display_name: "Developer",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json", "X-CSRF-Token": "csrf-session" },
+          },
+        );
+      }
+      if (
+        url.endsWith("/api/v1/repositories/invitations/invitation-token/accept") &&
+        init?.method === "POST"
+      ) {
+        return new Response(JSON.stringify({ repository_id: "invited-repo", role: "reader" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/api/v1/repositories/invited-repo/refs")) {
+        return new Response(JSON.stringify({ repository_id: "invited-repo", refs: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/api/v1/repositories/invited-repo/tree")) {
+        return new Response(
+          JSON.stringify({
+            repository_id: "invited-repo",
+            commit_id: null,
+            path: "",
+            entries: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.endsWith("/api/v1/repositories/invited-repo/commits?limit=50")) {
+        return new Response(
+          JSON.stringify({
+            repository_id: "invited-repo",
+            commits: [],
+            limit: 50,
+            truncated: false,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      throw new Error(`Unexpected API request: ${url}`);
+    });
+    const user = userEvent.setup();
+    renderAtPath("/app/repositories/invitations/accept");
+
+    await user.type(
+      await screen.findByRole("textbox", { name: "Repository invitation token" }),
+      "invitation-token",
+    );
+    await user.click(screen.getByRole("button", { name: "Accept invitation" }));
+
+    expect(await screen.findByText(/Repository ID:/)).toHaveTextContent("invited-repo");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/repositories/invitations/invitation-token/accept",
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 
   it("redirects an anonymous visitor from a protected route to sign in", async () => {

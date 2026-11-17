@@ -1,10 +1,17 @@
 import { useState, type FormEvent } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { ApiError } from "../api/client";
+import { getProtectedQueryIdentityGeneration, protectedQueryKey } from "../app/protectedQueryCache";
 import { updateProfile, type ProfileUpdateInput } from "../api/profile";
 import { useAuth } from "../auth/AuthContext";
 import type { AuthUser } from "../auth/types";
+
+interface ProfileMutationVariables {
+  input: ProfileUpdateInput;
+  userId: string;
+  identityGeneration: number;
+}
 
 function asApiError(error: unknown): ApiError {
   return error instanceof ApiError
@@ -24,15 +31,19 @@ function fieldError(error: ApiError | null, field: string): string | undefined {
 export function ProfileSettingsPage() {
   const auth = useAuth();
   const user = auth.status === "authenticated" ? auth.user : null;
+  const userId = user?.id ?? "";
+  const queryClient = useQueryClient();
   const [username, setUsername] = useState(user?.username ?? "");
   const [displayName, setDisplayName] = useState(user?.display_name ?? "");
   const [bio, setBio] = useState(user?.bio ?? "");
   const [formError, setFormError] = useState<string | null>(null);
-  const profileMutation = useMutation<AuthUser, ApiError, ProfileUpdateInput>({
-    mutationFn: updateProfile,
+  const profileMutation = useMutation<AuthUser, ApiError, ProfileMutationVariables>({
+    mutationKey: protectedQueryKey(userId, "profile", "mutation", "update"),
+    gcTime: 0,
+    mutationFn: ({ input }) => updateProfile(input),
     retry: false,
-    onSuccess: async (updatedUser) => {
-      await auth.updateUser(updatedUser);
+    onSuccess: async (updatedUser, variables) => {
+      await auth.updateUser(updatedUser, variables.userId, variables.identityGeneration);
     },
   });
 
@@ -55,11 +66,20 @@ export function ProfileSettingsPage() {
       setFormError("One or more profile fields exceed their length limit.");
       return;
     }
+    const identityGeneration = getProtectedQueryIdentityGeneration(queryClient, userId);
+    if (identityGeneration === null) {
+      setFormError("Your session changed. Please reload and try again.");
+      return;
+    }
     setFormError(null);
     profileMutation.mutate({
-      username: nextUsername,
-      display_name: nextDisplayName,
-      bio: nextBio || null,
+      input: {
+        username: nextUsername,
+        display_name: nextDisplayName,
+        bio: nextBio || null,
+      },
+      userId,
+      identityGeneration,
     });
   }
 

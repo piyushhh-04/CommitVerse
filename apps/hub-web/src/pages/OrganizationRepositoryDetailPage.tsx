@@ -3,6 +3,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../api/client";
 import {
+  getProtectedQueryIdentityGeneration,
+  isProtectedQueryIdentity,
+  protectedQueryKey,
+} from "../app/protectedQueryCache";
+import {
   deleteOrganizationRepository,
   getOrganizationRepository,
   updateOrganizationRepository,
@@ -10,6 +15,7 @@ import {
 import { useAuth } from "../auth/AuthContext";
 import { RepositoryForm, type RepositoryFormValues } from "../components/RepositoryForm";
 import { RepositoryBrowsePanel } from "../components/RepositoryBrowsePanel";
+import { RepositoryAccessPanel } from "../components/RepositoryAccessPanel";
 
 function operationError(error: unknown): ApiError {
   return error instanceof ApiError
@@ -32,11 +38,24 @@ export function OrganizationRepositoryDetailPage() {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
   const repositoryQuery = useQuery({
-    queryKey: ["organization-repositories", userId, organizationId, "detail", repositoryId],
+    queryKey: protectedQueryKey(
+      userId,
+      "organization-repositories",
+      organizationId,
+      "detail",
+      repositoryId,
+    ),
     queryFn: ({ signal }) => getOrganizationRepository(organizationId, repositoryId, { signal }),
     enabled: Boolean(userId && organizationId && repositoryId),
   });
   const updateMutation = useMutation({
+    mutationKey: protectedQueryKey(
+      userId,
+      "organization-repositories",
+      organizationId,
+      "mutation",
+      "update",
+    ),
     mutationFn: (values: RepositoryFormValues) =>
       updateOrganizationRepository(organizationId, repositoryId, {
         name: values.name,
@@ -46,22 +65,35 @@ export function OrganizationRepositoryDetailPage() {
     retry: false,
     onSuccess: async () => {
       await queryClient.invalidateQueries({
-        queryKey: ["organization-repositories", userId, organizationId],
+        queryKey: protectedQueryKey(userId, "organization-repositories", organizationId),
       });
     },
   });
-  const deleteMutation = useMutation({
+  const deleteMutation = useMutation<void, ApiError, number>({
+    mutationKey: protectedQueryKey(
+      userId,
+      "organization-repositories",
+      organizationId,
+      "mutation",
+      "delete",
+    ),
     mutationFn: () => deleteOrganizationRepository(organizationId, repositoryId),
     retry: false,
-    onSuccess: async () => {
+    onSuccess: async (_result, identityGeneration) => {
+      if (!isProtectedQueryIdentity(queryClient, userId, identityGeneration)) return;
       await queryClient.invalidateQueries({
-        queryKey: ["organization-repositories", userId, organizationId],
+        queryKey: protectedQueryKey(userId, "organization-repositories", organizationId),
       });
+      if (!isProtectedQueryIdentity(queryClient, userId, identityGeneration)) return;
       void navigate(`/app/organizations/${organizationId}/repositories`, {
         state: { focusDestinationHeading: true },
       });
     },
   });
+  function deleteRepositoryFromCurrentSession() {
+    const identityGeneration = getProtectedQueryIdentityGeneration(queryClient, userId);
+    if (identityGeneration !== null) deleteMutation.mutate(identityGeneration);
+  }
   useEffect(() => {
     if (
       location.state &&
@@ -123,7 +155,8 @@ export function OrganizationRepositoryDetailPage() {
           </p>
         </div>
       </header>
-      <RepositoryBrowsePanel repositoryId={repository.id} />
+      <RepositoryBrowsePanel repositoryId={repository.id} userId={userId} />
+      <RepositoryAccessPanel repositoryId={repository.id} userId={userId} />
       <section
         className="repository-form-section"
         aria-labelledby="organization-repository-settings-title"
@@ -175,7 +208,7 @@ export function OrganizationRepositoryDetailPage() {
               className="repository-danger-action"
               type="button"
               disabled={deleteMutation.isPending}
-              onClick={() => deleteMutation.mutate()}
+              onClick={deleteRepositoryFromCurrentSession}
             >
               {deleteMutation.isPending ? "Deleting…" : "Confirm deletion"}
             </button>

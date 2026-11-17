@@ -177,6 +177,18 @@ describe("authentication pages", () => {
         const url = String(input);
         if (url.endsWith("/api/v1/me")) return unauthorizedResponse();
         if (url.endsWith("/api/v1/auth/login")) return userResponse("csrf-after-login");
+        if (url.endsWith("/api/v1/repositories?limit=4&offset=0")) {
+          return new Response(JSON.stringify({ items: [], total: 0, limit: 4, offset: 0 }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url.endsWith("/api/v1/organizations?limit=50&offset=0")) {
+          return new Response(JSON.stringify({ items: [], total: 0, limit: 50, offset: 0 }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
         throw new Error(`Unexpected API request: ${url}`);
       });
       const userEventInstance = userEvent.setup();
@@ -186,7 +198,9 @@ describe("authentication pages", () => {
       await userEventInstance.type(screen.getByLabelText("Password"), "test-password");
       await userEventInstance.click(screen.getByRole("button", { name: "Sign in" }));
 
-      expect(await screen.findByRole("heading", { name: "Your workspace" })).toBeInTheDocument();
+      expect(
+        await screen.findByRole("heading", { name: "Welcome, Developer" }),
+      ).toBeInTheDocument();
       expect(screen.getByTestId("current-location")).toHaveTextContent("/app");
       expect(screen.getByTestId("current-location")).not.toHaveTextContent("evil.example");
     },
@@ -217,6 +231,22 @@ describe("authentication pages", () => {
       const url = String(input);
       if (url.endsWith("/api/v1/me")) return Promise.resolve(unauthorizedResponse());
       if (url.endsWith("/api/v1/auth/login")) return pendingLogin.promise;
+      if (url.endsWith("/api/v1/repositories?limit=4&offset=0")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ items: [], total: 0, limit: 4, offset: 0 }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (url.endsWith("/api/v1/organizations?limit=50&offset=0")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ items: [], total: 0, limit: 50, offset: 0 }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
       throw new Error(`Unexpected API request: ${url}`);
     });
     const userEventInstance = userEvent.setup();
@@ -236,7 +266,7 @@ describe("authentication pages", () => {
     expect(screen.getByRole("form", { name: "Sign in" })).toHaveAttribute("aria-busy", "true");
 
     pendingLogin.resolve(userResponse("csrf-after-login"));
-    expect(await screen.findByRole("heading", { name: "Your workspace" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Welcome, Developer" })).toBeInTheDocument();
   });
 
   it("validates registration fields using the backend contract", async () => {
@@ -307,6 +337,18 @@ describe("authentication pages", () => {
     fetchMock.mockImplementation(async (input, init) => {
       const url = String(input);
       if (url.endsWith("/api/v1/me")) return userResponse();
+      if (url.endsWith("/api/v1/repositories?limit=4&offset=0")) {
+        return new Response(JSON.stringify({ items: [], total: 0, limit: 4, offset: 0 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/api/v1/organizations?limit=50&offset=0")) {
+        return new Response(JSON.stringify({ items: [], total: 0, limit: 50, offset: 0 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       if (url.endsWith("/api/v1/auth/logout")) {
         expect(new Headers(init?.headers).get("X-CSRF-Token")).toBe("csrf-session");
         return new Response(JSON.stringify({ status: "ok" }), {

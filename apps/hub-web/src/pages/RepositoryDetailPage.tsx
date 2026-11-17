@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { RepositoryForm, type RepositoryFormValues } from "../components/RepositoryForm";
 import { RepositoryBrowsePanel } from "../components/RepositoryBrowsePanel";
+import { RepositoryAccessPanel } from "../components/RepositoryAccessPanel";
 import { useAuth } from "../auth/AuthContext";
 import {
   personalRepositoryDetailQueryOptions,
@@ -205,11 +206,17 @@ export function RepositoryDetailPage() {
       </section>
 
       <p className="repository-visibility-note">
-        Public visibility applies to repository metadata only. Anonymous repository access is not
-        available.
+        Ready public repositories allow anonymous read-only API access. Browsing in the Hub web app
+        requires sign-in; private repositories remain protected.
       </p>
 
-      <RepositoryBrowsePanel repositoryId={repository.id} />
+      <RepositoryBrowsePanel repositoryId={repository.id} userId={userId} />
+      {repository.visibility === "public" ? (
+        <Link className="repository-secondary-action" to={`/browse/${repository.id}`}>
+          Open anonymous public view
+        </Link>
+      ) : null}
+      <RepositoryAccessPanel repositoryId={repository.id} userId={userId} />
 
       <section className="repository-form-section" aria-labelledby="repository-settings-title">
         <div className="repository-section-heading">

@@ -228,7 +228,10 @@ export function RepositoryForm({
             />
             <span>
               <strong>Public</strong>
-              <small>Marks metadata as public; anonymous access is not available.</small>
+              <small>
+                Ready public repositories allow anonymous read-only API access. The Hub web app
+                requires sign-in; private repositories remain protected.
+              </small>
             </span>
           </label>
         </div>

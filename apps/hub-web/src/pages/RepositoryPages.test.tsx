@@ -106,7 +106,13 @@ describe("personal repository pages", () => {
       "href",
       "/app/repositories/new",
     );
-    expect(screen.getByText(/anonymous repository access is not available/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Ready public repositories allow anonymous read-only API access/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/signed-in Hub web app/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/public repositories also allow read-only access through the API/i),
+    ).toBeInTheDocument();
   });
 
   it("lists repositories and paginates using the backend offset", async () => {
@@ -229,7 +235,10 @@ describe("personal repository pages", () => {
 
     expect(await screen.findByRole("heading", { name: "New repository" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: /Private/ })).toBeChecked();
-    expect(screen.getByText(/anonymous access is not available/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Ready public repositories allow anonymous read-only API access/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/The Hub web app requires sign-in/i)).toBeInTheDocument();
     await userEventInstance.type(screen.getByLabelText("Repository name"), "../invalid");
     await userEventInstance.click(screen.getByRole("button", { name: "Create repository" }));
     expect(screen.getByText(/start with a letter or number/i)).toBeInTheDocument();
@@ -298,6 +307,7 @@ describe("personal repository pages", () => {
     renderAtPath(`/app/repositories/${original.id}`);
 
     expect(await screen.findByRole("heading", { name: original.name })).toBeInTheDocument();
+    expect(screen.getByText(/Browsing in the Hub web app requires sign-in/i)).toBeInTheDocument();
     await userEventInstance.clear(screen.getByLabelText("Repository name"));
     await userEventInstance.type(screen.getByLabelText("Repository name"), updated.name);
     await userEventInstance.clear(screen.getByLabelText("Description (optional)"));

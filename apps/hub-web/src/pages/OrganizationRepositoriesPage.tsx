@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../api/client";
+import { protectedQueryKey } from "../app/protectedQueryCache";
 import { listOrganizationRepositories } from "../api/organizationRepositories";
 import { useAuth } from "../auth/AuthContext";
 
@@ -11,7 +12,7 @@ export function OrganizationRepositoriesPage() {
   const userId = auth.status === "authenticated" ? auth.user.id : "";
   const [offset, setOffset] = useState(0);
   const repositoriesQuery = useQuery({
-    queryKey: ["organization-repositories", userId, organizationId, offset],
+    queryKey: protectedQueryKey(userId, "organization-repositories", organizationId, offset),
     queryFn: ({ signal }) => listOrganizationRepositories(organizationId, 50, offset, { signal }),
     enabled: Boolean(userId && organizationId),
   });

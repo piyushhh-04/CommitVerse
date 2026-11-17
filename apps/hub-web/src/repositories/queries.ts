@@ -1,5 +1,6 @@
 import { mutationOptions, queryOptions, QueryClient } from "@tanstack/react-query";
 import { ApiError } from "../api/client";
+import { protectedQueryKey, protectedQueryKeys } from "../app/protectedQueryCache";
 import {
   createPersonalRepository,
   deletePersonalRepository,
@@ -14,21 +15,21 @@ import {
 } from "../api/repositories";
 
 export const personalRepositoryQueryKeys = {
-  all: ["repositories"] as const,
-  forUser: (userId: string) => ["repositories", userId] as const,
-  lists: (userId: string) => ["repositories", userId, "list"] as const,
+  all: protectedQueryKeys.all,
+  forUser: (userId: string) => protectedQueryKey(userId, "repositories"),
+  lists: (userId: string) => protectedQueryKey(userId, "repositories", "list"),
   list: (userId: string, params: RepositoryListParams = {}) =>
-    ["repositories", userId, "list", normalizeRepositoryListParams(params)] as const,
-  details: (userId: string) => ["repositories", userId, "detail"] as const,
+    protectedQueryKey(userId, "repositories", "list", normalizeRepositoryListParams(params)),
+  details: (userId: string) => protectedQueryKey(userId, "repositories", "detail"),
   detail: (userId: string, repositoryId: string) =>
-    ["repositories", userId, "detail", repositoryId] as const,
+    protectedQueryKey(userId, "repositories", "detail", repositoryId),
 };
 
 export const personalRepositoryMutationKeys = {
-  forUser: (userId: string) => ["repositories", userId, "mutation"] as const,
-  create: (userId: string) => ["repositories", userId, "mutation", "create"] as const,
-  update: (userId: string) => ["repositories", userId, "mutation", "update"] as const,
-  delete: (userId: string) => ["repositories", userId, "mutation", "delete"] as const,
+  forUser: (userId: string) => protectedQueryKey(userId, "repositories", "mutation"),
+  create: (userId: string) => protectedQueryKey(userId, "repositories", "mutation", "create"),
+  update: (userId: string) => protectedQueryKey(userId, "repositories", "mutation", "update"),
+  delete: (userId: string) => protectedQueryKey(userId, "repositories", "mutation", "delete"),
 };
 
 const repositoryMutationClients = new WeakMap<QueryClient, QueryClient>();
@@ -50,14 +51,12 @@ export function setPersonalRepositoryIdentity(
   activeRepositoryUsers.set(queryClient, userId);
 }
 
-export async function clearPersonalRepositoryState(
+export function clearPersonalRepositoryMutationState(
   queryClient: QueryClient,
   nextUserId: string | null,
-): Promise<void> {
+): void {
   setPersonalRepositoryIdentity(queryClient, nextUserId);
   repositoryMutationClients.get(queryClient)?.getMutationCache().clear();
-  await queryClient.cancelQueries({ queryKey: personalRepositoryQueryKeys.all });
-  queryClient.removeQueries({ queryKey: personalRepositoryQueryKeys.all });
 }
 
 function isActiveRepositoryUser(queryClient: QueryClient, userId: string): boolean {

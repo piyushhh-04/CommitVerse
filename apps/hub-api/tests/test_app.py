@@ -1,7 +1,7 @@
 """Application factory tests."""
 
 from commitverse_hub.config import Settings
-from commitverse_hub.main import create_app
+from commitverse_hub.main import create_app, run
 
 
 def test_application_factory_uses_supplied_settings() -> None:
@@ -19,3 +19,14 @@ def test_application_factory_uses_supplied_settings() -> None:
     assert "CommitVerse Hub API" in app.description
     assert app.state.settings is settings
     assert not app.debug
+
+
+def test_server_entrypoint_disables_raw_path_access_logging(monkeypatch) -> None:
+    settings = Settings(environment="testing")
+    arguments: dict[str, object] = {}
+    monkeypatch.setattr(Settings, "from_environment", lambda: settings)
+    monkeypatch.setattr("uvicorn.run", lambda _app, **kwargs: arguments.update(kwargs))
+
+    run()
+
+    assert arguments["access_log"] is False

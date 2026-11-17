@@ -7,10 +7,11 @@ import shutil
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
+from threading import Barrier, Event
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -44,14 +45,18 @@ from commitverse_hub.repositories.service import (
     delete_organization_repository,
     delete_personal_repository,
     get_personal_repository,
+    get_repository_for_access,
     list_personal_repositories,
     update_personal_repository,
 )
+from commitverse_hub.repositories import service as repository_service
 from commitverse_hub.repositories.invitations import (
     accept_repository_invitation,
     create_repository_invitation,
+    list_repository_invitations,
     revoke_repository_invitation,
 )
+from commitverse_hub.repositories import invitations as repository_invitation_service
 from commitverse_hub.repositories.storage import (
     RepositoryStorageError,
     create_bare_repository,
@@ -733,6 +738,186 @@ def test_repository_invitations_reject_invalid_mismatched_revoked_expired_and_un
         stored = db_session.get(Invitation, pending_delete.invitation.id)
         assert stored is not None
         assert stored.status == "pending"
+
+
+def test_repository_invitation_accept_reloads_status_after_repository_lock(
+    repository_client,
+    monkeypatch,
+) -> None:
+    factory = repository_client["factory"]
+    owner_id, invited_user_id = repository_client["user_ids"]
+    client = repository_client["client"]
+    owner_csrf = repository_client["csrf_tokens"][0]
+    created = _create(client, owner_csrf, "invitation-lock-recheck")
+    assert created.status_code == 201
+    repository_id = uuid.UUID(created.json()["id"])
+    issued = create_repository_invitation(
+        factory,
+        repository_id,
+        owner_id,
+        target_email="repo-user-1@example.test",
+        role="reader",
+        expires_in_days=7,
+        request_id="repository-invitation-lock-recheck",
+    )
+    original_lock = repository_invitation_service._lock_repository
+
+    def revoke_before_repository_lock(db_session, current_repository_id):
+        db_session.execute(
+            update(Invitation)
+            .where(Invitation.id == issued.invitation.id)
+            .values(status="revoked", revoked_at=datetime.now(UTC)),
+            execution_options={"synchronize_session": False},
+        )
+        return original_lock(db_session, current_repository_id)
+
+    monkeypatch.setattr(
+        repository_invitation_service,
+        "_lock_repository",
+        revoke_before_repository_lock,
+    )
+
+    with pytest.raises(RepositoryNotFoundError):
+        accept_repository_invitation(
+            factory,
+            issued.token,
+            invited_user_id,
+            request_id="repository-accept-revoked-during-lock",
+        )
+
+    with factory() as db_session:
+        assert db_session.get(
+            RepositoryUserPermission,
+            (repository_id, invited_user_id),
+        ) is None
+
+
+def test_repository_invitation_accept_reloads_lifecycle_after_repository_lock(
+    repository_client,
+    monkeypatch,
+) -> None:
+    factory = repository_client["factory"]
+    owner_id, invited_user_id = repository_client["user_ids"]
+    client = repository_client["client"]
+    owner_csrf = repository_client["csrf_tokens"][0]
+    created = _create(client, owner_csrf, "invitation-lifecycle-recheck")
+    assert created.status_code == 201
+    repository_id = uuid.UUID(created.json()["id"])
+    issued = create_repository_invitation(
+        factory,
+        repository_id,
+        owner_id,
+        target_email="repo-user-1@example.test",
+        role="reader",
+        expires_in_days=7,
+        request_id="repository-invitation-lifecycle-recheck",
+    )
+    original_lock = repository_invitation_service._lock_repository
+
+    def mark_deleting_before_repository_lock(db_session, current_repository_id):
+        db_session.execute(
+            update(Repository)
+            .where(Repository.id == repository_id)
+            .values(lifecycle_state="deleting"),
+            execution_options={"synchronize_session": False},
+        )
+        return original_lock(db_session, current_repository_id)
+
+    monkeypatch.setattr(
+        repository_invitation_service,
+        "_lock_repository",
+        mark_deleting_before_repository_lock,
+    )
+
+    with pytest.raises(RepositoryNotFoundError):
+        accept_repository_invitation(
+            factory,
+            issued.token,
+            invited_user_id,
+            request_id="repository-accept-deleting-during-lock",
+        )
+
+    with factory() as db_session:
+        assert db_session.get(
+            RepositoryUserPermission,
+            (repository_id, invited_user_id),
+        ) is None
+
+
+def test_repository_access_reloads_lifecycle_after_repository_lock(
+    repository_client,
+    monkeypatch,
+) -> None:
+    factory = repository_client["factory"]
+    owner_id = repository_client["user_ids"][0]
+    client = repository_client["client"]
+    owner_csrf = repository_client["csrf_tokens"][0]
+    created = _create(client, owner_csrf, "repository-access-lifecycle-recheck")
+    assert created.status_code == 201
+    repository_id = uuid.UUID(created.json()["id"])
+    original_lock = repository_service._lock_repository
+
+    def mark_deleting_before_repository_lock(db_session, current_repository_id):
+        db_session.execute(
+            update(Repository)
+            .where(Repository.id == repository_id)
+            .values(lifecycle_state="deleting"),
+            execution_options={"synchronize_session": False},
+        )
+        return original_lock(db_session, current_repository_id)
+
+    monkeypatch.setattr(
+        repository_service,
+        "_lock_repository",
+        mark_deleting_before_repository_lock,
+    )
+
+    with pytest.raises(RepositoryNotFoundError):
+        get_repository_for_access(factory, repository_id, owner_id)
+
+
+def test_expired_repository_invitations_do_not_block_reissue_or_appear_pending(
+    repository_client,
+) -> None:
+    factory = repository_client["factory"]
+    owner_id = repository_client["user_ids"][0]
+    client = repository_client["client"]
+    owner_csrf = repository_client["csrf_tokens"][0]
+    created = _create(client, owner_csrf, "invitation-reissue")
+    repository_id = uuid.UUID(created.json()["id"])
+    stale = create_repository_invitation(
+        factory,
+        repository_id,
+        owner_id,
+        target_email="stale-repository-invite@example.test",
+        role="reader",
+        expires_in_days=7,
+        request_id="stale-repository-invitation",
+    )
+    with transactional_session(factory) as db_session:
+        invitation = db_session.get(Invitation, stale.invitation.id)
+        assert invitation is not None
+        invitation.created_at = datetime.now(UTC) - timedelta(days=3)
+        invitation.expires_at = datetime.now(UTC) - timedelta(days=2)
+
+    listed, total = list_repository_invitations(
+        factory, repository_id, owner_id, limit=100, offset=0
+    )
+    assert total == 0
+    assert listed == []
+
+    replacement = create_repository_invitation(
+        factory,
+        repository_id,
+        owner_id,
+        target_email="stale-repository-invite@example.test",
+        role="writer",
+        expires_in_days=7,
+        request_id="replacement-repository-invitation",
+    )
+    with factory() as db_session:
+        assert db_session.get(Invitation, stale.invitation.id).status == "expired"
+        assert db_session.get(Invitation, replacement.invitation.id).status == "pending"
 
 
 def test_repository_invitation_mutations_require_origin_and_csrf(repository_client) -> None:
@@ -1958,4 +2143,213 @@ def test_postgresql_repository_lifecycle_in_isolated_schema(tmp_path) -> None:
     finally:
         transaction.rollback()
         connection.close()
+        engine.dispose()
+
+
+def test_postgresql_concurrent_repository_invitation_acceptance_is_single_use(tmp_path) -> None:
+    database_url = os.environ.get("HUB_TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("HUB_TEST_DATABASE_URL is not configured.")
+
+    engine = create_engine(database_url)
+    schema = f"hub_repository_invitation_test_{uuid.uuid4().hex}"
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(f'CREATE SCHEMA "{schema}"')
+        scoped_engine = engine.execution_options(
+            schema_translate_map={None: schema}
+        )
+        Base.metadata.create_all(scoped_engine)
+        factory = sessionmaker(
+            bind=scoped_engine,
+            autoflush=False,
+            expire_on_commit=False,
+        )
+        owner_id, invitee_id = uuid.uuid4(), uuid.uuid4()
+        with transactional_session(factory) as db_session:
+            db_session.add_all(
+                [
+                    User(
+                        id=owner_id,
+                        normalized_email="postgres-repo-owner@example.test",
+                        password_hash="test-only-placeholder-hash",
+                    ),
+                    User(
+                        id=invitee_id,
+                        normalized_email="postgres-repo-invitee@example.test",
+                        password_hash="test-only-placeholder-hash",
+                    ),
+                ]
+            )
+        repository = create_personal_repository(
+            factory,
+            tmp_path / "postgres-invitation-repositories",
+            owner_id,
+            name="postgres-invitation",
+            description=None,
+            visibility="private",
+            request_id="postgres-invitation-test",
+        )
+        invitation = create_repository_invitation(
+            factory,
+            repository.id,
+            owner_id,
+            target_email="postgres-repo-invitee@example.test",
+            role="reader",
+            expires_in_days=7,
+            request_id="postgres-invitation-test",
+        )
+        start = Barrier(2)
+
+        def accept() -> bool:
+            start.wait(timeout=10)
+            try:
+                accept_repository_invitation(
+                    factory,
+                    invitation.token,
+                    invitee_id,
+                    request_id="postgres-concurrent-invitation-accept",
+                )
+            except RepositoryNotFoundError:
+                return False
+            return True
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            outcomes = list(executor.map(lambda _index: accept(), range(2)))
+
+        assert sum(outcomes) == 1
+        with factory() as db_session:
+            stored_invitation = db_session.get(Invitation, invitation.invitation.id)
+            assert stored_invitation is not None
+            assert stored_invitation.status == "accepted"
+            assert db_session.get(
+                RepositoryUserPermission,
+                (repository.id, invitee_id),
+            ) is not None
+            assert db_session.scalar(
+                select(func.count()).select_from(AuditEvent).where(
+                    AuditEvent.action == "repository.invitation_accepted",
+                    AuditEvent.target_id == str(repository.id),
+                )
+            ) == 1
+    finally:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+        engine.dispose()
+
+
+def test_postgresql_repository_invitation_rechecks_lifecycle_after_lock_wait(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    database_url = os.environ.get("HUB_TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("HUB_TEST_DATABASE_URL is not configured.")
+
+    engine = create_engine(database_url)
+    schema = f"hub_repo_lifecycle_invite_{uuid.uuid4().hex}"
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(f'CREATE SCHEMA "{schema}"')
+        scoped_engine = engine.execution_options(
+            schema_translate_map={None: schema}
+        )
+        Base.metadata.create_all(scoped_engine)
+        factory = sessionmaker(
+            bind=scoped_engine,
+            autoflush=False,
+            expire_on_commit=False,
+        )
+        owner_id, invitee_id = uuid.uuid4(), uuid.uuid4()
+        with transactional_session(factory) as db_session:
+            db_session.add_all(
+                [
+                    User(
+                        id=owner_id,
+                        normalized_email="postgres-lifecycle-owner@example.test",
+                        password_hash="test-only-placeholder-hash",
+                    ),
+                    User(
+                        id=invitee_id,
+                        normalized_email="postgres-lifecycle-invitee@example.test",
+                        password_hash="test-only-placeholder-hash",
+                    ),
+                ]
+            )
+        repository = create_personal_repository(
+            factory,
+            tmp_path / "postgres-lifecycle-invitation-repositories",
+            owner_id,
+            name="postgres-lifecycle-invitation",
+            description=None,
+            visibility="private",
+            request_id="postgres-lifecycle-invitation-test",
+        )
+        invitation = create_repository_invitation(
+            factory,
+            repository.id,
+            owner_id,
+            target_email="postgres-lifecycle-invitee@example.test",
+            role="reader",
+            expires_in_days=7,
+            request_id="postgres-lifecycle-invitation-test",
+        )
+        lock_attempted = Event()
+        original_lock = repository_invitation_service._lock_repository
+
+        def signal_lock_attempt(db_session: Session, repository_id: uuid.UUID) -> Repository:
+            lock_attempted.set()
+            return original_lock(db_session, repository_id)
+
+        monkeypatch.setattr(
+            repository_invitation_service,
+            "_lock_repository",
+            signal_lock_attempt,
+        )
+        blocking_connection = scoped_engine.connect()
+        blocking_transaction = blocking_connection.begin()
+        blocking_connection.execute(
+            select(Repository.id)
+            .where(Repository.id == repository.id)
+            .with_for_update()
+        )
+        try:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                acceptance = executor.submit(
+                    accept_repository_invitation,
+                    factory,
+                    invitation.token,
+                    invitee_id,
+                    request_id="postgres-lifecycle-race-accept",
+                )
+                try:
+                    assert lock_attempted.wait(timeout=10)
+                    blocking_connection.execute(
+                        update(Repository)
+                        .where(Repository.id == repository.id)
+                        .values(lifecycle_state="deleting")
+                    )
+                    blocking_transaction.commit()
+                except Exception:
+                    if blocking_transaction.is_active:
+                        blocking_transaction.rollback()
+                    raise
+                with pytest.raises(RepositoryNotFoundError):
+                    acceptance.result(timeout=10)
+        finally:
+            if blocking_transaction.is_active:
+                blocking_transaction.rollback()
+            blocking_connection.close()
+
+        with factory() as db_session:
+            assert db_session.get(
+                RepositoryUserPermission,
+                (repository.id, invitee_id),
+            ) is None
+            stored_invitation = db_session.get(Invitation, invitation.invitation.id)
+            assert stored_invitation is not None
+            assert stored_invitation.status == "pending"
+    finally:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
         engine.dispose()

@@ -25,8 +25,10 @@ Anonymous browsing is supported only for ready public repositories; private
 repositories remain non-enumerable. Organization and repository invitation
 issuance, listing, revocation, and authenticated email-bound acceptance are
 implemented. Invitation tokens are returned only at creation and stored as
-hashes; email delivery and repository-invitation frontend workflows are not
-implemented. Advanced diff workflows remain future work. The authenticated
+hashes; the Hub web app supports organization and repository invitation
+creation, listing, revocation, and authenticated acceptance. Tokens must be
+shared manually; email delivery is not implemented. Advanced diff workflows
+remain future work. The authenticated
 user directory exposes only active username/display-name prefix matches and
 never returns email addresses.
 
@@ -58,8 +60,17 @@ Alternatively, run the application factory with Uvicorn:
 
 ```sh
 .venv/bin/uvicorn --factory commitverse_hub.main:create_app \
-  --app-dir apps/hub-api/src --host 127.0.0.1 --port 8000
+  --app-dir apps/hub-api/src --host 127.0.0.1 --port 8000 --no-access-log
 ```
+
+Uvicorn access logging is disabled because invitation tokens are path
+parameters. The API's structured request middleware logs only route templates,
+not raw paths or tokens. The browser API test server also disables Uvicorn
+access logging. No production reverse-proxy, gateway, CDN, or hosted deployment
+configuration is checked in or verified; the Vite proxy is for local
+development only. Any external logging, tracing, or analytics layer must
+redact invitation-token-bearing path segments before recording requests and
+must never store raw invitation tokens.
 
 The server does not open a database connection or connect to CommitVerse Core
 during startup. When configured, it creates a small connection pool during
@@ -220,11 +231,14 @@ revokes only the active session represented by the current cookie.
 Successful registration and login return a fresh `X-CSRF-Token` response
 header. An authenticated `GET /api/v1/me` returns the same user JSON as before
 and a newly generated `X-CSRF-Token` header bound to the validated session.
-That successful response includes `Cache-Control: no-store`; invalid sessions
-receive neither a CSRF token nor an authenticated user response. The token is
-not included in JSON. A browser client should retain it only in memory and
-request `/api/v1/me` after a page reload to restore it; it must not persist the
-token in browser storage or a JavaScript-readable cookie.
+API responses include `Cache-Control: no-store` to prevent browser or
+intermediary caches from reusing session-scoped data across accounts. Invalid
+sessions receive neither a CSRF token nor an authenticated user response. The
+token is not included in JSON. A browser client should retain it only in memory
+and request `/api/v1/me` after a page reload to restore it; it must not persist
+the token in browser storage or a JavaScript-readable cookie. Anonymous public
+browsing remains read-only; the Hub client retains permitted public results in
+its separate in-memory query cache.
 
 Authenticated mutation routes require both the exact allow-listed `Origin`
 and the session-bound `X-CSRF-Token`. CORS configuration is not a substitute
@@ -314,12 +328,16 @@ The default test suite uses an in-process HTTP client and injected resources;
 it requires neither a running PostgreSQL server nor external network access.
 Authentication and session tests use isolated SQLite databases by default.
 Set `HUB_TEST_DATABASE_URL` to run the PostgreSQL session-persistence,
-repository lifecycle, and organization concurrency tests against isolated
-schemas/resources. In particular,
+repository lifecycle, organization concurrency, and invitation single-use
+concurrency tests against isolated schemas/resources. Point it only at a
+dedicated test database; never use a development or production database. In particular,
 `test_postgresql_concurrent_owner_leaves_preserve_one_eligible_owner` is
 skipped without that variable, as is
-`test_postgresql_opposite_multi_user_mutations_do_not_deadlock`; SQLite
-results do not verify row-lock concurrency. Report skipped PostgreSQL tests
+`test_postgresql_opposite_multi_user_mutations_do_not_deadlock`,
+`test_postgresql_concurrent_organization_invitation_acceptance_is_single_use`,
+`test_postgresql_concurrent_repository_invitation_acceptance_is_single_use`,
+and `test_postgresql_repository_invitation_rechecks_lifecycle_after_lock_wait`.
+SQLite results do not verify row-lock concurrency. Report skipped PostgreSQL tests
 rather than claiming acceptance. The repository integration test exercises
 create, list/detail, update, Core bare-repository verification, and delete,
 then rolls back its schema transaction. Duplicate names and retry behavior
@@ -337,18 +355,21 @@ HUB_TEST_DATABASE_URL="$HUB_DATABASE_URL" PYTHONDONTWRITEBYTECODE=1 \
 Schema tests apply, downgrade, and re-apply the migration against a temporary
 SQLite database, then compare SQLAlchemy metadata and inspect indexes.
 SQLite/Alembic cannot reflect expression-based indexes, so their created SQL
-is checked directly. The isolated SQLite tests complement, but do not
-substitute for the historical PostgreSQL verification of initial revision
-`40037b3edad7` described above; it does not verify current head
-`a7d4d1d1f7ed`.
+is checked directly. Historical PostgreSQL verification covered initial
+revision `40037b3edad7`; during final release-readiness verification current
+head `a7d4d1d1f7ed` was applied to a dedicated isolated PostgreSQL 17.11
+database. This local result does not establish hosted deployment readiness.
 
 ## Current limitations
 
 Organization metadata, membership, owner/admin organization-repository metadata,
 direct grant management, and bounded authorized repository browsing APIs are
 implemented for HEAD, validated local branches/tags, and reachable commit
-details. Repository invitation APIs are implemented without email delivery or
-web issue/list/revoke/accept workflows. Advanced diff browsing,
+details. Organization and repository invitation APIs and web
+create/list/revoke/accept workflows are implemented without email delivery;
+tokens are shared manually. Public repositories support bounded anonymous
+read-only browsing by ID, but there is no public repository discovery or
+public repository metadata endpoint. Advanced diff browsing,
 automated reconciliation, cross-process repository
 coordination, network Git protocols, and deployment are not implemented. There are no
 configured rate limits or production backup/restore procedures. Local

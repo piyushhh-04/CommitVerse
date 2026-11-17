@@ -2,7 +2,12 @@ import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, apiClient } from "../api/client";
 import {
-  clearPersonalRepositoryState,
+  getProtectedQueryIdentity,
+  isProtectedQueryIdentity,
+  transitionProtectedQueryIdentity,
+} from "../app/protectedQueryCache";
+import {
+  clearPersonalRepositoryMutationState,
   setPersonalRepositoryIdentity,
 } from "../repositories/queries";
 import {
@@ -15,6 +20,21 @@ import {
 import type { AuthStatusResponse, AuthUser, LoginCredentials, RegistrationDetails } from "./types";
 
 const SESSION_QUERY_KEY = ["auth", "current-user"] as const;
+
+async function synchronizeProtectedIdentity(
+  queryClient: ReturnType<typeof useQueryClient>,
+  userId: string | null,
+  forceClear = false,
+): Promise<void> {
+  const identityTransition = transitionProtectedQueryIdentity(queryClient, userId, forceClear);
+  apiClient.setSessionIdentity(getProtectedQueryIdentity(queryClient));
+  const identityChanged = await identityTransition;
+  if (identityChanged) {
+    clearPersonalRepositoryMutationState(queryClient, userId);
+  } else {
+    setPersonalRepositoryIdentity(queryClient, userId);
+  }
+}
 
 function asApiError(error: unknown): ApiError {
   if (error instanceof ApiError) return error;
@@ -69,7 +89,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const requestGeneration = sessionRequestGeneration.current;
-      const currentUser = queryClient.getQueryData<AuthUser | null>(SESSION_QUERY_KEY);
       try {
         signal.throwIfAborted();
         const user = requireUser(await apiClient.get<AuthUser>("/me", { signal }));
@@ -78,14 +97,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return queryClient.getQueryData<AuthUser | null>(SESSION_QUERY_KEY) ?? null;
         }
         requireCsrfToken();
-        if (currentUser?.id !== user.id) {
-          await clearPersonalRepositoryState(queryClient, user.id);
-          signal.throwIfAborted();
-          if (requestGeneration !== sessionRequestGeneration.current) {
-            return queryClient.getQueryData<AuthUser | null>(SESSION_QUERY_KEY) ?? null;
-          }
-        } else {
-          setPersonalRepositoryIdentity(queryClient, user.id);
+        await synchronizeProtectedIdentity(queryClient, user.id);
+        signal.throwIfAborted();
+        if (requestGeneration !== sessionRequestGeneration.current) {
+          return queryClient.getQueryData<AuthUser | null>(SESSION_QUERY_KEY) ?? null;
         }
         return user;
       } catch (error) {
@@ -99,7 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const apiError = asApiError(error);
         if (apiError.status === 401) {
           apiClient.setCsrfToken(null);
-          await clearPersonalRepositoryState(queryClient, null);
+          await synchronizeProtectedIdentity(queryClient, null, true);
           return null;
         }
         throw apiError;
@@ -108,14 +123,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const updateCurrentUser = useCallback(
-    async (user: AuthUser) => {
-      const currentUser = queryClient.getQueryData<AuthUser | null>(SESSION_QUERY_KEY);
-      if (currentUser?.id !== user.id) {
-        await clearPersonalRepositoryState(queryClient, user.id);
-      } else {
-        setPersonalRepositoryIdentity(queryClient, user.id);
-      }
+    async (user: AuthUser, expectedCurrentUserId?: string, expectedIdentityGeneration?: number) => {
+      const isExpectedIdentityCurrent = () =>
+        expectedCurrentUserId === undefined ||
+        (expectedIdentityGeneration !== undefined &&
+          user.id === expectedCurrentUserId &&
+          queryClient.getQueryData<AuthUser | null>(SESSION_QUERY_KEY)?.id ===
+            expectedCurrentUserId &&
+          isProtectedQueryIdentity(queryClient, expectedCurrentUserId, expectedIdentityGeneration));
+      if (!isExpectedIdentityCurrent()) return;
+
+      await synchronizeProtectedIdentity(queryClient, user.id);
+      if (!isExpectedIdentityCurrent()) return;
       await queryClient.cancelQueries({ queryKey: SESSION_QUERY_KEY });
+      if (!isExpectedIdentityCurrent()) return;
       queryClient.setQueryData(SESSION_QUERY_KEY, user);
     },
     [queryClient],
@@ -189,7 +210,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
         }
         await queryClient.cancelQueries({ queryKey: SESSION_QUERY_KEY });
-        await clearPersonalRepositoryState(queryClient, null);
+        await synchronizeProtectedIdentity(queryClient, null, true);
         apiClient.setCsrfToken(null);
         queryClient.setQueryData(SESSION_QUERY_KEY, null);
       }),

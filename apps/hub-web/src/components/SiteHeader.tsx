@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { ThemeToggle } from "../theme/ThemeProvider";
 
 const navigation = [
@@ -45,9 +46,12 @@ export function SiteHeader() {
               {item.label}
             </a>
           ))}
-          <a className="nav-cta" href="#next" onClick={() => setIsMenuOpen(false)}>
-            Explore <span aria-hidden="true">↗</span>
-          </a>
+          <Link to="/login" onClick={() => setIsMenuOpen(false)}>
+            Sign in
+          </Link>
+          <Link className="nav-cta" to="/register" onClick={() => setIsMenuOpen(false)}>
+            Create account
+          </Link>
         </nav>
         <div className="header-actions">
           <ThemeToggle />

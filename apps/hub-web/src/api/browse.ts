@@ -79,6 +79,12 @@ export interface RepositoryDiff {
   files: RepositoryDiffFile[];
 }
 
+export interface RepositoryBrowseOptions {
+  signal?: AbortSignal;
+  ref?: string;
+  credentials?: RequestCredentials;
+}
+
 function requireResponse<T>(response: T | undefined): T {
   if (response !== undefined) return response;
   throw new ApiError("The Hub API returned an empty repository browse response.", {
@@ -95,7 +101,7 @@ function browsePath(repositoryId: string, suffix: string): string {
 export async function getRepositoryTree(
   repositoryId: string,
   path = "",
-  options: { signal?: AbortSignal; ref?: string } = {},
+  options: RepositoryBrowseOptions = {},
 ): Promise<RepositoryTree> {
   const params: string[] = [];
   if (path) params.push(`path=${encodeURIComponent(path)}`);
@@ -109,7 +115,7 @@ export async function getRepositoryTree(
 export async function getRepositoryBlob(
   repositoryId: string,
   path: string,
-  options: { signal?: AbortSignal; ref?: string } = {},
+  options: RepositoryBrowseOptions = {},
 ): Promise<RepositoryBlob> {
   const params = [`path=${encodeURIComponent(path)}`];
   if (options.ref && options.ref !== "HEAD") params.push(`ref=${encodeURIComponent(options.ref)}`);
@@ -123,7 +129,7 @@ export async function getRepositoryBlob(
 
 export async function getRepositoryCommits(
   repositoryId: string,
-  options: { signal?: AbortSignal; ref?: string } = {},
+  options: RepositoryBrowseOptions = {},
 ): Promise<RepositoryCommitList> {
   const params = ["limit=50"];
   if (options.ref && options.ref !== "HEAD") params.push(`ref=${encodeURIComponent(options.ref)}`);
@@ -138,7 +144,7 @@ export async function getRepositoryCommits(
 export async function getRepositoryCommit(
   repositoryId: string,
   commitId: string,
-  options: { signal?: AbortSignal; ref?: string } = {},
+  options: RepositoryBrowseOptions = {},
 ): Promise<RepositoryCommitDetail> {
   const params =
     options.ref && options.ref !== "HEAD" ? `?ref=${encodeURIComponent(options.ref)}` : "";
@@ -153,7 +159,7 @@ export async function getRepositoryCommit(
 export async function getRepositoryDiff(
   repositoryId: string,
   commitId: string,
-  options: { signal?: AbortSignal; ref?: string } = {},
+  options: RepositoryBrowseOptions = {},
 ): Promise<RepositoryDiff> {
   const params =
     options.ref && options.ref !== "HEAD" ? `?ref=${encodeURIComponent(options.ref)}` : "";
@@ -167,7 +173,7 @@ export async function getRepositoryDiff(
 
 export async function getRepositoryRefs(
   repositoryId: string,
-  options: { signal?: AbortSignal } = {},
+  options: RepositoryBrowseOptions = {},
 ): Promise<RepositoryRefList> {
   return requireResponse(
     await apiClient.get<RepositoryRefList>(browsePath(repositoryId, "refs"), options),

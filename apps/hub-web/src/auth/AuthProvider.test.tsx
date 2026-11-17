@@ -5,8 +5,10 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiClient } from "../api/client";
+import { getProtectedQueryIdentityGeneration } from "../app/protectedQueryCache";
 import {
   personalRepositoryMutationClient,
   personalRepositoryMutationOptions,
@@ -85,6 +87,7 @@ function renderAuthProvider(
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   }),
   showRepositoryMutationProbe = false,
+  pendingProfileUpdate?: Promise<AuthUser>,
 ) {
   queryClients.push(queryClient);
   const view = render(
@@ -92,10 +95,51 @@ function renderAuthProvider(
       <AuthProvider>
         <AuthProbe />
         {showRepositoryMutationProbe ? <RepositoryMutationProbe /> : null}
+        {pendingProfileUpdate ? (
+          <PendingProfileUpdateProbe pendingProfileUpdate={pendingProfileUpdate} />
+        ) : null}
       </AuthProvider>
     </QueryClientProvider>,
   );
   return { ...view, queryClient };
+}
+
+function PendingProfileUpdateProbe({
+  pendingProfileUpdate,
+}: {
+  pendingProfileUpdate: Promise<AuthUser>;
+}) {
+  const auth = useAuth();
+  const queryClient = useQueryClient();
+  const [updated, setUpdated] = useState(false);
+
+  if (auth.status !== "authenticated") return null;
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          const expectedUserId = auth.user.id;
+          const identityGeneration = getProtectedQueryIdentityGeneration(
+            queryClient,
+            expectedUserId,
+          );
+          if (identityGeneration === null) return;
+          void pendingProfileUpdate.then(async (updatedUser) => {
+            await auth.updateUser(updatedUser, expectedUserId, identityGeneration);
+            setUpdated(true);
+          });
+        }}
+      >
+        Apply pending profile update
+      </button>
+      <button type="button" onClick={() => void auth.retrySession()}>
+        Refresh session
+      </button>
+      {updated ? <p>Profile update applied</p> : null}
+    </>
+  );
 }
 
 function RepositoryMutationProbe() {
@@ -255,6 +299,93 @@ describe("AuthProvider", () => {
     expect(queryClient.getQueryData(previousListKey)).toBeUndefined();
     expect(queryClient.getQueryData(nextListKey)).toBeUndefined();
     expect(apiClient.hasCsrfToken).toBe(true);
+  });
+
+  it("ignores an old profile response after the authenticated identity changes", async () => {
+    let meRequests = 0;
+    const pendingProfileUpdate = deferred<AuthUser>();
+    fetchMock.mockImplementation((input) => {
+      if (String(input).endsWith("/api/v1/me")) {
+        meRequests += 1;
+        return Promise.resolve(
+          jsonResponse(meRequests === 1 ? user : anotherUser, 200, {
+            "X-CSRF-Token": `csrf-user-${meRequests}`,
+          }),
+        );
+      }
+      throw new Error(`Unexpected API request: ${String(input)}`);
+    });
+    const { queryClient } = renderAuthProvider(undefined, false, pendingProfileUpdate.promise);
+
+    expect(await screen.findByText("Signed in as dev")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Apply pending profile update" }));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh session" }));
+    expect(await screen.findByText("Signed in as another")).toBeInTheDocument();
+
+    await act(async () => {
+      pendingProfileUpdate.resolve({ ...user, display_name: "Stale profile response" });
+    });
+    expect(await screen.findByText("Profile update applied")).toBeInTheDocument();
+    expect(screen.getByText("Signed in as another")).toBeInTheDocument();
+    expect(queryClient.getQueryData(["auth", "current-user"])).toEqual(anotherUser);
+  });
+
+  it("ignores an old profile response after the same user starts a new session", async () => {
+    const newSessionUser = { ...user, display_name: "Current session profile" };
+    const pendingProfileUpdate = deferred<AuthUser>();
+    fetchMock.mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/me")) {
+        return Promise.resolve(jsonResponse(user, 200, { "X-CSRF-Token": "csrf-from-session" }));
+      }
+      if (url.endsWith("/api/v1/auth/logout")) {
+        return Promise.resolve(jsonResponse({ status: "ok" }, 200));
+      }
+      if (url.endsWith("/api/v1/auth/login")) {
+        return Promise.resolve(
+          jsonResponse(newSessionUser, 200, { "X-CSRF-Token": "csrf-new-session" }),
+        );
+      }
+      throw new Error(`Unexpected API request: ${url}`);
+    });
+    const { queryClient } = renderAuthProvider(undefined, false, pendingProfileUpdate.promise);
+
+    expect(await screen.findByText("Signed in as dev")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Apply pending profile update" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    expect(await screen.findByText("Auth status: anonymous")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(await screen.findByText("Signed in as dev")).toBeInTheDocument();
+    expect(queryClient.getQueryData(["auth", "current-user"])).toEqual(newSessionUser);
+
+    await act(async () => {
+      pendingProfileUpdate.resolve({ ...user, display_name: "Stale profile response" });
+    });
+
+    expect(await screen.findByText("Profile update applied")).toBeInTheDocument();
+    expect(queryClient.getQueryData(["auth", "current-user"])).toEqual(newSessionUser);
+  });
+
+  it("applies a profile update when the initiating session remains current", async () => {
+    const updatedUser = { ...user, display_name: "Updated Developer" };
+    const pendingProfileUpdate = deferred<AuthUser>();
+    fetchMock.mockImplementation((input) => {
+      if (String(input).endsWith("/api/v1/me")) {
+        return Promise.resolve(jsonResponse(user, 200, { "X-CSRF-Token": "csrf-session" }));
+      }
+      throw new Error(`Unexpected API request: ${String(input)}`);
+    });
+    const { queryClient } = renderAuthProvider(undefined, false, pendingProfileUpdate.promise);
+
+    expect(await screen.findByText("Signed in as dev")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Apply pending profile update" }));
+
+    await act(async () => {
+      pendingProfileUpdate.resolve(updatedUser);
+    });
+
+    expect(await screen.findByText("Profile update applied")).toBeInTheDocument();
+    expect(queryClient.getQueryData(["auth", "current-user"])).toEqual(updatedUser);
   });
 
   it("removes a settled repository mutation result when switching authenticated accounts", async () => {

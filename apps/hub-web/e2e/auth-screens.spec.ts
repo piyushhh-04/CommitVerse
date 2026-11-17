@@ -20,6 +20,16 @@ function installAnonymousSession(page: Page) {
   );
 }
 
+function installEmptyOrganizations(page: Page) {
+  return page.route("**/api/v1/organizations*", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ items: [], total: 0, limit: 50, offset: 0 }),
+    }),
+  );
+}
+
 test("login submits through the API client and returns to a protected destination", async ({
   page,
 }) => {
@@ -63,6 +73,74 @@ test("login submits through the API client and returns to a protected destinatio
     scrollWidth: document.documentElement.scrollWidth,
   }));
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
+});
+
+test("workspace dashboard summarizes repositories and organizations", async ({ page }) => {
+  await page.route("**/api/v1/me", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "X-CSRF-Token": "browser-csrf" },
+      body: JSON.stringify(authenticatedUser),
+    }),
+  );
+  await page.route("**/api/v1/repositories?limit=4&offset=0", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: [
+          {
+            id: "browser-repository",
+            name: "browser-project",
+            description: "A project for the workspace.",
+            visibility: "private",
+            created_at: "2026-11-15T10:00:00Z",
+            updated_at: "2026-11-15T10:00:00Z",
+          },
+        ],
+        total: 1,
+        limit: 4,
+        offset: 0,
+      }),
+    }),
+  );
+  await page.route("**/api/v1/organizations?limit=50&offset=0", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: [
+          {
+            id: "browser-organization",
+            slug: "browser-org",
+            name: "Browser Organization",
+            state: "active",
+            role: "owner",
+            created_at: "2026-11-15T10:00:00Z",
+            updated_at: "2026-11-15T10:00:00Z",
+          },
+        ],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+    }),
+  );
+
+  await page.goto("/app");
+
+  await expect(page.getByRole("heading", { name: "Welcome, Browser Developer" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "browser-project" })).toHaveAttribute(
+    "href",
+    "/app/repositories/browser-repository",
+  );
+  await expect(page.getByRole("link", { name: "Browser Organization" })).toHaveAttribute(
+    "href",
+    "/app/organizations/browser-organization",
+  );
+  await expect(page.getByRole("link", { name: "New repository" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "New organization" })).toBeVisible();
 });
 
 test("registration submits only supported fields and handles backend errors", async ({ page }) => {
@@ -122,9 +200,10 @@ test("mobile application navigation is keyboard accessible and logout returns to
       body: JSON.stringify({ items: [], total: 0, limit: 50, offset: 0 }),
     }),
   );
+  await installEmptyOrganizations(page);
 
   await page.goto("/app");
-  await expect(page.getByRole("heading", { name: "Your workspace" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Welcome, Browser Developer" })).toBeVisible();
   const menuButton = page.locator(".app-menu-toggle");
   await menuButton.focus();
   await page.keyboard.press("Enter");
@@ -150,7 +229,7 @@ test("mobile application navigation is keyboard accessible and logout returns to
 
   await page.goBack();
   await expect(page).toHaveURL(/\/app$/);
-  await expect(page.getByRole("heading", { name: "Your workspace" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Welcome, Browser Developer" })).toBeVisible();
   await page.goForward();
   await expect(page).toHaveURL(/\/app\/repositories$/);
   await expect(destinationHeading).toBeVisible();
@@ -188,6 +267,13 @@ test("modified mobile navigation clicks preserve the open menu and visible focus
       body: JSON.stringify({ items: [], total: 0, limit: 50, offset: 0 }),
     }),
   );
+  await page.context().route("**/api/v1/organizations*", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ items: [], total: 0, limit: 50, offset: 0 }),
+    }),
+  );
 
   await page.goto("/app");
   const menuButton = page.locator(".app-menu-toggle");
@@ -210,7 +296,9 @@ test("modified mobile navigation clicks preserve the open menu and visible focus
       await expect(menuButton).toHaveAttribute("aria-expanded", "true");
       await expect(repositoriesLink).toBeVisible();
       await expect(repositoriesLink).toBeFocused();
-      await expect(page.getByRole("heading", { name: "Your workspace" })).not.toBeFocused();
+      await expect(
+        page.getByRole("heading", { name: "Welcome, Browser Developer" }),
+      ).not.toBeFocused();
     } finally {
       await newPage.close();
     }
@@ -237,6 +325,7 @@ test("desktop application navigation remains visible and does not steal focus", 
       body: JSON.stringify({ items: [], total: 0, limit: 50, offset: 0 }),
     }),
   );
+  await installEmptyOrganizations(page);
 
   await page.goto("/app");
   const repositoriesLink = page

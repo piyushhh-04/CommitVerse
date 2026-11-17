@@ -19,7 +19,11 @@ interface AuthActions {
   login: (credentials: LoginCredentials) => Promise<AuthUser>;
   register: (details: RegistrationDetails) => Promise<AuthUser>;
   logout: () => Promise<void>;
-  updateUser: (user: AuthUser) => Promise<void>;
+  updateUser: (
+    user: AuthUser,
+    expectedCurrentUserId: string,
+    expectedIdentityGeneration: number,
+  ) => Promise<void>;
   retrySession: () => Promise<void>;
 }
 

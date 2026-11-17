@@ -20,6 +20,7 @@ from commitverse_hub.repositories.service import (
     RepositoryOperationError,
     RepositoryPermissionError,
     _audit_event,
+    _lock_organization,
     _lock_repository,
     _lock_repository_for_permission_manager,
     _validate_repository_permission_role,
@@ -59,7 +60,6 @@ def create_repository_invitation(
         raise ValueError("Invitation expiry must be between 1 and 30 days.")
     token = generate_session_token()
     invitation_id = uuid.uuid4()
-    now = datetime.now(UTC)
     try:
         with transactional_session(factory) as db_session:
             repository = _lock_repository_for_permission_manager(
@@ -81,6 +81,20 @@ def create_repository_invitation(
             )
             if target == owner_email or existing_permission is not None:
                 raise RepositoryConflictError("The user already has repository access.")
+            now = datetime.now(UTC)
+            expired_invitation = db_session.scalar(
+                select(Invitation)
+                .where(
+                    Invitation.repository_id == repository_id,
+                    Invitation.target_email == target,
+                    Invitation.status == "pending",
+                    Invitation.expires_at <= now,
+                )
+                .with_for_update()
+            )
+            if expired_invitation is not None:
+                expired_invitation.status = "expired"
+                db_session.flush()
             invitation = Invitation(
                 id=invitation_id,
                 inviter_user_id=actor_user_id,
@@ -123,7 +137,12 @@ def list_repository_invitations(
     try:
         with factory() as db_session:
             _lock_repository_for_permission_manager(db_session, repository_id, actor_user_id)
-            filters = Invitation.repository_id == repository_id, Invitation.status == "pending"
+            now = datetime.now(UTC)
+            filters = (
+                Invitation.repository_id == repository_id,
+                Invitation.status == "pending",
+                Invitation.expires_at > now,
+            )
             total = db_session.scalar(select(func.count()).select_from(Invitation).where(*filters))
             items = list(
                 db_session.scalars(
@@ -189,30 +208,64 @@ def accept_repository_invitation(
 ) -> RepositoryUserPermission:
     if not validate_session_token(token):
         raise RepositoryNotFoundError("Invitation not found.")
+    token_hash = hash_session_token(token)
     permission: RepositoryUserPermission | None = None
     expired = False
     try:
         with transactional_session(factory) as db_session:
-            invitation = db_session.scalar(
-                select(Invitation).where(Invitation.token_hash == hash_session_token(token)).with_for_update()
+            initial_invitation = db_session.scalar(
+                select(Invitation).where(Invitation.token_hash == token_hash)
             )
-            if invitation is None or invitation.status != "pending" or invitation.repository_id is None:
+            if (
+                initial_invitation is None
+                or initial_invitation.status != "pending"
+                or initial_invitation.repository_id is None
+            ):
                 raise RepositoryNotFoundError("Invitation not found.")
+            repository_snapshot = db_session.get(Repository, initial_invitation.repository_id)
+            if repository_snapshot is None:
+                raise RepositoryNotFoundError("Invitation not found.")
+            organization_id = repository_snapshot.owner_organization_id
+            if organization_id is not None:
+                organization = _lock_organization(db_session, organization_id)
+                if organization.state != "active":
+                    raise RepositoryNotFoundError("Invitation not found.")
+            user = db_session.scalar(
+                select(User).where(User.id == user_id).with_for_update()
+            )
+            if user is None or user.account_state != "active":
+                raise RepositoryPermissionError(
+                    "Invitation email does not match the signed-in account."
+                )
+            db_session.expire(repository_snapshot)
+            repository = _lock_repository(db_session, initial_invitation.repository_id)
+            if (
+                repository.lifecycle_state != "ready"
+                or repository.owner_organization_id != organization_id
+            ):
+                raise RepositoryNotFoundError("Invitation not found.")
+            invitation = db_session.scalar(
+                select(Invitation)
+                .where(
+                    Invitation.id == initial_invitation.id,
+                    Invitation.token_hash == token_hash,
+                    Invitation.repository_id == repository.id,
+                )
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            if invitation is None or invitation.status != "pending":
+                raise RepositoryNotFoundError("Invitation not found.")
+            now = datetime.now(UTC)
             expiry = invitation.expires_at
             if expiry.tzinfo is None:
                 expiry = expiry.replace(tzinfo=UTC)
-            if expiry <= datetime.now(UTC):
+            if expiry <= now:
                 invitation.status = "expired"
                 db_session.flush()
                 expired = True
             else:
-                repository = _lock_repository(db_session, invitation.repository_id)
-                if repository.lifecycle_state != "ready":
-                    raise RepositoryNotFoundError("Invitation not found.")
-                user = db_session.scalar(
-                    select(User).where(User.id == user_id).with_for_update()
-                )
-                if user is None or user.account_state != "active" or user.normalized_email != invitation.target_email:
+                if user.normalized_email != invitation.target_email:
                     raise RepositoryPermissionError("Invitation email does not match the signed-in account.")
                 if repository.owner_user_id == user_id:
                     raise RepositoryConflictError("The user already owns this repository.")

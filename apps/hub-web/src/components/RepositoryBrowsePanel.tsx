@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { protectedQueryKey } from "../app/protectedQueryCache";
 import { ApiError } from "../api/client";
 import {
   getRepositoryBlob,
@@ -29,47 +30,65 @@ function formatCommitDate(timestamp: number): string {
     : new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(value);
 }
 
-export function RepositoryBrowsePanel({ repositoryId }: { repositoryId: string }) {
+export function RepositoryBrowsePanel({
+  repositoryId,
+  userId,
+  anonymous = false,
+}: {
+  repositoryId: string;
+  userId: string;
+  anonymous?: boolean;
+}) {
   const [path, setPath] = useState("");
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedRef, setSelectedRef] = useState("HEAD");
   const [selectedCommit, setSelectedCommit] = useState<string | null>(null);
+  const isAnonymous = anonymous || !userId;
+  const queryKey = (scope: readonly unknown[]) =>
+    isAnonymous
+      ? ["public", "repository-browse", repositoryId, ...scope]
+      : protectedQueryKey(userId, "repository-browse", repositoryId, ...scope);
+  const requestOptions = (signal: AbortSignal, ref?: string) => ({
+    signal,
+    ...(ref ? { ref } : {}),
+    credentials: isAnonymous ? ("omit" as const) : ("same-origin" as const),
+  });
   const refsQuery = useQuery({
-    queryKey: ["repository-browse", repositoryId, "refs"],
-    queryFn: ({ signal }) => getRepositoryRefs(repositoryId, { signal }),
+    queryKey: queryKey(["refs"]),
+    queryFn: ({ signal }) => getRepositoryRefs(repositoryId, requestOptions(signal)),
     enabled: Boolean(repositoryId),
   });
   const treeQuery = useQuery({
-    queryKey: ["repository-browse", repositoryId, "tree", selectedRef, path],
-    queryFn: ({ signal }) => getRepositoryTree(repositoryId, path, { signal, ref: selectedRef }),
+    queryKey: queryKey(["tree", selectedRef, path]),
+    queryFn: ({ signal }) =>
+      getRepositoryTree(repositoryId, path, requestOptions(signal, selectedRef)),
     enabled: Boolean(repositoryId),
   });
   const commitsQuery = useQuery({
-    queryKey: ["repository-browse", repositoryId, "commits", selectedRef],
-    queryFn: ({ signal }) => getRepositoryCommits(repositoryId, { signal, ref: selectedRef }),
+    queryKey: queryKey(["commits", selectedRef]),
+    queryFn: ({ signal }) =>
+      getRepositoryCommits(repositoryId, requestOptions(signal, selectedRef)),
     enabled: Boolean(repositoryId),
   });
   const blobQuery = useQuery({
-    queryKey: ["repository-browse", repositoryId, "blob", selectedRef, selectedFile],
+    queryKey: queryKey(["blob", selectedRef, selectedFile]),
     queryFn: ({ signal }) =>
-      getRepositoryBlob(repositoryId, selectedFile ?? "", { signal, ref: selectedRef }),
+      getRepositoryBlob(repositoryId, selectedFile ?? "", requestOptions(signal, selectedRef)),
     enabled: Boolean(repositoryId && selectedFile),
   });
   const commitQuery = useQuery({
-    queryKey: ["repository-browse", repositoryId, "commit", selectedRef, selectedCommit],
+    queryKey: queryKey(["commit", selectedRef, selectedCommit]),
     queryFn: ({ signal }) =>
       getRepositoryCommit(repositoryId, selectedCommit ?? "", {
-        signal,
-        ref: selectedRef,
+        ...requestOptions(signal, selectedRef),
       }),
     enabled: Boolean(repositoryId && selectedCommit),
   });
   const diffQuery = useQuery({
-    queryKey: ["repository-browse", repositoryId, "diff", selectedRef, selectedCommit],
+    queryKey: queryKey(["diff", selectedRef, selectedCommit]),
     queryFn: ({ signal }) =>
       getRepositoryDiff(repositoryId, selectedCommit ?? "", {
-        signal,
-        ref: selectedRef,
+        ...requestOptions(signal, selectedRef),
       }),
     enabled: Boolean(repositoryId && selectedCommit),
   });

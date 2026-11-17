@@ -524,23 +524,40 @@ def get_repository_for_access(
     """Return a ready repository for its owner or an effective reader grant."""
     try:
         with factory() as db_session:
-            actor = db_session.scalar(
-                select(User).where(User.id == actor_user_id).with_for_update()
-            )
-            if actor is None or actor.account_state != "active":
-                raise RepositoryNotFoundError("Repository not found.")
-            repository = db_session.scalar(
+            repository_snapshot = db_session.scalar(
                 select(Repository).where(Repository.id == repository_id)
             )
-            if repository is None or repository.lifecycle_state != "ready":
+            if (
+                repository_snapshot is None
+                or repository_snapshot.lifecycle_state != "ready"
+            ):
                 raise RepositoryNotFoundError("Repository not found.")
+            owner_user_id = repository_snapshot.owner_user_id
+            owner_organization_id = repository_snapshot.owner_organization_id
 
-            if repository.owner_organization_id is not None:
+            if owner_organization_id is not None:
                 organization = _lock_organization(
-                    db_session, repository.owner_organization_id
+                    db_session, owner_organization_id
                 )
                 if organization.state != "active":
                     raise RepositoryNotFoundError("Repository not found.")
+
+            actor = db_session.scalar(
+                select(User).where(User.id == actor_user_id)
+            )
+            if actor is None or actor.account_state != "active":
+                raise RepositoryNotFoundError("Repository not found.")
+            db_session.expire(repository_snapshot)
+            repository = _lock_repository(db_session, repository_id)
+            if (
+                repository.lifecycle_state != "ready"
+                or repository.owner_user_id != owner_user_id
+                or repository.owner_organization_id
+                != owner_organization_id
+            ):
+                raise RepositoryNotFoundError("Repository not found.")
+
+            if repository.owner_organization_id is not None:
                 membership = db_session.scalar(
                     select(OrganizationMembership)
                     .where(
@@ -548,7 +565,6 @@ def get_repository_for_access(
                         == repository.owner_organization_id,
                         OrganizationMembership.user_id == actor_user_id,
                     )
-                    .with_for_update()
                 )
                 if membership is None or membership.role not in {"owner", "admin"}:
                     permission = db_session.get(
@@ -565,7 +581,7 @@ def get_repository_for_access(
                 if permission is None:
                     raise RepositoryNotFoundError("Repository not found.")
 
-            return _lock_repository(db_session, repository_id)
+            return repository
     except RepositoryNotFoundError:
         raise
     except SQLAlchemyError as exc:

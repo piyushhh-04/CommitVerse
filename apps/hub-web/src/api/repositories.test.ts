@@ -2,10 +2,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, apiClient } from "./client";
 import {
   createPersonalRepository,
+  createRepositoryInvitation,
   deletePersonalRepository,
   getPersonalRepository,
+  grantRepositoryPermission,
+  listRepositoryInvitations,
   listPersonalRepositories,
+  listRepositoryPermissions,
+  acceptRepositoryInvitation,
+  revokeRepositoryInvitation,
+  revokeRepositoryPermission,
   updatePersonalRepository,
+  updateRepositoryPermission,
   type PersonalRepository,
 } from "./repositories";
 
@@ -118,6 +126,78 @@ describe("personal repository API", () => {
     expect(url).toBe(`/api/v1/repositories/${repository.id}`);
     expect(options?.method).toBe("DELETE");
     expect(options?.body).toBeUndefined();
+  });
+
+  it("supports direct repository permission list, grant, role update, and revoke", async () => {
+    const permission = {
+      user_id: "user-2",
+      role: "reader",
+      created_at: "2026-11-15T10:00:00Z",
+      updated_at: "2026-11-15T10:00:00Z",
+    };
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([permission]))
+      .mockResolvedValueOnce(jsonResponse(permission, 201))
+      .mockResolvedValueOnce(jsonResponse({ ...permission, role: "writer" }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    await expect(listRepositoryPermissions(repository.id)).resolves.toEqual([permission]);
+    await grantRepositoryPermission(repository.id, "user-2", "reader");
+    await updateRepositoryPermission(repository.id, "user-2", "writer");
+    await revokeRepositoryPermission(repository.id, "user-2");
+
+    expect(fetchMock.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
+      [`/api/v1/repositories/${repository.id}/permissions`, "GET"],
+      [`/api/v1/repositories/${repository.id}/permissions`, "POST"],
+      [`/api/v1/repositories/${repository.id}/permissions/user-2`, "PATCH"],
+      [`/api/v1/repositories/${repository.id}/permissions/user-2`, "DELETE"],
+    ]);
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+      user_id: "user-2",
+      role: "reader",
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body))).toEqual({ role: "writer" });
+  });
+
+  it("supports repository invitation creation, listing, revocation, and acceptance", async () => {
+    const invitation = {
+      id: "invitation-1",
+      target_email: "reader@example.test",
+      role: "reader",
+      status: "pending",
+      expires_at: "2026-11-22T10:00:00Z",
+      created_at: "2026-11-15T10:00:00Z",
+    };
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ ...invitation, token: "secret-invitation-token" }, 201))
+      .mockResolvedValueOnce(jsonResponse({ items: [invitation], total: 1, limit: 100, offset: 0 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(jsonResponse({ repository_id: repository.id, role: "reader" }));
+
+    await expect(
+      createRepositoryInvitation(repository.id, "reader@example.test", "reader", 7),
+    ).resolves.toMatchObject({ ...invitation, token: "secret-invitation-token" });
+    await expect(listRepositoryInvitations(repository.id)).resolves.toMatchObject({
+      items: [invitation],
+      total: 1,
+    });
+    await revokeRepositoryInvitation(repository.id, "invitation-1");
+    await expect(acceptRepositoryInvitation("secret-invitation-token")).resolves.toEqual({
+      repository_id: repository.id,
+      role: "reader",
+    });
+
+    expect(fetchMock.mock.calls.map(([url, options]) => [url, options?.method])).toEqual([
+      [`/api/v1/repositories/${repository.id}/invitations`, "POST"],
+      [`/api/v1/repositories/${repository.id}/invitations?limit=100&offset=0`, "GET"],
+      [`/api/v1/repositories/${repository.id}/invitations/invitation-1`, "DELETE"],
+      ["/api/v1/repositories/invitations/secret-invitation-token/accept", "POST"],
+    ]);
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      target_email: "reader@example.test",
+      role: "reader",
+      expires_in_days: 7,
+    });
   });
 
   it("preserves API errors, request IDs, and validation details", async () => {

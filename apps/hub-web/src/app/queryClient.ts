@@ -13,6 +13,7 @@ export const queryClient = new QueryClient({
         (error.status === null || error.status >= 500),
     },
     mutations: {
+      gcTime: 0,
       retry: false,
     },
   },

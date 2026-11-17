@@ -61,9 +61,10 @@ class RequestContextMiddleware:
                 headers = [
                     (name, value)
                     for name, value in message.get("headers", [])
-                    if name.lower() != _REQUEST_ID_HEADER
+                    if name.lower() not in {_REQUEST_ID_HEADER, b"cache-control"}
                 ]
                 headers.append((_REQUEST_ID_HEADER, request_id.encode("ascii")))
+                headers.append((b"cache-control", b"no-store"))
                 message = {**message, "headers": headers}
             await send(message)
 

@@ -174,13 +174,13 @@ function LandingPage() {
             <SectionHeading
               id="hub-title"
               eyebrow="03 / CommitVerse Hub"
-              title="A local API foundation—not a hosted product."
-              copy="Hub connects account sessions and owner-only personal repository workflows to Core through a separate API layer."
+              title="A local collaboration workspace, built on clear boundaries."
+              copy="Hub connects account sessions, organization and repository management, and authorized read-only repository browsing to Core through a separate API layer."
             />
             <p className="hub-caveat">
-              This landing page has no sign-in, repository dashboard, live repository data, or API
-              calls. The Hub API is local-development software and is not ready for hosted
-              deployment.
+              This public overview is informational and makes no API calls. The authenticated Hub
+              app provides local account, organization, and repository workflows; it is not ready
+              for hosted deployment.
             </p>
           </div>
           <div className="hub-status-card">
@@ -190,8 +190,18 @@ function LandingPage() {
                 ✓
               </span>
               <div>
-                <strong>Available in the API foundation</strong>
-                <p>Browser sessions and owner-only personal repository lifecycle.</p>
+                <strong>Available in the local web app</strong>
+                <p>Accounts, profiles, personal and organization repositories, and membership.</p>
+              </div>
+              <span className="status-tag">Local</span>
+            </div>
+            <div className="status-row">
+              <span className="status-symbol status-symbol-ready" aria-hidden="true">
+                ✓
+              </span>
+              <div>
+                <strong>Read-only repository browsing</strong>
+                <p>Trees, text files, branches, tags, commits, and bounded diffs.</p>
               </div>
               <span className="status-tag">Local</span>
             </div>
@@ -200,10 +210,10 @@ function LandingPage() {
                 →
               </span>
               <div>
-                <strong>Not available as a web workflow</strong>
-                <p>Repository browsing, organization collaboration, and a product UI.</p>
+                <strong>Still to come</strong>
+                <p>Code writes, branch creation, pull requests, and broader collaboration.</p>
               </div>
-              <span className="status-tag status-tag-muted">Planned</span>
+              <span className="status-tag status-tag-muted">Future</span>
             </div>
             <div className="status-row">
               <span className="status-symbol status-symbol-next" aria-hidden="true">
@@ -364,7 +374,7 @@ function LandingPage() {
               <div>
                 <span className="roadmap-state">Implemented foundation</span>
                 <h3>Core &amp; local Hub API</h3>
-                <p>Local version-control workflows and a limited API foundation.</p>
+                <p>Local version-control workflows and authenticated Hub API capabilities.</p>
               </div>
               <span className="roadmap-index">01</span>
             </li>
@@ -373,9 +383,11 @@ function LandingPage() {
                 02
               </span>
               <div>
-                <span className="roadmap-state">Milestone 01 / This work</span>
-                <h3>Standalone web identity</h3>
-                <p>Accessible landing page, responsive design system, and no backend coupling.</p>
+                <span className="roadmap-state">Implemented locally</span>
+                <h3>Authenticated Hub workflows</h3>
+                <p>
+                  Accounts, profile settings, repository management, organizations, and browsing.
+                </p>
               </div>
               <span className="roadmap-index">02</span>
             </li>
@@ -385,9 +397,10 @@ function LandingPage() {
               </span>
               <div>
                 <span className="roadmap-state">Future work</span>
-                <h3>Product workflows &amp; collaboration</h3>
+                <h3>Expanded collaboration &amp; repository writes</h3>
                 <p>
-                  Plan and implement authenticated interfaces only after API contracts are ready.
+                  Add code writes, branch management, and richer collaboration when API contracts
+                  are ready.
                 </p>
               </div>
               <span className="roadmap-index">03</span>
@@ -415,8 +428,8 @@ function LandingPage() {
               <em>one clear step at a time.</em>
             </h2>
             <p>
-              See the implementation and its current boundaries in the project repository. This page
-              is informational; it does not offer accounts or live repository features.
+              See the implementation and its current boundaries in the project repository. The Hub
+              workflows are available for local development.
             </p>
             <a
               className="button button-light"

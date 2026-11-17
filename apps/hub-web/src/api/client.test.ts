@@ -4,6 +4,14 @@ import { ApiClient, ApiError } from "./client";
 const fetchMock = vi.fn<typeof fetch>();
 let client: ApiClient;
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 beforeEach(() => {
   client = new ApiClient();
   vi.stubGlobal("fetch", fetchMock);
@@ -36,7 +44,7 @@ describe("ApiClient", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
       "/api/v1/me",
-      expect.objectContaining({ credentials: "same-origin" }),
+      expect.objectContaining({ credentials: "same-origin", cache: "no-store" }),
     );
     const requestOptions = fetchMock.mock.calls[1]?.[1];
     expect(new Headers(requestOptions?.headers).get("X-CSRF-Token")).toBe("csrf-from-session");
@@ -44,6 +52,44 @@ describe("ApiClient", () => {
     expect(client.hasCsrfToken).toBe(true);
     expect(window.localStorage.length).toBe(0);
     expect(window.sessionStorage.length).toBe(0);
+  });
+
+  it("can make a truly anonymous request without sending or updating session state", async () => {
+    client.setSessionIdentity({ userId: "user-1", generation: 3 });
+    client.setCsrfToken("csrf-user-1");
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ entries: [] }), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-Token": "csrf-from-anonymous-request",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "ok" }), {
+          status: 200,
+          headers: { "X-CSRF-Token": "csrf-from-anonymous-mutation" },
+        }),
+      );
+
+    await client.get("/repositories/public-1/tree", { credentials: "omit" });
+    await client.post("/organizations", { name: "Current session" }, { credentials: "omit" });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/repositories/public-1/tree",
+      expect.objectContaining({ credentials: "omit", cache: "default" }),
+    );
+    expect(client.hasCsrfToken).toBe(true);
+    expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get("X-CSRF-Token")).toBe(null);
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
+    );
+    await client.post("/organizations", { name: "Current session" });
+    expect(new Headers(fetchMock.mock.calls[2]?.[1]?.headers).get("X-CSRF-Token")).toBe(
+      "csrf-user-1",
+    );
   });
 
   it("preserves backend status, error details, and request identifiers", async () => {
@@ -106,6 +152,103 @@ describe("ApiClient", () => {
       password: "example-password",
       username: "new-user",
     });
+  });
+
+  it("preserves the current CSRF token after a profile update and sends it on the next mutation", async () => {
+    client.setSessionIdentity({ userId: "user-1", generation: 1 });
+    client.setCsrfToken("csrf-user-1");
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: "user-1" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "ok" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+    await client.patch("/me", { display_name: "Updated User" });
+    expect(client.hasCsrfToken).toBe(true);
+    await client.post("/organizations", { name: "Example" });
+
+    expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get("X-CSRF-Token")).toBe(
+      "csrf-user-1",
+    );
+  });
+
+  it("does not apply an old-session CSRF response to a different user's session", async () => {
+    client.setSessionIdentity({ userId: "user-a", generation: 1 });
+    client.setCsrfToken("csrf-user-a");
+    const pendingResponse = deferred<Response>();
+    fetchMock.mockImplementationOnce(() => pendingResponse.promise);
+
+    const profileRequest = client.patch("/me", { display_name: "Stale User A" });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    client.setSessionIdentity({ userId: null, generation: 2 });
+    client.setCsrfToken(null);
+    client.setSessionIdentity({ userId: "user-b", generation: 3 });
+    client.setCsrfToken("csrf-user-b");
+    pendingResponse.resolve(
+      new Response(JSON.stringify({ id: "user-a" }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": "csrf-stale-user-a",
+        },
+      }),
+    );
+
+    await profileRequest;
+
+    expect(client.hasCsrfToken).toBe(true);
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ status: "ok" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await client.post("/organizations", { name: "User B organization" });
+    expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get("X-CSRF-Token")).toBe(
+      "csrf-user-b",
+    );
+  });
+
+  it("does not clear a same user's new-session CSRF token when an old profile response arrives", async () => {
+    client.setSessionIdentity({ userId: "user-a", generation: 7 });
+    client.setCsrfToken("csrf-old-session");
+    const pendingResponse = deferred<Response>();
+    fetchMock.mockImplementationOnce(() => pendingResponse.promise);
+
+    const profileRequest = client.patch("/me", { display_name: "Old session profile" });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    client.setSessionIdentity({ userId: null, generation: 8 });
+    client.setCsrfToken(null);
+    client.setSessionIdentity({ userId: "user-a", generation: 9 });
+    client.setCsrfToken("csrf-new-session");
+    pendingResponse.resolve(
+      new Response(JSON.stringify({ id: "user-a" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await profileRequest;
+
+    expect(client.hasCsrfToken).toBe(true);
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ status: "ok" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await client.post("/organizations", { name: "New session organization" });
+    expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get("X-CSRF-Token")).toBe(
+      "csrf-new-session",
+    );
   });
 
   it("returns undefined for a successful empty JSON response", async () => {

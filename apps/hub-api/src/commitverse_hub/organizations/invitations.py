@@ -73,7 +73,6 @@ def create_organization_invitation(
     if not 1 <= expires_in_days <= _MAX_EXPIRY_DAYS:
         raise OrganizationValidationError("Invitation expiry must be between 1 and 30 days.")
     token = generate_session_token()
-    now = datetime.now(UTC)
     invitation_id = uuid.uuid4()
     try:
         with transactional_session(factory) as db_session:
@@ -96,6 +95,20 @@ def create_organization_invitation(
             )
             if existing_member is not None:
                 raise OrganizationConflictError("The user is already an organization member.")
+            now = datetime.now(UTC)
+            expired_invitation = db_session.scalar(
+                select(Invitation)
+                .where(
+                    Invitation.organization_id == organization_id,
+                    Invitation.target_email == email,
+                    Invitation.status == "pending",
+                    Invitation.expires_at <= now,
+                )
+                .with_for_update()
+            )
+            if expired_invitation is not None:
+                expired_invitation.status = "expired"
+                db_session.flush()
             invitation = Invitation(
                 id=invitation_id,
                 inviter_user_id=actor_user_id,
@@ -152,9 +165,11 @@ def list_organization_invitations(
             )
             if membership is None or membership.role not in {"owner", "admin"}:
                 raise OrganizationNotFoundError("Organization not found.")
+            now = datetime.now(UTC)
             filters = (
                 Invitation.organization_id == organization_id,
                 Invitation.status == "pending",
+                Invitation.expires_at > now,
             )
             from sqlalchemy import func
 
@@ -233,15 +248,33 @@ def accept_organization_invitation(
     if not validate_session_token(token):
         raise OrganizationNotFoundError("Invitation not found.")
     token_hash = hash_session_token(token)
-    now = datetime.now(UTC)
     expired = False
     try:
         with transactional_session(factory) as db_session:
+            initial_invitation = db_session.scalar(
+                select(Invitation).where(Invitation.token_hash == token_hash)
+            )
+            if (
+                initial_invitation is None
+                or initial_invitation.status != "pending"
+                or initial_invitation.organization_id is None
+            ):
+                raise OrganizationNotFoundError("Invitation not found.")
+            organization = _lock_organization(db_session, initial_invitation.organization_id)
+            _require_active_organization(organization)
             invitation = db_session.scalar(
-                select(Invitation).where(Invitation.token_hash == token_hash).with_for_update()
+                select(Invitation)
+                .where(
+                    Invitation.id == initial_invitation.id,
+                    Invitation.token_hash == token_hash,
+                    Invitation.organization_id == initial_invitation.organization_id,
+                )
+                .with_for_update()
+                .execution_options(populate_existing=True)
             )
             if invitation is None or invitation.status != "pending":
                 raise OrganizationNotFoundError("Invitation not found.")
+            now = datetime.now(UTC)
             expires_at = invitation.expires_at
             if expires_at.tzinfo is None:
                 expires_at = expires_at.replace(tzinfo=UTC)
@@ -250,10 +283,6 @@ def accept_organization_invitation(
                 db_session.flush()
                 expired = True
             else:
-                if invitation.organization_id is None:
-                    raise OrganizationNotFoundError("Invitation not found.")
-                organization = _lock_organization(db_session, invitation.organization_id)
-                _require_active_organization(organization)
                 actor = _lock_users(db_session, [user_id]).get(user_id)
                 if actor is None or actor.account_state != "active":
                     raise OrganizationNotFoundError("Invitation not found.")

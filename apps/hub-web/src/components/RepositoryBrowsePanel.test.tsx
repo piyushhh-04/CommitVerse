@@ -147,7 +147,7 @@ describe("RepositoryBrowsePanel", () => {
     const user = userEvent.setup();
     render(
       <QueryClientProvider client={queryClient}>
-        <RepositoryBrowsePanel repositoryId="repo-1" />
+        <RepositoryBrowsePanel repositoryId="repo-1" userId="user-1" />
       </QueryClientProvider>,
     );
 

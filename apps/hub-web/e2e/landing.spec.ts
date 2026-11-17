@@ -14,6 +14,16 @@ test("renders the complete informational page without API requests", async ({ pa
   await expect(page.locator("main > section")).toHaveCount(9);
   await expect(page.getByText("Static architecture sketch")).toBeVisible();
   await expect(page.getByText("Future scope · not implemented")).toBeVisible();
+  if (test.info().project.name === "mobile-chromium") {
+    await page.getByRole("button", { name: "Open navigation menu" }).click();
+  }
+  const navigation = page.getByRole("navigation", { name: "Primary navigation" });
+  await expect(navigation.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
+  await expect(navigation.getByRole("link", { name: "Create account" })).toHaveAttribute(
+    "href",
+    "/register",
+  );
+  await expect(page.getByText(/Read-only repository browsing/)).toBeVisible();
   expect(apiRequests).toEqual([]);
 
   const dimensions = await page.evaluate(() => ({

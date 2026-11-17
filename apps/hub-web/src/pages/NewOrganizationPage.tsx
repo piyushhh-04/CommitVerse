@@ -2,6 +2,12 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client";
 import {
+  getProtectedQueryIdentityGeneration,
+  isProtectedQueryIdentity,
+  protectedQueryKey,
+} from "../app/protectedQueryCache";
+import { useAuth } from "../auth/AuthContext";
+import {
   createOrganization,
   type Organization,
   type OrganizationInput,
@@ -9,20 +15,32 @@ import {
 import { OrganizationForm, type OrganizationFormValues } from "../components/OrganizationForm";
 
 export function NewOrganizationPage() {
+  const auth = useAuth();
+  const userId = auth.status === "authenticated" ? auth.user.id : "";
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const mutation = useMutation<Organization, ApiError, OrganizationInput>({
-    mutationFn: createOrganization,
+  const mutation = useMutation<
+    Organization,
+    ApiError,
+    { input: OrganizationInput; identityGeneration: number }
+  >({
+    mutationKey: protectedQueryKey(userId, "organizations", "mutation", "create"),
+    mutationFn: ({ input }) => createOrganization(input),
     retry: false,
-    onSuccess: async (organization) => {
-      await queryClient.invalidateQueries({ queryKey: ["organizations"] });
+    onSuccess: async (organization, variables) => {
+      if (!isProtectedQueryIdentity(queryClient, userId, variables.identityGeneration)) return;
+      await queryClient.invalidateQueries({
+        queryKey: protectedQueryKey(userId, "organizations"),
+      });
+      if (!isProtectedQueryIdentity(queryClient, userId, variables.identityGeneration)) return;
       void navigate(`/app/organizations/${organization.id}`, {
         state: { focusDestinationHeading: true },
       });
     },
   });
   function submit(values: OrganizationFormValues) {
-    mutation.mutate(values);
+    const identityGeneration = getProtectedQueryIdentityGeneration(queryClient, userId);
+    if (identityGeneration !== null) mutation.mutate({ input: values, identityGeneration });
   }
   return (
     <main className="repository-page repository-form-page">

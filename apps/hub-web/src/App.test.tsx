@@ -19,9 +19,17 @@ describe("CommitVerse landing page", () => {
     expect(document.querySelector(".diagram-label")).toHaveTextContent(
       /Static architecture sketch.*not live data/,
     );
-    expect(
-      screen.getByText(/no sign-in, repository dashboard, live repository data, or API calls/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/authenticated Hub app provides local account/i)).toBeInTheDocument();
+    const navigation = screen.getByRole("navigation", { name: "Primary navigation" });
+    expect(within(navigation).getByRole("link", { name: "Sign in" })).toHaveAttribute(
+      "href",
+      "/login",
+    );
+    expect(within(navigation).getByRole("link", { name: "Create account" })).toHaveAttribute(
+      "href",
+      "/register",
+    );
+    expect(screen.getAllByText(/Read-only repository browsing/i)).not.toHaveLength(0);
   });
 
   it("cycles the theme and persists the selected preference", async () => {

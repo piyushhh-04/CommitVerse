@@ -4,14 +4,15 @@ The CommitVerse landing page and authenticated Hub application. Sign-in,
 registration, session restoration, the authenticated application shell, and
 personal repository management, supported organization/membership management,
 owner/admin organization repository management, and profile settings are
-implemented.
-Token-based organization invitation issue/list/revoke/accept flows are
-implemented locally. Repository invitation lifecycle APIs are available in
-the Hub backend, but repository invitation web workflows and external email
-delivery are not implemented; advanced diff workflows and broader
-collaboration remain future work. Read-only tree, text-blob, commit-history, reachable
-commit-detail browsing is implemented for HEAD and validated local branches/
-tags on authorized repository detail pages.
+implemented, alongside a live-data workspace dashboard. Repository owners can
+manage direct user permissions and create/revoke token-based invitations;
+invitees can accept invitations and browse private repositories they can access.
+Organization and repository invitations are shared manually by one-time token;
+no email delivery is configured. Authorized repository browsing includes
+read-only tree, text-blob, commit-history, reachable commit-detail, and diff
+views. Anonymous browsing is available at `/browse/:repositoryId` for ready,
+public repositories; the API does not expose public repository metadata, so
+that page identifies repositories by ID.
 
 ## Requirements
 
@@ -50,12 +51,19 @@ in browser storage. The proxy is not included in production builds.
 - Protected `/app/*` routes share a responsive shell with dashboard,
   repository, and organization navigation, current-user information, theme
   control, and logout. Personal repository listing, creation, editing, detail,
-  and deletion use the live Hub API. Dashboard content is still
-  placeholder-only. Organization creation, metadata, membership listing,
-  supported membership changes, leaving, ownership transfer, owner/admin
-  organization repository lifecycle, token-based invitations, and public-profile
-  user discovery use the live Hub API; repository-content flows are implemented
-  on repository detail pages.
+  and deletion use the live Hub API. The workspace dashboard uses live
+  repository and organization data. Organization creation, metadata,
+  membership listing, supported membership changes, leaving, ownership
+  transfer, owner/admin organization repository lifecycle, token-based
+  invitations, and public-profile user discovery use the live Hub API.
+- Personal repository owners and organization owners/admins can grant, update,
+  and revoke direct user permissions and issue, list, and revoke repository
+  invitations through the live API. The separate public browse route makes
+  cookie-free read-only API requests and caches only public content. Protected
+  query and mutation state is scoped to the authenticated identity and cleared
+  on logout or account changes.
+- Membership APIs return member IDs but not profile names. Organization member
+  lists therefore display an account identifier instead of guessing a name.
 
 ## Checks
 

@@ -10,8 +10,13 @@ objects, refs, or bare repository files. Live PostgreSQL migration validation
 was recorded against the local PostgreSQL 17.11 development server for the
 initial revision. The current Alembic head is
 `a7d4d1d1f7ed` ([repository deleted-state migration](../../apps/hub-api/migrations/versions/a7d4d1d1f7ed_add_repository_deleted_state.py));
-the earlier PostgreSQL result does not establish that this later revision was
-applied there; no PostgreSQL verification of the current head is recorded.
+the initial PostgreSQL result did not establish that this later revision was
+applied there. During final release-readiness verification, the current head
+was applied to an isolated local PostgreSQL 17.11 database. The PostgreSQL
+session, repository lifecycle, organization owner-concurrency and lock-order,
+invitation single-use, and repository-lifecycle recheck-after-lock-wait tests
+also passed for the exercised cases; these results do not imply hosted or
+multi-host readiness.
 Registration, session authentication, owner-only personal repository
 workflows, organization metadata/membership, direct repository permissions,
 and organization/repository invitation workflows use the existing schema.
@@ -69,8 +74,9 @@ atomic.
 ## Initial metadata model
 
 The user, profile, organization, membership, repository, direct-permission,
-session, and audit records support the MVP foundation. Invitation records and
-their lifecycle are designed below, but invitation workflows are post-MVP.
+session, audit, and invitation records support the implemented local
+workflows. The schema supports organization and repository invitation
+lifecycle; tokens are stored as hashes and email delivery is not implemented.
 
 ### Users and profiles
 
@@ -173,8 +179,9 @@ was added by `a7d4d1d1f7ed`. See the lifecycle protocol in
   `pending -> expired`; terminal states cannot be reopened. Acceptance requires
   a matching authenticated account email, a valid unexpired token, and a
   transaction that creates the membership/grant exactly once. Organization
-  and repository invitation lifecycle APIs are implemented; repository
-  invitation web workflows and email delivery are not.
+  and repository invitation APIs and web create/list/revoke/accept workflows
+  are implemented. The raw token is returned only when an invitation is
+  created for manual sharing; email delivery is not implemented.
 - Store only the token hash. Revoke/expire pending invitations when their scope
   is deleted or becomes invalid. A partial unique index should prevent
   duplicate pending invitations for the same normalized email and scope.
@@ -206,8 +213,10 @@ was added by `a7d4d1d1f7ed`. See the lifecycle protocol in
 
 Evaluate access in the Hub authorization service on every request:
 
-1. A `ready` public repository permits anonymous read-only metadata and
-   supported browsing; private repositories require an authenticated grant.
+1. A `ready` public repository permits anonymous read-only access to supported
+   browsing endpoints by repository ID. Public discovery and repository
+   name/description/owner metadata are not exposed; private repositories
+   require an authenticated grant.
 2. A personal repository owner has full repository administration rights.
 3. For an organization-owned repository, active organization `owner` and
    `admin` members have repository administration access. An ordinary

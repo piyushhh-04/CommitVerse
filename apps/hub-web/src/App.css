@@ -2075,6 +2075,124 @@ h2 em {
   margin-inline: 0;
 }
 
+.dashboard-welcome {
+  align-items: flex-start;
+}
+
+.dashboard-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  padding-top: 1.5rem;
+}
+
+.dashboard-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(2rem, 5vw, 4.5rem);
+  margin-top: clamp(2.5rem, 6vw, 4.5rem);
+}
+
+.dashboard-summary {
+  min-width: 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--cv-border-strong);
+}
+
+.dashboard-summary-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.dashboard-summary-heading h2 {
+  margin: 0.3rem 0 0;
+  font-size: clamp(1.7rem, 3vw, 2.2rem);
+}
+
+.dashboard-summary-count {
+  padding-bottom: 0.25rem;
+  color: var(--cv-muted);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.dashboard-list {
+  margin-top: 0;
+}
+
+.dashboard-empty-state {
+  padding: 1rem 0;
+  border-top: 1px solid var(--cv-border);
+  color: var(--cv-muted);
+  font-size: 0.85rem;
+}
+
+.dashboard-empty-state p {
+  margin: 0 0 0.65rem;
+}
+
+.dashboard-empty-state > a,
+.dashboard-empty-state > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.dashboard-empty-state a,
+.dashboard-view-all {
+  color: var(--cv-peach-strong);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.dashboard-empty-state a:hover,
+.dashboard-view-all:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.dashboard-view-all {
+  display: inline-flex;
+  gap: 0.4rem;
+  margin-top: 1rem;
+}
+
+.dashboard-error {
+  display: grid;
+  justify-items: start;
+  gap: 0.5rem;
+  padding: 1rem 0;
+  border-top: 1px solid var(--cv-border);
+  color: var(--cv-muted);
+  font-size: 0.82rem;
+}
+
+.dashboard-error p {
+  margin: 0;
+}
+
+.dashboard-inline-warning {
+  color: var(--cv-muted);
+  font-size: 0.74rem;
+}
+
+.dashboard-inline-warning button {
+  padding: 0 0.3rem;
+  border: 0;
+  background: transparent;
+  color: var(--cv-peach-strong);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
 @media (max-width: 1000px) {
   .account-layout {
     grid-template-columns: minmax(0, 0.9fr) minmax(20rem, 0.8fr);
@@ -2197,6 +2315,20 @@ h2 em {
   .app-content .foundation-page {
     min-height: calc(100svh - 4.25rem);
   }
+
+  .dashboard-welcome {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .dashboard-actions {
+    justify-content: flex-start;
+    padding-top: 0;
+  }
+
+  .dashboard-summary-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 560px) {
@@ -2279,6 +2411,18 @@ h2 em {
   align-items: flex-end;
   justify-content: space-between;
   gap: 2rem;
+}
+
+.repository-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.65rem;
+}
+
+.repository-header-actions a {
+  text-decoration: none;
 }
 
 .repository-page-header > div,
@@ -3062,6 +3206,11 @@ h2 em {
     gap: 1.1rem;
   }
 
+  .repository-header-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .repository-page-header h1 {
     font-size: clamp(2.7rem, 11vw, 4rem);
   }
@@ -3090,7 +3239,7 @@ h2 em {
   }
 
   .repository-page-header .repository-create-link {
-    width: 100%;
+    flex: 1 1 10rem;
   }
 
   .repository-visibility-options,
@@ -3104,6 +3253,130 @@ h2 em {
 
   .repository-pagination .repository-secondary-action {
     flex: 1 1 7rem;
+  }
+}
+
+.repository-access-section {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.repository-access-section .repository-section-heading,
+.repository-access-section > .repository-state,
+.repository-access-section > .repository-form-error,
+.repository-access-section > .repository-state-error,
+.repository-access-section > .organization-invitation-token,
+.repository-access-section > .repository-list,
+.repository-access-section > .organization-user-suggestions {
+  margin-block: 0;
+}
+
+.repository-access-grant input {
+  flex: 1 1 18rem;
+}
+
+.repository-access-user-id {
+  overflow-wrap: anywhere;
+}
+
+.repository-access-invite {
+  display: grid;
+  gap: 0.55rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--cv-border);
+}
+
+.repository-access-invite h3,
+.repository-access-invite p {
+  margin: 0;
+}
+
+.repository-access-invite h3 {
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 1.35rem;
+  font-weight: 500;
+}
+
+.repository-access-invite > p {
+  max-width: 45rem;
+  color: var(--cv-muted);
+  font-size: 0.78rem;
+  line-height: 1.6;
+}
+
+.repository-access-invite input {
+  flex: 1 1 18rem;
+}
+
+.repository-access-section .repository-list-item {
+  align-items: flex-start;
+}
+
+.repository-access-section .repository-list-main {
+  min-width: 0;
+}
+
+.repository-access-section .repository-list-main p {
+  margin-block: 0.35rem 0;
+  color: var(--cv-muted);
+  font-size: 0.75rem;
+}
+
+.repository-access-section .repository-name-link {
+  overflow-wrap: anywhere;
+}
+
+.repository-access-section select {
+  min-height: 2.45rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--cv-border-strong);
+  border-radius: var(--radius-xs);
+  background: var(--cv-surface);
+  color: var(--cv-ink);
+  font: inherit;
+  font-size: 0.72rem;
+}
+
+.repository-access-section select:focus-visible,
+.repository-access-section input:focus-visible {
+  outline: 2px solid var(--cv-focus);
+  outline-offset: 2px;
+}
+
+.repository-access-section .repository-state-error {
+  margin: 0;
+}
+
+.repository-access-section .repository-list-item time {
+  color: var(--cv-ink);
+}
+
+.repository-access-section .organization-invitation-token {
+  overflow-wrap: anywhere;
+}
+
+.repository-access-section .organization-invitation-token code {
+  display: block;
+  margin-block: 0.55rem;
+}
+
+.repository-access-section .organization-invitation-token p:last-child {
+  margin-block: 0.5rem 0;
+}
+
+@media (max-width: 760px) {
+  .repository-access-section .repository-list-item {
+    width: 100%;
+  }
+
+  .repository-access-section .organization-member-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .repository-access-grant input,
+  .repository-access-invite input {
+    flex-basis: 100%;
   }
 
   .repository-pagination p {

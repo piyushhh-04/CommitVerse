@@ -27,11 +27,11 @@ history, loose branch refs, safe branch switching/checkout, basic merging,
 read-only status/diff, local advertisement, bounded fetch, fast-forward-only
 push, safe local clone, and `cv` commands are implemented and tested. Hub now
 provides a local-development API foundation, browser-session authentication,
-authenticated owner-only personal repository management through Core, and
-organization and membership API endpoints. The frontend includes authenticated
-personal repository and organization-management foundations, plus authorized
-repository tree/blob/history browsing; broader collaboration and deployment
-remain future work.
+authenticated personal repository management through Core, and organization,
+membership, direct repository permission, and invitation APIs. The frontend
+includes the public landing page, workspace dashboard, organization and
+repository collaboration workflows, and public and authenticated repository
+browsing. Broader collaboration and deployment remain future work.
 `apps/hub-web/` contains the public landing page plus the authenticated Hub
 application.
 

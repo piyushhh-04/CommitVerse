@@ -126,7 +126,11 @@ test("repository create, edit, responsive layout, and delete retry work in the b
 
   await expect(page).toHaveURL(new RegExp(`/app/repositories/${repositoryId}$`));
   await expect(page.getByRole("heading", { name: "browser-project" })).toBeVisible();
-  await expect(page.getByText(/anonymous repository access is not available/i)).toBeVisible();
+  const visibilityNote = page.locator(".repository-visibility-note");
+  await expect(visibilityNote).toContainText(
+    /Ready public repositories allow anonymous read-only API access/i,
+  );
+  await expect(visibilityNote).toContainText(/Browsing in the Hub web app requires sign-in/i);
 
   await page.getByLabel("Repository name").fill("renamed-project");
   await page.getByLabel("Description (optional)").fill("");

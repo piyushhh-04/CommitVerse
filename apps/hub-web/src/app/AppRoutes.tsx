@@ -17,6 +17,12 @@ import { OrganizationRepositoryDetailPage } from "../pages/OrganizationRepositor
 import { ProfileSettingsPage } from "../pages/ProfileSettingsPage";
 import { InvitationAcceptancePage } from "../pages/InvitationAcceptancePage";
 import { AuthenticatedShell } from "./AuthenticatedShell";
+import { WorkspaceDashboardPage } from "../pages/WorkspaceDashboardPage";
+import {
+  AuthenticatedRepositoryBrowserPage,
+  PublicRepositoryPage,
+} from "../pages/RepositoryBrowserPage";
+import { RepositoryInvitationAcceptancePage } from "../pages/RepositoryInvitationAcceptancePage";
 
 function AuthenticationLayout() {
   return (
@@ -30,23 +36,23 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
+      <Route path="browse/:repositoryId" element={<PublicRepositoryPage />} />
       <Route element={<AuthenticationLayout />}>
         <Route path="login" element={<LoginPage />} />
         <Route path="register" element={<RegisterPage />} />
         <Route path="app" element={<ProtectedRoute />}>
           <Route element={<AuthenticatedShell />}>
-            <Route
-              index
-              element={
-                <PlaceholderPage
-                  eyebrow="CommitVerse Hub"
-                  title="Your workspace"
-                  description="Your authenticated dashboard will be built in a later milestone."
-                />
-              }
-            />
+            <Route index element={<WorkspaceDashboardPage />} />
             <Route path="settings/profile" element={<ProfileSettingsPage />} />
             <Route path="invitations/accept" element={<InvitationAcceptancePage />} />
+            <Route
+              path="repositories/invitations/accept"
+              element={<RepositoryInvitationAcceptancePage />}
+            />
+            <Route
+              path="repository-browser/:repositoryId"
+              element={<AuthenticatedRepositoryBrowserPage />}
+            />
             <Route path="repositories" element={<RepositoriesPage />} />
             <Route path="repositories/new" element={<NewRepositoryPage />} />
             <Route path="repositories/:repositoryId" element={<RepositoryDetailRoute />} />

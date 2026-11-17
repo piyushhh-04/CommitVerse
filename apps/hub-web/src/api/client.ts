@@ -21,11 +21,18 @@ interface ApiRequestOptions<TBody = unknown> {
   body?: TBody;
   headers?: HeadersInit;
   signal?: AbortSignal;
+  credentials?: RequestCredentials;
 }
 
 interface RequestExtras {
   headers?: HeadersInit;
   signal?: AbortSignal;
+  credentials?: RequestCredentials;
+}
+
+interface SessionIdentity {
+  userId: string | null;
+  generation: number;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -100,6 +107,7 @@ export class ApiError extends Error {
 
 export class ApiClient {
   private csrfToken: string | null = null;
+  private sessionIdentity: SessionIdentity = { userId: null, generation: 0 };
 
   get hasCsrfToken(): boolean {
     return this.csrfToken !== null;
@@ -107,6 +115,10 @@ export class ApiClient {
 
   setCsrfToken(token: string | null): void {
     this.csrfToken = token;
+  }
+
+  setSessionIdentity(identity: SessionIdentity): void {
+    this.sessionIdentity = { ...identity };
   }
 
   get<TResponse>(path: string, options: RequestExtras = {}): Promise<TResponse | undefined> {
@@ -156,19 +168,22 @@ export class ApiClient {
     }
 
     const method = options.method ?? "GET";
+    const requestIdentity = { ...this.sessionIdentity };
+    const requestCsrfToken = this.csrfToken;
     const headers = new Headers(options.headers);
     headers.set("Accept", "application/json");
     if (options.body !== undefined) {
       headers.set("Content-Type", "application/json");
     }
-    if (method !== "GET" && this.csrfToken) {
+    if (options.credentials !== "omit" && method !== "GET" && this.csrfToken) {
       headers.set("X-CSRF-Token", this.csrfToken);
     }
 
     const requestInit: RequestInit = {
       method,
       headers,
-      credentials: "same-origin",
+      credentials: options.credentials ?? "same-origin",
+      cache: options.credentials === "omit" ? "default" : "no-store",
     };
     if (options.signal) requestInit.signal = options.signal;
     if (options.body !== undefined) requestInit.body = JSON.stringify(options.body);
@@ -187,14 +202,20 @@ export class ApiClient {
     }
 
     const responseCsrfToken = response.headers.get("X-CSRF-Token");
-    if (!options.signal?.aborted && responseCsrfToken !== null) {
-      this.setCsrfToken(responseCsrfToken || null);
-    } else if (
-      !options.signal?.aborted &&
-      response.ok &&
-      (path === "/me" || path === "/auth/login" || path === "/auth/register")
-    ) {
-      this.setCsrfToken(null);
+    const sameSession =
+      this.sessionIdentity.userId === requestIdentity.userId &&
+      this.sessionIdentity.generation === requestIdentity.generation &&
+      this.csrfToken === requestCsrfToken;
+    if (!options.signal?.aborted && options.credentials !== "omit" && sameSession) {
+      if (responseCsrfToken !== null) {
+        this.setCsrfToken(responseCsrfToken || null);
+      } else if (
+        response.ok &&
+        ((method === "GET" && path === "/me") ||
+          (method === "POST" && (path === "/auth/login" || path === "/auth/register")))
+      ) {
+        this.setCsrfToken(null);
+      }
     }
 
     let responseText: string;

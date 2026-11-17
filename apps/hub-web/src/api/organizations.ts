@@ -55,6 +55,8 @@ export interface OrganizationInvitationListResponse {
 
 export interface OrganizationMutationOptions {
   signal?: AbortSignal;
+  limit?: number;
+  offset?: number;
 }
 
 export interface OrganizationInput {
@@ -79,8 +81,12 @@ function organizationPath(organizationId: string): string {
 export async function listOrganizations(
   options: OrganizationMutationOptions = {},
 ): Promise<OrganizationListResponse> {
+  const query = new URLSearchParams({
+    limit: String(options.limit ?? 50),
+    offset: String(options.offset ?? 0),
+  });
   return requireResponse(
-    await apiClient.get<OrganizationListResponse>("/organizations?limit=50&offset=0", options),
+    await apiClient.get<OrganizationListResponse>(`/organizations?${query}`, options),
     "The Hub API returned an empty organization response.",
   );
 }
@@ -119,9 +125,13 @@ export async function listOrganizationMembers(
   organizationId: string,
   options: OrganizationMutationOptions = {},
 ): Promise<MembershipListResponse> {
+  const query = new URLSearchParams({
+    limit: String(options.limit ?? 100),
+    offset: String(options.offset ?? 0),
+  });
   return requireResponse(
     await apiClient.get<MembershipListResponse>(
-      `${organizationPath(organizationId)}/members?limit=100&offset=0`,
+      `${organizationPath(organizationId)}/members?${query}`,
       options,
     ),
     "The Hub API returned an empty membership response.",
@@ -184,9 +194,13 @@ export async function listOrganizationInvitations(
   organizationId: string,
   options: OrganizationMutationOptions = {},
 ): Promise<OrganizationInvitationListResponse> {
+  const query = new URLSearchParams({
+    limit: String(options.limit ?? 100),
+    offset: String(options.offset ?? 0),
+  });
   return requireResponse(
     await apiClient.get<OrganizationInvitationListResponse>(
-      `${organizationPath(organizationId)}/invitations?limit=100&offset=0`,
+      `${organizationPath(organizationId)}/invitations?${query}`,
       options,
     ),
     "The Hub API returned an empty invitation response.",

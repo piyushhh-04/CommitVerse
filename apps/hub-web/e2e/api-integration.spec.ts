@@ -171,8 +171,8 @@ test("authentication screens register, log in, navigate, and revoke real API ses
   await page.getByRole("button", { name: "Create your account" }).click();
 
   await expect(page).toHaveURL(/\/app$/);
-  await expect(page.getByRole("heading", { name: "Your workspace" })).toBeVisible();
-  await expect(page.getByText("Integration Developer")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Welcome, Integration Developer" })).toBeVisible();
+  await expect(page.getByText("Integration Developer", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("navigation", { name: "Application navigation" }).getByRole("link", {
       name: "Repositories",
@@ -282,4 +282,93 @@ test("profile settings update the authenticated account through the real API", a
 
   await expect(page.getByRole("status")).toHaveText("Profile saved.");
   await expect(page.getByRole("link", { name: "Profile settings" })).toBeVisible();
+});
+
+test("repository owners manage direct access and invite a user to browse a private repository", async ({
+  browser,
+  page,
+}) => {
+  const suffix = Date.now().toString();
+  const ownerEmail = `repository-owner-${suffix}@example.test`;
+  const ownerUsername = `repoowner${suffix}`;
+  const inviteeEmail = `repository-invitee-${suffix}@example.test`;
+  const inviteeUsername = `repoinvitee${suffix}`;
+
+  await page.goto("/register");
+  await page.getByLabel("Email address").fill(ownerEmail);
+  await page.getByLabel("Username").fill(ownerUsername);
+  await page.getByLabel("Display name (optional)").fill("Repository Owner");
+  await page
+    .getByRole("textbox", { name: "Password" })
+    .fill("repository owner integration password");
+  await page.getByRole("button", { name: "Create your account" }).click();
+  await expect(page).toHaveURL(/\/app$/);
+
+  const inviteeContext = await browser.newContext();
+  const inviteePage = await inviteeContext.newPage();
+  try {
+    await inviteePage.goto("/");
+    const registration = await inviteePage.evaluate(
+      async ({ email, username }) => {
+        const response = await fetch("/api/v1/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email,
+            password: "repository invitee integration password",
+            username,
+            display_name: "Repository Invitee",
+          }),
+        });
+        return { status: response.status, body: await response.json() };
+      },
+      { email: inviteeEmail, username: inviteeUsername },
+    );
+    expect(registration.status).toBe(200);
+
+    await page.getByRole("link", { name: "Repositories" }).click();
+    await page.getByRole("link", { name: "New repository" }).click();
+    await page.getByLabel("Repository name").fill(`shared-${suffix}`);
+    await page.getByRole("button", { name: "Create repository" }).click();
+    await expect(page.getByRole("heading", { name: `shared-${suffix}` })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Repository access" })).toBeVisible();
+
+    const userSearch = page.getByRole("textbox", {
+      name: "Search users to grant repository access",
+    });
+    await userSearch.fill("Repository Invitee");
+    await page.getByRole("button", { name: `Repository Invitee (@${inviteeUsername})` }).click();
+    await page.getByRole("button", { name: "Grant access" }).click();
+    const roleSelector = page.getByRole("combobox", {
+      name: `Access role for Repository Invitee (@${inviteeUsername})`,
+    });
+    await expect(roleSelector).toHaveValue("reader");
+    await roleSelector.selectOption("writer");
+    await expect(roleSelector).toHaveValue("writer");
+    await page.getByRole("button", { name: "Revoke access" }).click();
+    await page.getByRole("button", { name: "Confirm revoke" }).click();
+    await expect(page.getByText("No direct collaborators have access yet.")).toBeVisible();
+
+    await page.getByRole("textbox", { name: "Invitation email" }).fill(inviteeEmail);
+    await page.getByRole("button", { name: "Create invitation" }).click();
+    const invitationToken = await page
+      .locator(".repository-access-section .organization-invitation-token code")
+      .textContent();
+    expect(invitationToken).toBeTruthy();
+
+    await inviteePage.goto("/app/repositories/invitations/accept");
+    await expect(
+      inviteePage.getByRole("heading", { name: "Accept a repository invitation" }),
+    ).toBeVisible();
+    await inviteePage
+      .getByRole("textbox", { name: "Repository invitation token" })
+      .fill(invitationToken ?? "");
+    await inviteePage.getByRole("button", { name: "Accept invitation" }).click();
+
+    await expect(inviteePage).toHaveURL(/\/app\/repository-browser\/[0-9a-f-]+$/);
+    await expect(inviteePage.getByText(/Repository ID:/)).toContainText("Repository ID:");
+    await expect(inviteePage.getByText("Empty repository")).toBeVisible();
+  } finally {
+    await inviteeContext.close();
+  }
 });

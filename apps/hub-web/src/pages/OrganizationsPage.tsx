@@ -1,15 +1,18 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { ApiError } from "../api/client";
+import { protectedQueryKey } from "../app/protectedQueryCache";
 import { useAuth } from "../auth/AuthContext";
 import { listOrganizations } from "../api/organizations";
 
 export function OrganizationsPage() {
   const auth = useAuth();
   const userId = auth.status === "authenticated" ? auth.user.id : "";
+  const [offset, setOffset] = useState(0);
   const organizationsQuery = useQuery({
-    queryKey: ["organizations", userId, "list"],
-    queryFn: ({ signal }) => listOrganizations({ signal }),
+    queryKey: protectedQueryKey(userId, "organizations", "list", offset),
+    queryFn: ({ signal }) => listOrganizations({ signal, limit: 50, offset }),
     enabled: Boolean(userId),
   });
   const list = organizationsQuery.data;
@@ -27,9 +30,14 @@ export function OrganizationsPage() {
             Shared spaces for teams, permissions, and repository collaboration.
           </p>
         </div>
-        <Link className="repository-primary-action" to="/app/organizations/new">
-          New organization <span aria-hidden="true">↗</span>
-        </Link>
+        <div className="repository-header-actions">
+          <Link className="repository-secondary-action" to="/app/invitations/accept">
+            Accept invitation
+          </Link>
+          <Link className="repository-primary-action" to="/app/organizations/new">
+            New organization <span aria-hidden="true">↗</span>
+          </Link>
+        </div>
       </header>
       {organizationsQuery.isPending ? (
         <p className="repository-state" role="status">
@@ -54,7 +62,7 @@ export function OrganizationsPage() {
           </button>
         </section>
       ) : null}
-      {list && list.items.length === 0 ? (
+      {list && list.items.length === 0 && offset === 0 ? (
         <section className="repository-state repository-empty-state">
           <p className="eyebrow">A shared beginning</p>
           <h2 id="organization-empty-title">No organizations yet.</h2>
@@ -88,6 +96,39 @@ export function OrganizationsPage() {
               </li>
             ))}
           </ul>
+          <nav className="repository-pagination" aria-label="Organization pages">
+            <button
+              className="repository-secondary-action"
+              type="button"
+              disabled={offset === 0 || organizationsQuery.isFetching}
+              onClick={() => setOffset((current) => Math.max(0, current - list.limit))}
+            >
+              Previous
+            </button>
+            <p>
+              Showing {offset + 1}–{offset + list.items.length} of {list.total}
+            </p>
+            <button
+              className="repository-secondary-action"
+              type="button"
+              disabled={offset + list.items.length >= list.total || organizationsQuery.isFetching}
+              onClick={() => setOffset((current) => current + list.limit)}
+            >
+              Next
+            </button>
+          </nav>
+        </section>
+      ) : null}
+      {list && list.items.length === 0 && offset > 0 ? (
+        <section className="repository-state">
+          <p>No organizations are available on this page.</p>
+          <button
+            className="repository-secondary-action"
+            type="button"
+            onClick={() => setOffset(0)}
+          >
+            Back to the first page
+          </button>
         </section>
       ) : null}
     </main>

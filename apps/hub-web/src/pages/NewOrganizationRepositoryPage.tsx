@@ -1,6 +1,11 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../api/client";
+import {
+  getProtectedQueryIdentityGeneration,
+  isProtectedQueryIdentity,
+  protectedQueryKey,
+} from "../app/protectedQueryCache";
 import { createOrganizationRepository } from "../api/organizationRepositories";
 import { useAuth } from "../auth/AuthContext";
 import { RepositoryForm, type RepositoryFormValues } from "../components/RepositoryForm";
@@ -11,17 +16,30 @@ export function NewOrganizationRepositoryPage() {
   const userId = auth.status === "authenticated" ? auth.user.id : "";
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  interface CreateRepositoryMutation {
+    values: RepositoryFormValues;
+    identityGeneration: number;
+  }
   const mutation = useMutation({
-    mutationFn: (values: RepositoryFormValues) =>
+    mutationKey: protectedQueryKey(
+      userId,
+      "organization-repositories",
+      organizationId,
+      "mutation",
+      "create",
+    ),
+    mutationFn: ({ values }: CreateRepositoryMutation) =>
       createOrganizationRepository(organizationId, {
         ...values,
         description: values.description || null,
       }),
     retry: false,
-    onSuccess: async (repository) => {
+    onSuccess: async (repository, variables: CreateRepositoryMutation) => {
+      if (!isProtectedQueryIdentity(queryClient, userId, variables.identityGeneration)) return;
       await queryClient.invalidateQueries({
-        queryKey: ["organization-repositories", userId, organizationId],
+        queryKey: protectedQueryKey(userId, "organization-repositories", organizationId),
       });
+      if (!isProtectedQueryIdentity(queryClient, userId, variables.identityGeneration)) return;
       void navigate(`/app/organizations/${organizationId}/repositories/${repository.id}`, {
         state: { focusDestinationHeading: true },
       });
@@ -59,7 +77,10 @@ export function NewOrganizationRepositoryPage() {
           submitLabel="Create repository"
           pendingLabel="Creating repository…"
           error={mutation.error instanceof ApiError ? mutation.error : null}
-          onSubmit={(values) => mutation.mutate(values)}
+          onSubmit={(values) => {
+            const identityGeneration = getProtectedQueryIdentityGeneration(queryClient, userId);
+            if (identityGeneration !== null) mutation.mutate({ values, identityGeneration });
+          }}
         />
       </section>
     </main>

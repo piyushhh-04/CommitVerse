@@ -4,18 +4,27 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import select, or_, func
+from sqlalchemy.exc import SQLAlchemyError
 
 from commitverse_hub.api.v1.auth import (
     get_authenticated_user,
     require_authenticated_csrf,
 )
 from commitverse_hub.config.settings import Settings
-from commitverse_hub.db.models import Invitation, Repository, RepositoryUserPermission, User
+from commitverse_hub.db.models import (
+    AuditEvent,
+    Invitation,
+    OrganizationMembership,
+    Repository,
+    RepositoryUserPermission,
+    User,
+)
 from commitverse_hub.errors.handlers import HubApplicationError
 from commitverse_hub.repositories.service import (
     RepositoryConflictError,
@@ -206,6 +215,20 @@ class RepositoryInvitationAcceptResponse(BaseModel):
     role: Literal["reader", "writer", "admin"]
 
 
+class RepositorySearchResponse(BaseModel):
+    items: list[RepositoryResponse]
+    total: int
+
+
+class ActivityResponse(BaseModel):
+    id: uuid.UUID
+    action: str
+    target_type: str
+    target_id: str
+    occurred_at: datetime
+    metadata: dict
+
+
 def _session_factory(request: Request) -> sessionmaker[Session]:
     factory = getattr(request.app.state, "session_factory", None)
     if factory is None:
@@ -284,6 +307,86 @@ def list_repositories(
         limit=limit,
         offset=offset,
     )
+
+
+@router.get("/search", response_model=RepositorySearchResponse)
+def search_repositories(
+    request: Request,
+    query: Annotated[str, Query(min_length=1, max_length=100)],
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=1_000_000),
+    user: User = Depends(get_authenticated_user),
+) -> RepositorySearchResponse:
+    factory = _session_factory(request)
+    normalized = f"%{query.strip().lower()}%"
+    try:
+        with factory() as db:
+            owned = select(Repository.id).where(
+                Repository.owner_user_id == user.id,
+                Repository.lifecycle_state != "deleted",
+            )
+            direct = select(RepositoryUserPermission.repository_id).where(
+                RepositoryUserPermission.user_id == user.id,
+            )
+            org = select(Repository.owner_organization_id).join(
+                OrganizationMembership,
+                OrganizationMembership.organization_id == Repository.owner_organization_id,
+            ).where(
+                OrganizationMembership.user_id == user.id,
+                Repository.lifecycle_state != "deleted",
+            )
+            filters = (
+                or_(
+                    Repository.id.in_(owned),
+                    Repository.id.in_(direct),
+                    Repository.owner_organization_id.in_(org),
+                    Repository.visibility == "public",
+                ),
+                or_(
+                    func.lower(Repository.slug).contains(query.strip().lower()),
+                    func.lower(func.coalesce(Repository.description, "")).contains(query.strip().lower()),
+                ),
+            )
+            total = db.scalar(select(func.count()).select_from(Repository).where(*filters))
+            items = list(db.scalars(
+                select(Repository).where(*filters).order_by(Repository.updated_at.desc()).limit(limit).offset(offset)
+            ))
+            return RepositorySearchResponse(
+                items=[RepositoryResponse.from_repository(item) for item in items],
+                total=int(total or 0),
+            )
+    except SQLAlchemyError as exc:
+        raise HubApplicationError(503, "repository_unavailable", "Repository search is unavailable.") from exc
+
+
+@router.get("/activity", response_model=list[ActivityResponse])
+def get_repository_activity(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=100),
+    user: User = Depends(get_authenticated_user),
+) -> list[ActivityResponse]:
+    factory = _session_factory(request)
+    try:
+        with factory() as db:
+            events = db.scalars(
+                select(AuditEvent)
+                .where(AuditEvent.actor_user_id == user.id)
+                .order_by(AuditEvent.occurred_at.desc(), AuditEvent.id)
+                .limit(limit)
+            )
+            return [
+                ActivityResponse(
+                    id=event.id,
+                    action=event.action,
+                    target_type=event.target_type,
+                    target_id=event.target_id,
+                    occurred_at=event.occurred_at,
+                    metadata=event.event_metadata,
+                )
+                for event in events
+            ]
+    except SQLAlchemyError as exc:
+        raise HubApplicationError(503, "repository_unavailable", "Repository activity is unavailable.") from exc
 
 
 @router.get(

@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from commitverse_hub.ai.providers import DeterministicLocalProvider, OllamaProvider
-from commitverse_hub.ai.indexing import index_bare_repository
+from commitverse_hub.ai.indexing import extract_python_symbols, index_bare_repository
 from commitverse_hub.ai.retrieval import lexical_rank
 from commitverse_hub.api.v1.auth import get_authenticated_user, require_authenticated_csrf
 from commitverse_hub.ci.workflows import (
@@ -123,6 +123,13 @@ class PushEventResponse(BaseModel):
     scheduled: list[ExecutionResponse]
 
 
+class IndexStatusResponse(BaseModel):
+    repository_id: uuid.UUID
+    indexed_files: int
+    python_files: int
+    total_text_bytes: int
+
+
 def _factory(request: Request) -> sessionmaker[Session]:
     factory = getattr(request.app.state, "session_factory", None)
     if factory is None:
@@ -152,6 +159,41 @@ def _require_write(factory: sessionmaker[Session], repository_id: uuid.UUID, use
         "repository_permission_denied",
         "Repository write access is required.",
     )
+
+
+@router.get("/{repository_id}/index/status", response_model=IndexStatusResponse)
+def get_repository_index_status(
+    repository_id: uuid.UUID,
+    request: Request,
+    user: User = Depends(get_authenticated_user),
+) -> IndexStatusResponse:
+    factory = _factory(request)
+    try:
+        repository = get_repository_for_access(factory, repository_id, user.id)
+        storage_path = (
+            request.app.state.settings.repository_storage_root
+            / f"{repository.storage_key}.git"
+        )
+        core_repository = discover_repository(storage_path)
+        files = index_bare_repository(core_repository)
+        return IndexStatusResponse(
+            repository_id=repository_id,
+            indexed_files=len(files),
+            python_files=sum(1 for path in files if path.endswith(".py")),
+            total_text_bytes=sum(len(content.encode("utf-8")) for content in files.values()),
+        )
+    except (RepositoryNotFoundError, RepositoryOperationError) as exc:
+        raise HubApplicationError(
+            404 if isinstance(exc, RepositoryNotFoundError) else 503,
+            "platform_unavailable",
+            str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HubApplicationError(
+            503,
+            "repository_index_unavailable",
+            f"Repository index could not be read: {exc}",
+        ) from exc
 
 
 @router.post("/{repository_id}/workflows", response_model=WorkflowResponse, status_code=status.HTTP_201_CREATED)

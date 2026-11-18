@@ -221,3 +221,35 @@ def test_ollama_provider_reports_unavailable_without_fake_success():
     )
     with pytest.raises(RuntimeError, match="Ollama provider unavailable"):
         provider.analyze({"README.md": "hello"}, {"query": "hello"})
+
+
+def test_repository_search_activity_and_index_status(collaboration_client):
+    client, _settings, _factory, _user_id, csrf = collaboration_client
+    created = client.post(
+        "/api/v1/repositories",
+        headers=_headers(csrf),
+        json={
+            "name": "searchable-integration",
+            "description": "Engineering search fixture",
+            "visibility": "private",
+        },
+    )
+    assert created.status_code == 201
+    repository_id = created.json()["id"]
+
+    searched = client.get(
+        "/api/v1/repositories/search",
+        params={"query": "engineering", "limit": 20, "offset": 0},
+    )
+    assert searched.status_code == 200
+    assert searched.json()["total"] >= 1
+
+    activity = client.get("/api/v1/repositories/activity", params={"limit": 20})
+    assert activity.status_code == 200
+    assert isinstance(activity.json(), list)
+
+    index_status = client.get(
+        f"/api/v1/repositories/{repository_id}/index/status"
+    )
+    assert index_status.status_code == 200
+    assert index_status.json()["repository_id"] == repository_id

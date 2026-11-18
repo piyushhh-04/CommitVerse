@@ -152,3 +152,16 @@ export async function listReviewComments(repositoryId: string, pullRequestId: st
     `${API_BASE_PATH}/repositories/${encodeURIComponent(repositoryId)}/pull-requests/${encodeURIComponent(pullRequestId)}/review-comments`,
   );
 }
+
+export interface IndexStatus {
+  repository_id: string;
+  indexed_files: number;
+  python_files: number;
+  total_text_bytes: number;
+}
+
+export async function getIndexStatus(repositoryId: string) {
+  return apiClient.get<IndexStatus>(
+    `${API_BASE_PATH}/repositories/${encodeURIComponent(repositoryId)}/index/status`,
+  );
+}

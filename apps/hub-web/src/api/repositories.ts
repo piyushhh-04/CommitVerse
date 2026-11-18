@@ -18,6 +18,20 @@ export interface PersonalRepositoryListResponse {
   offset: number;
 }
 
+export interface RepositorySearchResponse {
+  items: PersonalRepository[];
+  total: number;
+}
+
+export interface RepositoryActivity {
+  id: string;
+  action: string;
+  target_type: string;
+  target_id: string;
+  occurred_at: string;
+  metadata: Record<string, unknown>;
+}
+
 export interface RepositoryListParams {
   limit?: number;
   offset?: number;
@@ -103,6 +117,29 @@ export async function listPersonalRepositories(
   const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   return requireResponse(
     await apiClient.get<PersonalRepositoryListResponse>(`/repositories?${query}`, options),
+  );
+}
+
+export async function searchRepositories(
+  query: string,
+  params: RepositoryListParams = {},
+): Promise<RepositorySearchResponse> {
+  const { limit, offset } = normalizeRepositoryListParams(params);
+  const search = new URLSearchParams({
+    query,
+    limit: String(limit),
+    offset: String(offset),
+  });
+  return requireResponse(
+    await apiClient.get<RepositorySearchResponse>(`/repositories/search?${search}`),
+  );
+}
+
+export async function getRepositoryActivity(
+  limit = 50,
+): Promise<RepositoryActivity[]> {
+  return requireResponse(
+    await apiClient.get<RepositoryActivity[]>(`/repositories/activity?limit=${limit}`),
   );
 }
 

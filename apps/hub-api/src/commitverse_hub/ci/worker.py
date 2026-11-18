@@ -6,6 +6,7 @@ import shutil
 import tempfile
 import time
 import os
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -26,6 +27,8 @@ from commitverse_hub.db.session import transactional_session
 
 from .runtime import ContainerTimeoutError, DockerRuntime
 
+logger = logging.getLogger("commitverse_hub.ci.worker")
+
 
 def _claim_job(factory: sessionmaker[Session]) -> ExecutionJob | None:
     try:
@@ -40,10 +43,12 @@ def _claim_job(factory: sessionmaker[Session]) -> ExecutionJob | None:
             if job is None:
                 return None
             job.status = "starting"
+            job.started_at = datetime.now(UTC)
             db.flush()
             db.refresh(job)
             return job
-    except Exception:
+    except Exception as exc:
+        logger.exception("Could not claim a pending CI execution: %s", exc)
         return None
 
 

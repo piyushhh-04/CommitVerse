@@ -10,6 +10,7 @@ import {
   cancelExecution,
   createAITask,
   listExecutions,
+  getIndexStatus,
   type AITask,
 } from "../api/collaboration";
 import { protectedQueryKey } from "../app/protectedQueryCache";
@@ -42,6 +43,10 @@ export function RepositoryCollaborationPanel({ repositoryId, userId }: Props) {
     queryKey: [...prefix, "executions"],
     queryFn: () => listExecutions(repositoryId),
     refetchInterval: 3000,
+  });
+  const indexQuery = useQuery({
+    queryKey: [...prefix, "index-status"],
+    queryFn: () => getIndexStatus(repositoryId),
   });
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: prefix });
@@ -109,6 +114,15 @@ export function RepositoryCollaborationPanel({ repositoryId, userId }: Props) {
         <h2 id="repository-collaboration-title">Issues and pull requests</h2>
         <p>Create persistent engineering work and propose real branch merges.</p>
       </div>
+      {indexQuery.data ? (
+        <p className="repository-state">
+          Repository index: {indexQuery.data.indexed_files} text files · {indexQuery.data.python_files} Python files · {indexQuery.data.total_text_bytes} bytes
+        </p>
+      ) : indexQuery.isError ? (
+        <p className="repository-state-error" role="alert">Repository index status could not be loaded.</p>
+      ) : (
+        <p className="repository-state" role="status">Loading repository index status…</p>
+      )}
 
       <form className="repository-form" onSubmit={submitIssue}>
         <label>

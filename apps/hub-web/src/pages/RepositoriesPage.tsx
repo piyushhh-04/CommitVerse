@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { personalRepositoryListQueryOptions } from "../repositories/queries";
 import { useAuth } from "../auth/AuthContext";
+import { getRepositoryActivity, searchRepositories } from "../api/repositories";
 
 const REPOSITORIES_PAGE_SIZE = 50;
 
@@ -33,8 +34,19 @@ export function RepositoriesPage() {
   const auth = useAuth();
   const userId = auth.status === "authenticated" ? auth.user.id : "";
   const [offset, setOffset] = useState(0);
+  const [searchQuery, setSearchQuery] = useState("");
   const repositoriesQuery = useQuery({
     ...personalRepositoryListQueryOptions(userId, { limit: REPOSITORIES_PAGE_SIZE, offset }),
+    enabled: Boolean(userId),
+  });
+  const searchQueryResult = useQuery({
+    queryKey: ["repositories", "search", userId, searchQuery],
+    queryFn: () => searchRepositories(searchQuery),
+    enabled: Boolean(userId && searchQuery.trim()),
+  });
+  const activityQuery = useQuery({
+    queryKey: ["repositories", "activity", userId],
+    queryFn: () => getRepositoryActivity(20),
     enabled: Boolean(userId),
   });
   const list = repositoriesQuery.data;
@@ -75,6 +87,50 @@ export function RepositoriesPage() {
           app requires sign-in; private repositories remain protected.
         </p>
       </aside>
+      <section className="repository-form-section" aria-labelledby="repository-discovery-title">
+        <div className="repository-section-heading">
+          <p className="eyebrow">Discovery</p>
+          <h2 id="repository-discovery-title">Search repositories</h2>
+        </div>
+        <label>
+          Repository name or description
+          <input
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search repositories"
+          />
+        </label>
+        {searchQueryResult.data?.items.length ? (
+          <ul className="repository-list" aria-label="Repository search results">
+            {searchQueryResult.data.items.map((repository) => (
+              <li key={repository.id}>
+                <Link className="repository-name-link" to={`/app/repositories/${repository.id}`}>
+                  {repository.name}
+                </Link>
+                <p>{repository.description || "No description provided."}</p>
+              </li>
+            ))}
+          </ul>
+        ) : searchQuery.trim() ? (
+          <p className="repository-state">No repositories match this search.</p>
+        ) : null}
+      </section>
+      {activityQuery.data?.length ? (
+        <section className="repository-form-section" aria-labelledby="activity-title">
+          <div className="repository-section-heading">
+            <p className="eyebrow">Recent activity</p>
+            <h2 id="activity-title">Your repository actions</h2>
+          </div>
+          <ul className="repository-list" aria-label="Repository activity">
+            {activityQuery.data.map((event) => (
+              <li key={event.id}>
+                <strong>{event.action}</strong>
+                <p>{event.target_type} · {event.target_id}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {repositoriesQuery.isPending ? (
         <p className="repository-state" role="status" aria-live="polite">

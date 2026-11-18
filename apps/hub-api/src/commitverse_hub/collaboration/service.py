@@ -24,6 +24,7 @@ from commitverse_hub.db.models import (
     RepositoryIssue,
     RepositoryUserPermission,
     ExecutionJob,
+    CIWorkflow,
 )
 from commitverse_hub.db.session import transactional_session
 from commitverse_hub.repositories.service import (
@@ -277,6 +278,23 @@ def create_pull_request(
             db_session.add(pull_request)
             db_session.flush()
             db_session.refresh(pull_request)
+            source_commit = resolve_branch(core_repository, source_branch)
+            workflows = db_session.scalars(
+                select(CIWorkflow).where(
+                    CIWorkflow.repository_id == repository_id,
+                    CIWorkflow.trigger == "pull_request",
+                )
+            ).all()
+            for workflow in workflows:
+                db_session.add(
+                    ExecutionJob(
+                        repository_id=repository_id,
+                        workflow_id=workflow.id,
+                        trigger_type="pull_request",
+                        commit_id=source_commit,
+                        status="pending",
+                    )
+                )
             return pull_request
     except (RepositoryNotFoundError, RepositoryPermissionError, CollaborationError, ValueError):
         raise

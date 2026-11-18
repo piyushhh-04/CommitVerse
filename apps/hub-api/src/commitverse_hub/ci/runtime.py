@@ -16,6 +16,10 @@ class ContainerRuntimeError(RuntimeError):
     pass
 
 
+class ContainerTimeoutError(ContainerRuntimeError):
+    pass
+
+
 @dataclass(frozen=True)
 class ContainerResult:
     exit_code: int
@@ -39,6 +43,8 @@ class DockerRuntime:
         self,
         *,
         workspace: Path,
+        volume_name: str | None = None,
+        workspace_mount_root: Path | None = None,
         command: str,
         environment: dict[str, str] | None = None,
         image: str = "python:3.12-slim",
@@ -64,8 +70,23 @@ class DockerRuntime:
             container = self.client.containers.create(
                 image=image,
                 command=["/bin/sh", "-lc", command],
-                working_dir="/workspace",
-                volumes={str(workspace.resolve()): {"bind": "/workspace", "mode": "rw"}},
+                working_dir=(
+                    "/workspace"
+                    if volume_name is None
+                    else "/workspace/"
+                    + (
+                        workspace.resolve().relative_to(workspace_mount_root.resolve()).as_posix()
+                        if workspace_mount_root is not None
+                        else ""
+                    )
+                ),
+                volumes={
+                    (
+                        volume_name
+                        if volume_name is not None
+                        else str(workspace.resolve())
+                    ): {"bind": "/workspace", "mode": "rw"}
+                },
                 environment=safe_environment,
                 network_disabled=True,
                 read_only=True,
@@ -86,7 +107,7 @@ class DockerRuntime:
                 time.sleep(0.1)
             else:
                 container.kill()
-                raise ContainerRuntimeError("Container execution timed out.")
+                raise ContainerTimeoutError("Container execution timed out.")
             exit_code = int(container.attrs["State"]["ExitCode"])
             logs = container.logs(stdout=True, stderr=True, timestamps=False).decode(
                 "utf-8",

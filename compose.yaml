@@ -27,7 +27,10 @@ services:
       HUB_CSRF_ALLOWED_ORIGINS: ${HUB_CSRF_ALLOWED_ORIGINS:-http://localhost:5173}
     ports:
       - "${COMMITVERSE_API_PORT:-8000}:8000"
-    command: ["sh", "-lc", "alembic upgrade head && exec commitverse-hub"]
+    command:
+      - sh
+      - -lc
+      - mkdir -p /var/lib/commitverse/repositories && chmod 700 /var/lib/commitverse/repositories && alembic upgrade head && exec uvicorn commitverse_hub.main:create_app --factory --host 0.0.0.0 --port 8000
     volumes:
       - commitverse_repositories:/var/lib/commitverse/repositories
     depends_on:
@@ -38,12 +41,18 @@ services:
     build:
       context: .
       dockerfile: apps/hub-api/Dockerfile
-    command: ["commitverse-hub-worker"]
+    command:
+      - sh
+      - -lc
+      - mkdir -p /var/lib/commitverse/repositories /var/lib/commitverse/workspaces && chmod 700 /var/lib/commitverse/repositories && chmod 777 /var/lib/commitverse/workspaces && exec commitverse-hub-worker
     environment:
       HUB_DATABASE_URL: postgresql+psycopg://${COMMITVERSE_DB_USER:-commitverse_app}:${COMMITVERSE_DB_PASSWORD:-commitverse-local-only}@postgres:5432/${COMMITVERSE_DB_NAME:-commitverse}
       HUB_REPOSITORY_STORAGE_ROOT: /var/lib/commitverse/repositories
+      CI_WORKSPACE_ROOT: /var/lib/commitverse/workspaces
+      CI_WORKSPACE_VOLUME: commitverse_commitverse_workspaces
     volumes:
       - commitverse_repositories:/var/lib/commitverse/repositories
+      - commitverse_workspaces:/var/lib/commitverse/workspaces
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       postgres:
@@ -52,3 +61,4 @@ services:
 volumes:
   commitverse_postgres:
   commitverse_repositories:
+  commitverse_workspaces:

@@ -5,13 +5,13 @@ from __future__ import annotations
 import shutil
 import tempfile
 import time
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from commitverse_core.checkout import checkout_commit
 from commitverse_core.clone import clone_from_local
 from commitverse_core.repository import discover_repository
 from commitverse_core.refs import list_branches
@@ -24,7 +24,7 @@ from commitverse_hub.db.models import (
 )
 from commitverse_hub.db.session import transactional_session
 
-from .runtime import DockerRuntime
+from .runtime import ContainerTimeoutError, DockerRuntime
 
 
 def _claim_job(factory: sessionmaker[Session]) -> ExecutionJob | None:
@@ -83,14 +83,23 @@ def run_pending_jobs(
 
             temporary_root: Path | None = None
             try:
+                ci_workspace_root = Path(
+                    os.environ.get("CI_WORKSPACE_ROOT", str(repository_storage_root))
+                )
+                ci_workspace_root.mkdir(mode=0o777, parents=True, exist_ok=True)
+                ci_workspace_root.chmod(0o777)
                 with factory() as db:
                     repository = db.get(Repository, job.repository_id)
                     if repository is None:
                         raise RuntimeError("Repository metadata not found.")
                     storage_path = repository_storage_root / f"{repository.storage_key}.git"
                 temporary_root = Path(
-                    tempfile.mkdtemp(prefix="commitverse-ci-", dir=None)
+                    tempfile.mkdtemp(
+                        prefix=".ci-",
+                        dir=os.environ.get("CI_WORKSPACE_ROOT", repository_storage_root),
+                    )
                 )
+                temporary_root.chmod(0o777)
                 workspace = temporary_root / "workspace"
                 source_repository = discover_repository(storage_path)
                 matching_branch = next(
@@ -107,7 +116,20 @@ def run_pending_jobs(
                     branch=matching_branch,
                 )
                 cloned = discover_repository(workspace)
-                checkout_commit(cloned, job.commit_id)
+                if cloned.bare:
+                    raise RuntimeError("CI clone unexpectedly produced a bare repository.")
+                for current_root, directory_names, file_names in os.walk(workspace):
+                    if os.path.islink(current_root):
+                        continue
+                    os.chmod(current_root, 0o777)
+                    for name in directory_names:
+                        path = Path(current_root) / name
+                        if not path.is_symlink():
+                            os.chmod(path, 0o777)
+                    for name in file_names:
+                        path = Path(current_root) / name
+                        if not path.is_symlink():
+                            os.chmod(path, 0o666)
 
                 workspace.chmod(0o777)
                 with transactional_session(factory) as db:
@@ -140,6 +162,8 @@ def run_pending_jobs(
                         command = str(step["run"])
                         result = runtime.execute(
                             workspace=workspace,
+                            volume_name=os.environ.get("CI_WORKSPACE_VOLUME"),
+                            workspace_mount_root=ci_workspace_root,
                             command=command,
                             environment={str(k): str(v) for k, v in environment.items()},
                             image=image,
@@ -165,6 +189,14 @@ def run_pending_jobs(
                         current.finished_at = datetime.now(UTC)
                         if overall_exit != 0:
                             current.error_message = f"Command exited with status {overall_exit}"
+            except ContainerTimeoutError as exc:
+                _append_log(factory, job.id, 0, "stderr", str(exc))
+                with transactional_session(factory) as db:
+                    current = db.get(ExecutionJob, job.id)
+                    if current is not None:
+                        current.status = "timed_out"
+                        current.finished_at = datetime.now(UTC)
+                        current.error_message = str(exc)[-2000:]
             except Exception as exc:
                 _append_log(factory, job.id, 0, "stderr", str(exc))
                 with transactional_session(factory) as db:

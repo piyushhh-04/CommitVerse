@@ -150,6 +150,25 @@ organization invitation acceptance.
 
 ## Added repository collaboration and platform foundations
 
+## Local infrastructure activation
+
+- Docker Engine and Docker Compose were verified on macOS.
+- PostgreSQL `17.11-alpine`, the API, and the worker ran through Compose.
+- PostgreSQL reported healthy and used persistent named volumes.
+- Alembic reached revision `c3f7a9e5b214`.
+- PostgreSQL-specific Hub tests passed with a separate `commitverse_test`
+  database and the final full Hub suite passed: `206 passed`.
+- A live API bind defect was fixed in Compose by binding Uvicorn to `0.0.0.0`.
+- Private repository volume initialization and dedicated CI workspace volume
+  configuration were added to prevent container UID traversal failures.
+- A live workflow ran in `python:3.12-slim` and recorded `succeeded`.
+- Live exit-status `7`, timeout, and log persistence cases were verified.
+- Container restrictions were verified through an actual probe:
+  read-only root, network disabled, no-new-privileges, dropped capabilities,
+  non-root UID, memory limit, PID limit, and CPU limiting.
+- A live pull request was created and merged through the API and Core fast-
+  forward engine; both `main` and `feature/live-pr` resolve to the merge commit.
+
 - Persistent models and Alembic migrations now cover issues, issue comments,
   pull requests, reviews, branch protection, CI workflows, execution jobs/logs,
   execution artifacts, AI tasks, and AI findings.
@@ -186,6 +205,8 @@ organization invitation acceptance.
 
 ## Remaining work
 
+- PostgreSQL integration and real Docker container verification have now been
+  completed locally. Hosted infrastructure and deployment remain external.
 - Run the Docker Compose PostgreSQL/API/worker stack and real container
   execution on a host with a running Docker daemon.
 - Run PostgreSQL migration and concurrency integration tests.

@@ -20,6 +20,8 @@ from commitverse_hub.db.session import transactional_session
 from commitverse_hub.main import create_app
 from commitverse_hub.ci.workflows import WorkflowValidationError, parse_workflow_yaml
 from commitverse_hub.ai.retrieval import lexical_rank
+from commitverse_hub.ci.runtime import ContainerTimeoutError
+from pathlib import Path
 
 
 @pytest.fixture
@@ -163,3 +165,11 @@ jobs:
     )
     assert ai_task.status_code == 201
     assert ai_task.json()["provider"] == "deterministic_local"
+
+
+def test_infrastructure_config_documents_container_bind_and_timeout():
+    compose = (Path(__file__).parents[3] / "compose.yaml").read_text(encoding="utf-8")
+    assert "--host 0.0.0.0" in compose
+    assert "commitverse_workspaces:" in compose
+    assert "commitverse_repositories:" in compose
+    assert issubclass(ContainerTimeoutError, RuntimeError)

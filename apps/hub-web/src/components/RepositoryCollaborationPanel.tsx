@@ -7,6 +7,10 @@ import {
   listIssues,
   listPullRequests,
   mergePullRequest,
+  cancelExecution,
+  createAITask,
+  listExecutions,
+  type AITask,
 } from "../api/collaboration";
 import { protectedQueryKey } from "../app/protectedQueryCache";
 
@@ -22,6 +26,8 @@ export function RepositoryCollaborationPanel({ repositoryId, userId }: Props) {
   const [prTitle, setPrTitle] = useState("");
   const [sourceBranch, setSourceBranch] = useState("");
   const [targetBranch, setTargetBranch] = useState("main");
+  const [aiQuery, setAiQuery] = useState("");
+  const [aiResult, setAiResult] = useState<AITask | null>(null);
   const prefix = protectedQueryKey(userId, "repositories", repositoryId, "collaboration");
 
   const issuesQuery = useQuery({
@@ -31,6 +37,11 @@ export function RepositoryCollaborationPanel({ repositoryId, userId }: Props) {
   const pullRequestsQuery = useQuery({
     queryKey: [...prefix, "pull-requests", "open"],
     queryFn: () => listPullRequests(repositoryId, "open"),
+  });
+  const executionsQuery = useQuery({
+    queryKey: [...prefix, "executions"],
+    queryFn: () => listExecutions(repositoryId),
+    refetchInterval: 3000,
   });
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: prefix });
@@ -63,6 +74,18 @@ export function RepositoryCollaborationPanel({ repositoryId, userId }: Props) {
     mutationFn: (pullRequestId: string) => mergePullRequest(repositoryId, pullRequestId),
     onSuccess: refresh,
   });
+  const cancelExecutionMutation = useMutation({
+    mutationKey: [...prefix, "execution-cancel"],
+    mutationFn: (executionId: string) => cancelExecution(repositoryId, executionId),
+    onSuccess: refresh,
+  });
+  const aiMutation = useMutation({
+    mutationKey: [...prefix, "ai-task"],
+    mutationFn: () => createAITask(repositoryId, "repository-query", aiQuery),
+    onSuccess: (task) => {
+      setAiResult(task ?? null);
+    },
+  });
 
   function submitIssue(event: FormEvent) {
     event.preventDefault();
@@ -72,6 +95,11 @@ export function RepositoryCollaborationPanel({ repositoryId, userId }: Props) {
   function submitPullRequest(event: FormEvent) {
     event.preventDefault();
     prMutation.mutate();
+  }
+
+  function submitAI(event: FormEvent) {
+    event.preventDefault();
+    aiMutation.mutate();
   }
 
   return (
@@ -143,6 +171,51 @@ export function RepositoryCollaborationPanel({ repositoryId, userId }: Props) {
           ))}
         </ul>
       ) : <p className="repository-state">No open pull requests.</p>}
+      <div className="repository-section-heading">
+        <p className="eyebrow">CI execution</p>
+        <h2>Workflow runs</h2>
+      </div>
+      {executionsQuery.data?.length ? (
+        <ul className="repository-list" aria-label="Workflow executions">
+          {executionsQuery.data.map((execution) => (
+            <li key={execution.id}>
+              <strong>{execution.status}</strong>
+              <p>{execution.trigger_type} · {execution.commit_id.slice(0, 12)}</p>
+              {execution.error_message ? <p>{execution.error_message}</p> : null}
+              {["pending", "scheduled", "starting", "running"].includes(execution.status) ? (
+                <button type="button" onClick={() => cancelExecutionMutation.mutate(execution.id)}>
+                  Cancel run
+                </button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : <p className="repository-state">No workflow executions.</p>}
+      <div className="repository-section-heading">
+        <p className="eyebrow">Repository AI</p>
+        <h2>Evidence-grounded query</h2>
+      </div>
+      <form className="repository-form" onSubmit={submitAI}>
+        <label>
+          Question
+          <input value={aiQuery} onChange={(event) => setAiQuery(event.target.value)} required />
+        </label>
+        <button className="repository-primary-action" type="submit" disabled={aiMutation.isPending || !aiQuery.trim()}>
+          {aiMutation.isPending ? "Analyzing…" : "Run local analysis"}
+        </button>
+      </form>
+      {aiMutation.error ? (
+        <p className="repository-state-error" role="alert">
+          {aiMutation.error instanceof Error ? aiMutation.error.message : "AI analysis could not run."}
+        </p>
+      ) : null}
+      {aiResult?.output_data ? (
+        <pre className="repository-state" aria-label="AI analysis result">
+          {typeof aiResult.output_data.summary === "string"
+            ? aiResult.output_data.summary
+            : JSON.stringify(aiResult.output_data, null, 2)}
+        </pre>
+      ) : null}
       {mergeMutation.error ? (
         <p className="repository-state-error" role="alert">
           {mergeMutation.error instanceof Error ? mergeMutation.error.message : "Merge could not be completed."}

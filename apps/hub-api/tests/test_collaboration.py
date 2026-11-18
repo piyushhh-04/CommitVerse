@@ -21,6 +21,7 @@ from commitverse_hub.main import create_app
 from commitverse_hub.ci.workflows import WorkflowValidationError, parse_workflow_yaml
 from commitverse_hub.ai.retrieval import lexical_rank
 from commitverse_hub.ci.runtime import ContainerTimeoutError
+from commitverse_hub.ai.providers import OllamaProvider
 from pathlib import Path
 
 
@@ -173,3 +174,50 @@ def test_infrastructure_config_documents_container_bind_and_timeout():
     assert "commitverse_workspaces:" in compose
     assert "commitverse_repositories:" in compose
     assert issubclass(ContainerTimeoutError, RuntimeError)
+
+
+def test_execution_listing_cancellation_and_invalid_push(collaboration_client):
+    client, _settings, _factory, _user_id, csrf = collaboration_client
+    created = client.post(
+        "/api/v1/repositories",
+        headers=_headers(csrf),
+        json={"name": "platform-observability", "visibility": "private"},
+    )
+    assert created.status_code == 201
+    repository_id = created.json()["id"]
+
+    execution = client.post(
+        f"/api/v1/repositories/{repository_id}/executions",
+        headers=_headers(csrf),
+        json={"commit_id": "a" * 40},
+    )
+    assert execution.status_code == 202
+    execution_id = execution.json()["id"]
+
+    listed = client.get(f"/api/v1/repositories/{repository_id}/executions")
+    assert listed.status_code == 200
+    assert any(item["id"] == execution_id for item in listed.json())
+
+    cancelled = client.post(
+        f"/api/v1/repositories/{repository_id}/executions/{execution_id}/cancel",
+        headers=_headers(csrf),
+    )
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+
+    invalid_push = client.post(
+        f"/api/v1/repositories/{repository_id}/push-events",
+        headers=_headers(csrf),
+        json={"ref_name": "refs/heads/main", "commit_id": "b" * 40},
+    )
+    assert invalid_push.status_code == 422
+
+
+def test_ollama_provider_reports_unavailable_without_fake_success():
+    provider = OllamaProvider(
+        base_url="http://127.0.0.1:1",
+        model="test-model",
+        timeout_seconds=0.01,
+    )
+    with pytest.raises(RuntimeError, match="Ollama provider unavailable"):
+        provider.analyze({"README.md": "hello"}, {"query": "hello"})

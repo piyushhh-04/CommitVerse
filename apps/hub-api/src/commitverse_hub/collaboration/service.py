@@ -19,6 +19,7 @@ from commitverse_hub.db.models import (
     OrganizationMembership,
     PullRequest,
     PullRequestReview,
+    PullRequestReviewComment,
     Repository,
     RepositoryIssue,
     RepositoryUserPermission,
@@ -340,6 +341,82 @@ def create_review(
         raise
     except SQLAlchemyError as exc:
         raise RepositoryOperationError("Review could not be created.") from exc
+
+
+def create_review_comment(
+    factory: sessionmaker[Session],
+    repository_id: uuid.UUID,
+    pull_request_id: uuid.UUID,
+    review_id: uuid.UUID,
+    actor_user_id: uuid.UUID,
+    *,
+    path: str,
+    line: int | None,
+    body: str,
+) -> PullRequestReviewComment:
+    path = _text(path, field="Review comment path", max_length=4096)
+    body = _text(body, field="Review comment", max_length=10000)
+    if line is not None and line < 1:
+        raise ValueError("Review comment line must be positive.")
+    try:
+        with transactional_session(factory) as db_session:
+            repository = db_session.scalar(select(Repository).where(Repository.id == repository_id))
+            if repository is None:
+                raise RepositoryNotFoundError("Repository not found.")
+            _authorize_write(db_session, repository, actor_user_id)
+            review = db_session.scalar(select(PullRequestReview).where(
+                PullRequestReview.id == review_id,
+                PullRequestReview.pull_request_id == pull_request_id,
+            ))
+            pull_request = db_session.scalar(select(PullRequest).where(
+                PullRequest.id == pull_request_id,
+                PullRequest.repository_id == repository_id,
+            ))
+            if review is None or pull_request is None:
+                raise CollaborationError("Review or pull request not found.")
+            comment = PullRequestReviewComment(
+                review_id=review.id,
+                author_user_id=actor_user_id,
+                path=path,
+                line=line,
+                body=body,
+            )
+            db_session.add(comment)
+            db_session.flush()
+            db_session.refresh(comment)
+            return comment
+    except (RepositoryNotFoundError, RepositoryPermissionError, CollaborationError, ValueError):
+        raise
+    except SQLAlchemyError as exc:
+        raise RepositoryOperationError("Review comment could not be created.") from exc
+
+
+def list_review_comments(
+    factory: sessionmaker[Session],
+    repository_id: uuid.UUID,
+    pull_request_id: uuid.UUID,
+    actor_user_id: uuid.UUID,
+) -> list[PullRequestReviewComment]:
+    _load_repository(factory, repository_id, actor_user_id)
+    with factory() as db_session:
+        pull_request = db_session.scalar(select(PullRequest).where(
+            PullRequest.id == pull_request_id,
+            PullRequest.repository_id == repository_id,
+        ))
+        if pull_request is None:
+            raise CollaborationError("Pull request not found.")
+        review_ids = db_session.scalars(
+            select(PullRequestReview.id).where(
+                PullRequestReview.pull_request_id == pull_request_id
+            )
+        ).all()
+        if not review_ids:
+            return []
+        return list(db_session.scalars(
+            select(PullRequestReviewComment)
+            .where(PullRequestReviewComment.review_id.in_(review_ids))
+            .order_by(PullRequestReviewComment.created_at)
+        ))
 
 
 def merge_pull_request(

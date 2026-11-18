@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Any, Literal
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from commitverse_hub.ai.providers import DeterministicLocalProvider
+from commitverse_hub.ai.providers import DeterministicLocalProvider, OllamaProvider
 from commitverse_hub.ai.indexing import index_bare_repository
 from commitverse_hub.ai.retrieval import lexical_rank
 from commitverse_hub.api.v1.auth import get_authenticated_user, require_authenticated_csrf
@@ -23,11 +24,16 @@ from commitverse_hub.db.models import (
     AIEngineeringTask,
     CIWorkflow,
     ExecutionJob,
+    ExecutionLog,
+    ExecutionArtifact,
     Repository,
+    OrganizationMembership,
+    RepositoryUserPermission,
     User,
 )
 from commitverse_hub.db.session import transactional_session
 from commitverse_core.repository import discover_repository
+from commitverse_core.commits import read_commit
 from commitverse_hub.errors.handlers import HubApplicationError
 from commitverse_hub.repositories.service import (
     RepositoryNotFoundError,
@@ -71,6 +77,7 @@ class ExecutionResponse(BaseModel):
 class AITaskCreateRequest(BaseModel):
     kind: str = Field(min_length=1, max_length=32)
     query: str = Field(min_length=1, max_length=10000)
+    provider: Literal["deterministic", "ollama"] = "deterministic"
     model_config = ConfigDict(extra="forbid")
 
 
@@ -83,11 +90,68 @@ class AITaskResponse(BaseModel):
     output_data: dict[str, Any] | None
 
 
+class PushEventRequest(BaseModel):
+    ref_name: str = Field(min_length=1, max_length=255)
+    commit_id: str = Field(min_length=40, max_length=40)
+    model_config = ConfigDict(extra="forbid")
+
+
+class ExecutionLogResponse(BaseModel):
+    sequence: int
+    stream: str
+    content: str
+    created_at: datetime
+
+
+class ExecutionArtifactResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    storage_path: str
+    size_bytes: int
+    created_at: datetime
+
+
+class ExecutionDetailResponse(ExecutionResponse):
+    started_at: datetime | None
+    finished_at: datetime | None
+    error_message: str | None
+    logs: list[ExecutionLogResponse]
+    artifacts: list[ExecutionArtifactResponse]
+
+
+class PushEventResponse(BaseModel):
+    scheduled: list[ExecutionResponse]
+
+
 def _factory(request: Request) -> sessionmaker[Session]:
     factory = getattr(request.app.state, "session_factory", None)
     if factory is None:
         raise HubApplicationError(503, "database_unavailable", "The Hub database is not configured.")
     return factory
+
+
+def _require_write(factory: sessionmaker[Session], repository_id: uuid.UUID, user_id: uuid.UUID) -> Repository:
+    repository = get_repository_for_access(factory, repository_id, user_id)
+    with factory() as db:
+        if repository.owner_user_id == user_id:
+            return repository
+        if repository.owner_organization_id is not None:
+            membership = db.scalar(
+                select(OrganizationMembership).where(
+                    OrganizationMembership.organization_id == repository.owner_organization_id,
+                    OrganizationMembership.user_id == user_id,
+                )
+            )
+            if membership is not None and membership.role in {"owner", "admin"}:
+                return repository
+        permission = db.get(RepositoryUserPermission, (repository_id, user_id))
+        if permission is not None and permission.role in {"writer", "admin"}:
+            return repository
+    raise HubApplicationError(
+        403,
+        "repository_permission_denied",
+        "Repository write access is required.",
+    )
 
 
 @router.post("/{repository_id}/workflows", response_model=WorkflowResponse, status_code=status.HTTP_201_CREATED)
@@ -143,6 +207,174 @@ def list_workflows(repository_id: uuid.UUID, request: Request, user: User = Depe
         raise HubApplicationError(404 if isinstance(exc, RepositoryNotFoundError) else 503, "platform_unavailable", str(exc)) from exc
 
 
+@router.get("/{repository_id}/executions", response_model=list[ExecutionResponse])
+def list_executions(repository_id: uuid.UUID, request: Request, user: User = Depends(get_authenticated_user)):
+    factory = _factory(request)
+    try:
+        get_repository_for_access(factory, repository_id, user.id)
+        with factory() as db:
+            items = db.scalars(
+                select(ExecutionJob)
+                .where(ExecutionJob.repository_id == repository_id)
+                .order_by(ExecutionJob.created_at.desc())
+            )
+            return [
+                ExecutionResponse(
+                    id=item.id,
+                    workflow_id=item.workflow_id,
+                    trigger_type=item.trigger_type,
+                    commit_id=item.commit_id,
+                    status=item.status,
+                )
+                for item in items
+            ]
+    except (RepositoryNotFoundError, RepositoryOperationError) as exc:
+        raise HubApplicationError(404 if isinstance(exc, RepositoryNotFoundError) else 503, "platform_unavailable", str(exc)) from exc
+
+
+@router.get("/{repository_id}/executions/{execution_id}", response_model=ExecutionDetailResponse)
+def get_execution(repository_id: uuid.UUID, execution_id: uuid.UUID, request: Request, user: User = Depends(get_authenticated_user)):
+    factory = _factory(request)
+    try:
+        get_repository_for_access(factory, repository_id, user.id)
+        with factory() as db:
+            job = db.scalar(
+                select(ExecutionJob).where(
+                    ExecutionJob.id == execution_id,
+                    ExecutionJob.repository_id == repository_id,
+                )
+            )
+            if job is None:
+                raise HubApplicationError(404, "execution_not_found", "Execution not found.")
+            logs = db.scalars(
+                select(ExecutionLog)
+                .where(ExecutionLog.job_id == execution_id)
+                .order_by(ExecutionLog.sequence)
+            )
+            artifacts = db.scalars(
+                select(ExecutionArtifact)
+                .where(ExecutionArtifact.job_id == execution_id)
+                .order_by(ExecutionArtifact.created_at)
+            )
+            return ExecutionDetailResponse(
+                id=job.id,
+                workflow_id=job.workflow_id,
+                trigger_type=job.trigger_type,
+                commit_id=job.commit_id,
+                status=job.status,
+                started_at=job.started_at,
+                finished_at=job.finished_at,
+                error_message=job.error_message,
+                logs=[
+                    ExecutionLogResponse(
+                        sequence=log.sequence,
+                        stream=log.stream,
+                        content=log.content,
+                        created_at=log.created_at,
+                    )
+                    for log in logs
+                ],
+                artifacts=[
+                    ExecutionArtifactResponse(
+                        id=artifact.id,
+                        name=artifact.name,
+                        storage_path=artifact.storage_path,
+                        size_bytes=artifact.size_bytes,
+                        created_at=artifact.created_at,
+                    )
+                    for artifact in artifacts
+                ],
+            )
+    except (RepositoryNotFoundError, RepositoryOperationError) as exc:
+        raise HubApplicationError(404 if isinstance(exc, RepositoryNotFoundError) else 503, "platform_unavailable", str(exc)) from exc
+
+
+@router.post("/{repository_id}/push-events", response_model=PushEventResponse, status_code=status.HTTP_202_ACCEPTED)
+def create_push_event(repository_id: uuid.UUID, payload: PushEventRequest, request: Request, user: User = Depends(get_authenticated_user)):
+    require_authenticated_csrf(request)
+    factory = _factory(request)
+    try:
+        repository = _require_write(factory, repository_id, user.id)
+        storage_path = request.app.state.settings.repository_storage_root / f"{repository.storage_key}.git"
+        core_repository = discover_repository(storage_path)
+        read_commit(core_repository.objects_dir, payload.commit_id)
+        if not payload.ref_name.startswith("refs/heads/"):
+            raise HubApplicationError(422, "workflow_validation_error", "Push ref must be a local branch ref.")
+
+        with transactional_session(factory) as db:
+            workflows = db.scalars(
+                select(CIWorkflow).where(
+                    CIWorkflow.repository_id == repository_id,
+                    CIWorkflow.trigger == "push",
+                )
+            )
+            scheduled: list[ExecutionJob] = []
+            for workflow in workflows:
+                job = ExecutionJob(
+                    repository_id=repository_id,
+                    workflow_id=workflow.id,
+                    trigger_type="push",
+                    commit_id=payload.commit_id,
+                    status="pending",
+                )
+                db.add(job)
+                db.flush()
+                db.refresh(job)
+                scheduled.append(job)
+            return PushEventResponse(
+                scheduled=[
+                    ExecutionResponse(
+                        id=job.id,
+                        workflow_id=job.workflow_id,
+                        trigger_type=job.trigger_type,
+                        commit_id=job.commit_id,
+                        status=job.status,
+                    )
+                    for job in scheduled
+                ]
+            )
+    except HubApplicationError:
+        raise
+    except (RepositoryNotFoundError, RepositoryOperationError) as exc:
+        raise HubApplicationError(404 if isinstance(exc, RepositoryNotFoundError) else 503, "platform_unavailable", str(exc)) from exc
+    except (OSError, ValueError) as exc:
+        raise HubApplicationError(422, "workflow_validation_error", f"Invalid pushed commit: {exc}") from exc
+
+
+@router.post("/{repository_id}/executions/{execution_id}/cancel", response_model=ExecutionResponse)
+def cancel_execution(repository_id: uuid.UUID, execution_id: uuid.UUID, request: Request, user: User = Depends(get_authenticated_user)):
+    require_authenticated_csrf(request)
+    factory = _factory(request)
+    try:
+        repository = _require_write(factory, repository_id, user.id)
+        with transactional_session(factory) as db:
+            job = db.scalar(
+                select(ExecutionJob).where(
+                    ExecutionJob.id == execution_id,
+                    ExecutionJob.repository_id == repository.id,
+                ).with_for_update()
+            )
+            if job is None:
+                raise HubApplicationError(404, "execution_not_found", "Execution not found.")
+            if job.status not in {"pending", "scheduled", "starting", "running"}:
+                raise HubApplicationError(409, "execution_conflict", "Execution can no longer be cancelled.")
+            job.status = "cancelled"
+            job.finished_at = datetime.now(UTC)
+            db.flush()
+            db.refresh(job)
+            return ExecutionResponse(
+                id=job.id,
+                workflow_id=job.workflow_id,
+                trigger_type=job.trigger_type,
+                commit_id=job.commit_id,
+                status=job.status,
+            )
+    except HubApplicationError:
+        raise
+    except (RepositoryNotFoundError, RepositoryOperationError) as exc:
+        raise HubApplicationError(404 if isinstance(exc, RepositoryNotFoundError) else 503, "platform_unavailable", str(exc)) from exc
+
+
 @router.post("/{repository_id}/executions", response_model=ExecutionResponse, status_code=status.HTTP_202_ACCEPTED)
 def create_execution(repository_id: uuid.UUID, payload: ExecutionCreateRequest, request: Request, user: User = Depends(get_authenticated_user)):
     require_authenticated_csrf(request)
@@ -185,7 +417,11 @@ def create_ai_task(repository_id: uuid.UUID, payload: AITaskCreateRequest, reque
     factory = _factory(request)
     try:
         get_repository_for_access(factory, repository_id, user.id)
-        provider = DeterministicLocalProvider()
+        provider: DeterministicLocalProvider | OllamaProvider
+        if payload.provider == "ollama":
+            provider = OllamaProvider()
+        else:
+            provider = DeterministicLocalProvider()
         with factory() as db:
             repository = db.get(Repository, repository_id)
             if repository is None:
@@ -197,8 +433,16 @@ def create_ai_task(repository_id: uuid.UUID, payload: AITaskCreateRequest, reque
         except Exception:
             repository_files = {}
         references = lexical_rank(repository_files, payload.query)
-        output = provider.analyze(repository_files, {"query": payload.query})
-        output["references"] = references
+        try:
+            output = provider.analyze(repository_files, {"query": payload.query})
+        except (RuntimeError, ValueError) as exc:
+            raise HubApplicationError(
+                503,
+                "ai_provider_unavailable",
+                str(exc),
+            ) from exc
+        if payload.provider == "deterministic":
+            output["references"] = references
         with transactional_session(factory) as db:
             task = AIEngineeringTask(
                 repository_id=repository_id,

@@ -18,6 +18,8 @@ from commitverse_hub.collaboration.service import (
     create_issue_comment,
     create_pull_request,
     create_review,
+    create_review_comment,
+    list_review_comments,
     list_issue_comments,
     list_issues,
     list_pull_requests,
@@ -30,6 +32,7 @@ from commitverse_hub.db.models import (
     IssueComment,
     PullRequest,
     PullRequestReview,
+    PullRequestReviewComment,
     RepositoryIssue,
     User,
 )
@@ -141,6 +144,28 @@ class ReviewResponse(BaseModel):
     @classmethod
     def from_review(cls, review: PullRequestReview) -> "ReviewResponse":
         return cls.model_validate(review, from_attributes=True)
+
+
+class ReviewCommentCreateRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=4096)
+    line: int | None = Field(default=None, ge=1)
+    body: str = Field(min_length=1, max_length=10000)
+    model_config = ConfigDict(extra="forbid")
+
+
+class ReviewCommentResponse(BaseModel):
+    id: uuid.UUID
+    review_id: uuid.UUID
+    author_user_id: uuid.UUID
+    path: str
+    line: int | None
+    body: str
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_comment(cls, comment: PullRequestReviewComment) -> "ReviewCommentResponse":
+        return cls.model_validate(comment, from_attributes=True)
 
 
 class BranchProtectionRequest(BaseModel):
@@ -282,6 +307,58 @@ def create_repository_pull_request_review(repository_id: uuid.UUID, pull_request
     try:
         review = create_review(_factory(request), repository_id, pull_request_id, user.id, state=payload.state, body=payload.body)
         return ReviewResponse.from_review(review)
+    except (RepositoryNotFoundError, RepositoryPermissionError, RepositoryOperationError, CollaborationError, ValueError) as exc:
+        raise _error(exc) from exc
+
+
+@router.post(
+    "/{repository_id}/pull-requests/{pull_request_id}/reviews/{review_id}/comments",
+    response_model=ReviewCommentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_repository_review_comment(
+    repository_id: uuid.UUID,
+    pull_request_id: uuid.UUID,
+    review_id: uuid.UUID,
+    payload: ReviewCommentCreateRequest,
+    request: Request,
+    user: User = Depends(get_authenticated_user),
+):
+    require_authenticated_csrf(request)
+    try:
+        comment = create_review_comment(
+            _factory(request),
+            repository_id,
+            pull_request_id,
+            review_id,
+            user.id,
+            path=payload.path,
+            line=payload.line,
+            body=payload.body,
+        )
+        return ReviewCommentResponse.from_comment(comment)
+    except (RepositoryNotFoundError, RepositoryPermissionError, RepositoryOperationError, CollaborationError, ValueError) as exc:
+        raise _error(exc) from exc
+
+
+@router.get(
+    "/{repository_id}/pull-requests/{pull_request_id}/review-comments",
+    response_model=list[ReviewCommentResponse],
+)
+def get_repository_review_comments(
+    repository_id: uuid.UUID,
+    pull_request_id: uuid.UUID,
+    request: Request,
+    user: User = Depends(get_authenticated_user),
+):
+    try:
+        comments = list_review_comments(
+            _factory(request),
+            repository_id,
+            pull_request_id,
+            user.id,
+        )
+        return [ReviewCommentResponse.from_comment(comment) for comment in comments]
     except (RepositoryNotFoundError, RepositoryPermissionError, RepositoryOperationError, CollaborationError, ValueError) as exc:
         raise _error(exc) from exc
 

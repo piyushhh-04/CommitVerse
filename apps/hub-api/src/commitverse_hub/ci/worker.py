@@ -160,6 +160,10 @@ def run_pending_jobs(
                         environment = {}
                     for step_index, step in enumerate(job_config["steps"]):
                         command = str(step["run"])
+                        with factory() as db:
+                            current_status = db.get(ExecutionJob, job.id)
+                            if current_status is not None and current_status.status == "cancelled":
+                                break
                         result = runtime.execute(
                             workspace=workspace,
                             volume_name=os.environ.get("CI_WORKSPACE_VOLUME"),
@@ -185,9 +189,12 @@ def run_pending_jobs(
                 with transactional_session(factory) as db:
                     current = db.get(ExecutionJob, job.id)
                     if current is not None:
-                        current.status = "succeeded" if overall_exit == 0 else "failed"
-                        current.finished_at = datetime.now(UTC)
-                        if overall_exit != 0:
+                        if current.status == "cancelled":
+                            pass
+                        else:
+                            current.status = "succeeded" if overall_exit == 0 else "failed"
+                            current.finished_at = datetime.now(UTC)
+                        if overall_exit != 0 and current.status != "cancelled":
                             current.error_message = f"Command exited with status {overall_exit}"
             except ContainerTimeoutError as exc:
                 _append_log(factory, job.id, 0, "stderr", str(exc))

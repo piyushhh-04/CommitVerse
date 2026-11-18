@@ -83,3 +83,72 @@ export async function mergePullRequest(repositoryId: string, pullRequestId: stri
     `${API_BASE_PATH}/repositories/${encodeURIComponent(repositoryId)}/pull-requests/${encodeURIComponent(pullRequestId)}/merge`,
   );
 }
+
+export interface Execution {
+  id: string;
+  workflow_id: string | null;
+  trigger_type: string;
+  commit_id: string;
+  status: "pending" | "scheduled" | "starting" | "running" | "succeeded" | "failed" | "cancelled" | "timed_out";
+  started_at?: string | null;
+  finished_at?: string | null;
+  error_message?: string | null;
+  logs?: Array<{ sequence: number; stream: string; content: string; created_at: string }>;
+  artifacts?: Array<{ id: string; name: string; storage_path: string; size_bytes: number; created_at: string }>;
+}
+
+export async function listExecutions(repositoryId: string) {
+  return apiClient.get<Execution[]>(
+    `${API_BASE_PATH}/repositories/${encodeURIComponent(repositoryId)}/executions`,
+  );
+}
+
+export async function getExecution(repositoryId: string, executionId: string) {
+  return apiClient.get<Execution>(
+    `${API_BASE_PATH}/repositories/${encodeURIComponent(repositoryId)}/executions/${encodeURIComponent(executionId)}`,
+  );
+}
+
+export async function cancelExecution(repositoryId: string, executionId: string) {
+  return apiClient.post<Execution>(
+    `${API_BASE_PATH}/repositories/${encodeURIComponent(repositoryId)}/executions/${encodeURIComponent(executionId)}/cancel`,
+  );
+}
+
+export interface AITask {
+  id: string;
+  kind: string;
+  status: string;
+  provider: string;
+  input_data: Record<string, unknown>;
+  output_data: Record<string, unknown> | null;
+}
+
+export async function createAITask(
+  repositoryId: string,
+  kind: string,
+  query: string,
+  provider: "deterministic" | "ollama" = "deterministic",
+) {
+  return apiClient.post<AITask, { kind: string; query: string; provider: "deterministic" | "ollama" }>(
+    `${API_BASE_PATH}/repositories/${encodeURIComponent(repositoryId)}/ai/tasks`,
+    { kind, query, provider },
+  );
+}
+
+export interface ReviewComment {
+  id: string;
+  review_id: string;
+  author_user_id: string;
+  path: string;
+  line: number | null;
+  body: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listReviewComments(repositoryId: string, pullRequestId: string) {
+  return apiClient.get<ReviewComment[]>(
+    `${API_BASE_PATH}/repositories/${encodeURIComponent(repositoryId)}/pull-requests/${encodeURIComponent(pullRequestId)}/review-comments`,
+  );
+}

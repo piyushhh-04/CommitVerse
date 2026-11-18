@@ -117,6 +117,13 @@ Date: 2026-11-18
 
 ## Verification results
 
+- Latest baseline before the final end-to-end pass:
+  Hub API `199 passed, 7 skipped`, Core `320 passed, 1 skipped`, frontend unit
+  tests `108 passed`.
+- Focused push/execution/AI/review tests: `7 passed`.
+- Final Hub API suite with PostgreSQL integration: `208 passed, 31 warnings`.
+- Playwright: `28 passed, 8 skipped`.
+
 - Latest completed checks after the repository-invitation patch:
 
 - Hub API Python compilation passed.
@@ -185,6 +192,19 @@ organization invitation acceptance.
 
 ## Continued implementation
 
+## Push, execution, AI, and review integration
+
+- Repository push events can schedule push-triggered workflow jobs after
+  validating the commit exists in the Core object database.
+- Execution APIs list runs, return terminal details, persisted logs/artifacts,
+  and support cancellation of pending or running jobs.
+- Frontend repository collaboration view polls execution status and exposes
+  cancellation, local AI queries, and evidence-grounded deterministic results.
+- Optional Ollama provider support is available behind `ollama` provider
+  selection. A missing local service returns `503` and never fabricates results.
+- Pull-request review comments are persisted and exposed through real
+  repository, review, and comment APIs.
+
 - Core merge operations now support bare-repository three-way merge commits,
   fast-forward updates, conflict rejection, and target branch ref updates.
 - Hub pull-request merge is connected to the Core merge engine. It still
@@ -205,23 +225,20 @@ organization invitation acceptance.
 
 ## Remaining work
 
-- PostgreSQL integration and real Docker container verification have now been
-  completed locally. Hosted infrastructure and deployment remain external.
-- Run the Docker Compose PostgreSQL/API/worker stack and real container
-  execution on a host with a running Docker daemon.
-- Run PostgreSQL migration and concurrency integration tests.
-- Run PostgreSQL-backed repository-invitation and concurrency tests with
-  `HUB_TEST_DATABASE_URL` configured.
+- Hosted infrastructure, external deployment, paid providers, and external
+  accounts remain unconfigured and must not be inferred as complete.
+- Network Git smart HTTP and ordinary Git-client clone/fetch/push compatibility
+  remain unfinished. Local filesystem transport and Core refs are implemented,
+  but no claim is made for Git-over-HTTP.
+- Packfiles, packed refs, delta transfer, rebase, recursive/octopus merge,
+  conflict-state persistence, and full Git compatibility remain unfinished.
 - External email delivery remains intentionally absent; manual token sharing is
   the current zero-billing workflow.
-- Advanced diff workflows, teams, richer collaboration, network Git protocols,
-  packfiles, rebase, conflict resolution, and broader Git compatibility remain
-  unfinished.
-- PostgreSQL concurrency and current migration-head validation still require
-  `HUB_TEST_DATABASE_URL`.
-- Docker/Compose and CI workflows are still absent.
-- Production deployment, backup/restore, reconciliation, monitoring, and
-  cross-process repository coordination remain unfinished.
+- Optional Ollama support is implemented through a provider interface and
+  tested for unavailable-provider errors. It requires a running local Ollama
+  service and does not provide a hosted model.
+- Semantic/pgvector retrieval remains future work. Lexical retrieval is the
+  implemented repository search fallback and is not represented as semantic.
 
 ## Architectural decisions preserved
 

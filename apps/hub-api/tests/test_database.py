@@ -251,11 +251,15 @@ def test_alembic_uses_shared_metadata_without_embedding_credentials() -> None:
     assert Path(script.dir).resolve() == (package_root / "migrations").resolve()
     assert config.get_main_option("sqlalchemy.url") == ""
     assert "target_metadata = Base.metadata" in env_source
-    assert len(Base.metadata.tables) == 9
+    assert len(Base.metadata.tables) == 21
     revisions = list(script.walk_revisions())
     assert [revision.revision for revision in revisions] == [
+        "c3f7a9e5b214",
+        "b6e2c4d8f901",
         "a7d4d1d1f7ed",
         "40037b3edad7",
     ]
     assert revisions[0].down_revision == revisions[1].revision
-    assert revisions[1].down_revision is None
+    assert revisions[1].down_revision == revisions[2].revision
+    assert revisions[2].down_revision == revisions[3].revision
+    assert revisions[3].down_revision is None

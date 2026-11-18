@@ -5,6 +5,7 @@ import { ApiError } from "../api/client";
 import { RepositoryForm, type RepositoryFormValues } from "../components/RepositoryForm";
 import { RepositoryBrowsePanel } from "../components/RepositoryBrowsePanel";
 import { RepositoryAccessPanel } from "../components/RepositoryAccessPanel";
+import { RepositoryCollaborationPanel } from "../components/RepositoryCollaborationPanel";
 import { useAuth } from "../auth/AuthContext";
 import {
   personalRepositoryDetailQueryOptions,
@@ -217,6 +218,7 @@ export function RepositoryDetailPage() {
         </Link>
       ) : null}
       <RepositoryAccessPanel repositoryId={repository.id} userId={userId} />
+      <RepositoryCollaborationPanel repositoryId={repository.id} userId={userId} />
 
       <section className="repository-form-section" aria-labelledby="repository-settings-title">
         <div className="repository-section-heading">

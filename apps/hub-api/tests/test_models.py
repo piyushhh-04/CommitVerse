@@ -26,6 +26,18 @@ _EXPECTED_TABLES = {
     "invitations",
     "sessions",
     "audit_events",
+    "repository_issues",
+    "issue_comments",
+    "pull_requests",
+    "pull_request_reviews",
+    "pull_request_review_comments",
+    "branch_protections",
+    "ci_workflows",
+    "execution_jobs",
+    "execution_logs",
+    "execution_artifacts",
+    "ai_engineering_tasks",
+    "ai_findings",
 }
 
 
@@ -281,7 +293,7 @@ def test_migration_upgrade_downgrade_upgrade_and_autogenerate_match(
         assert set(inspector.get_table_names()) == _EXPECTED_TABLES | {"alembic_version"}
 
         migration_context = MigrationContext.configure(connection)
-        assert migration_context.get_current_revision() == "a7d4d1d1f7ed"
+        assert migration_context.get_current_revision() == "c3f7a9e5b214"
         from alembic.autogenerate import compare_metadata
 
         assert compare_metadata(migration_context, Base.metadata) == []
@@ -409,7 +421,7 @@ def test_repository_deleted_state_migration_backfills_only_exact_tombstones(
         ).one()
         assert reupgraded_row == ("deleting", "non-standard-deleted-slug")
         assert MigrationContext.configure(connection).get_current_revision() == (
-            "a7d4d1d1f7ed"
+            "c3f7a9e5b214"
         )
 
     engine.dispose()
@@ -420,6 +432,8 @@ def test_migration_revision_chain_is_current_and_explicit() -> None:
     script = ScriptDirectory.from_config(Config(str(package_root / "alembic.ini")))
     revisions = {revision.revision: revision for revision in script.walk_revisions()}
 
-    assert set(revisions) == {"40037b3edad7", "a7d4d1d1f7ed"}
+    assert set(revisions) == {"40037b3edad7", "a7d4d1d1f7ed", "b6e2c4d8f901", "c3f7a9e5b214"}
     assert revisions["40037b3edad7"].down_revision is None
     assert revisions["a7d4d1d1f7ed"].down_revision == "40037b3edad7"
+    assert revisions["b6e2c4d8f901"].down_revision == "a7d4d1d1f7ed"
+    assert revisions["c3f7a9e5b214"].down_revision == "b6e2c4d8f901"

@@ -19,6 +19,10 @@ from commitverse_core.refs import (
 )
 from commitverse_core.repository import initialize_repository
 from commitverse_core.staging import add_paths
+from commitverse_core.commits import Commit, CommitIdentity, write_commit
+from commitverse_core.objects.store import write_object
+from commitverse_core.refs import set_head_symbolic, write_ref
+from commitverse_core.trees import TreeEntry, serialize_tree
 
 
 def _repository(tmp_path):
@@ -132,6 +136,59 @@ def test_merge_commit_uses_configured_and_environment_identities(tmp_path, monke
     assert commit.committer.name == "Merge Committer"
     assert commit.committer.email == "merge-committer@example.test"
     assert commit.committer.timestamp == 1700000011
+
+
+def test_bare_repository_divergent_merge_creates_merge_commit(tmp_path):
+    repository = initialize_repository(tmp_path / "bare.git", bare=True)
+    (repository.git_dir / "config").write_text(
+        "[core]\nrepositoryformatversion = 0\nfilemode = true\nbare = true\n"
+        "[user]\nname = Test User\nemail = test@example.test\n"
+    )
+    identity = CommitIdentity("Test User", "test@example.test", 1700000000, 0)
+
+    base_file = write_object(repository.objects_dir, "blob", b"base\n")
+    base_tree = write_object(
+        repository.objects_dir,
+        "tree",
+        serialize_tree((TreeEntry("100644", b"file.txt", base_file),)),
+    )
+    base_commit = write_commit(
+        repository.objects_dir,
+        Commit(base_tree, (), identity, identity, b"base\n"),
+    )
+    create_branch(repository, "main", base_commit)
+    create_branch(repository, "feature", base_commit)
+    set_head_symbolic(repository, "refs/heads/main")
+
+    main_file = write_object(repository.objects_dir, "blob", b"main\n")
+    main_tree = write_object(
+        repository.objects_dir,
+        "tree",
+        serialize_tree((TreeEntry("100644", b"main.txt", main_file),)),
+    )
+    main_commit = write_commit(
+        repository.objects_dir,
+        Commit(main_tree, (base_commit,), identity, identity, b"main\n"),
+    )
+    write_ref(repository, "refs/heads/main", main_commit)
+
+    feature_file = write_object(repository.objects_dir, "blob", b"feature\n")
+    feature_tree = write_object(
+        repository.objects_dir,
+        "tree",
+        serialize_tree((TreeEntry("100644", b"feature.txt", feature_file),)),
+    )
+    feature_commit = write_commit(
+        repository.objects_dir,
+        Commit(feature_tree, (base_commit,), identity, identity, b"feature\n"),
+    )
+    write_ref(repository, "refs/heads/feature", feature_commit)
+
+    result, merge_id = merge_branch(repository, "feature")
+    assert result == "merged"
+    merge_commit = read_commit(repository.objects_dir, merge_id)
+    assert merge_commit.parent_ids == (main_commit, feature_commit)
+    assert resolve_branch(repository, "main") == merge_id
 
 
 def test_branch_deletion_requires_merged_branch_and_preserves_objects(tmp_path):

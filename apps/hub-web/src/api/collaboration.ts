@@ -77,3 +77,9 @@ export async function createPullRequest(
     draft: false,
   });
 }
+
+export async function mergePullRequest(repositoryId: string, pullRequestId: string) {
+  return apiClient.post<PullRequest>(
+    `${API_BASE_PATH}/repositories/${encodeURIComponent(repositoryId)}/pull-requests/${encodeURIComponent(pullRequestId)}/merge`,
+  );
+}

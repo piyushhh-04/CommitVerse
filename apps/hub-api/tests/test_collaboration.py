@@ -18,6 +18,8 @@ from commitverse_hub.db.base import Base
 from commitverse_hub.db.models import User, UserProfile
 from commitverse_hub.db.session import transactional_session
 from commitverse_hub.main import create_app
+from commitverse_hub.ci.workflows import WorkflowValidationError, parse_workflow_yaml
+from commitverse_hub.ai.retrieval import lexical_rank
 
 
 @pytest.fixture
@@ -85,3 +87,79 @@ def test_issue_lifecycle_and_comments(collaboration_client):
     )
     assert closed.status_code == 200, closed.text
     assert closed.json()["state"] == "closed"
+
+
+def test_workflow_yaml_validation():
+    workflow = parse_workflow_yaml(
+        """
+name: test
+trigger: push
+jobs:
+  unit:
+    steps:
+      - run: python -m compileall -q .
+"""
+    )
+    assert workflow["name"] == "test"
+    assert workflow["trigger"] == "push"
+
+    with pytest.raises(WorkflowValidationError):
+        parse_workflow_yaml("name: test\ntrigger: invalid\njobs: {}\n")
+
+
+def test_lexical_retrieval_returns_source_locations():
+    ranked = lexical_rank(
+        {
+            "src/main.py": "def authenticate_user():\n    return True\n",
+            "README.md": "Documentation only.\n",
+        },
+        "authenticate_user",
+    )
+    assert ranked[0]["path"] == "src/main.py"
+    assert ranked[0]["matches"] == [
+        {"line": 1, "text": "def authenticate_user():"}
+    ]
+
+
+def test_workflow_execution_and_local_ai_task_api(collaboration_client):
+    client, _settings, _factory, _user_id, csrf = collaboration_client
+    created = client.post(
+        "/api/v1/repositories",
+        headers=_headers(csrf),
+        json={"name": "platform-demo", "visibility": "private"},
+    )
+    repository_id = created.json()["id"]
+
+    workflow = client.post(
+        f"/api/v1/repositories/{repository_id}/workflows",
+        headers=_headers(csrf),
+        json={
+            "yaml": """
+name: test
+trigger: manual
+jobs:
+  unit:
+    steps:
+      - run: python -m compileall -q .
+""",
+        },
+    )
+    assert workflow.status_code == 201
+
+    execution = client.post(
+        f"/api/v1/repositories/{repository_id}/executions",
+        headers=_headers(csrf),
+        json={
+            "workflow_id": workflow.json()["id"],
+            "commit_id": "a" * 40,
+        },
+    )
+    assert execution.status_code == 202
+
+    ai_task = client.post(
+        f"/api/v1/repositories/{repository_id}/ai/tasks",
+        headers=_headers(csrf),
+        json={"kind": "review", "query": "authentication"},
+    )
+    assert ai_task.status_code == 201
+    assert ai_task.json()["provider"] == "deterministic_local"

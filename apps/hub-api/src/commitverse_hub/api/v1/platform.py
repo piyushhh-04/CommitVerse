@@ -11,8 +11,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from commitverse_hub.ai.providers import DeterministicLocalProvider
+from commitverse_hub.ai.indexing import index_bare_repository
+from commitverse_hub.ai.retrieval import lexical_rank
 from commitverse_hub.api.v1.auth import get_authenticated_user, require_authenticated_csrf
-from commitverse_hub.ci.workflows import WorkflowValidationError, validate_workflow
+from commitverse_hub.ci.workflows import (
+    WorkflowValidationError,
+    parse_workflow_yaml,
+    validate_workflow,
+)
 from commitverse_hub.db.models import (
     AIEngineeringTask,
     CIWorkflow,
@@ -21,6 +27,7 @@ from commitverse_hub.db.models import (
     User,
 )
 from commitverse_hub.db.session import transactional_session
+from commitverse_core.repository import discover_repository
 from commitverse_hub.errors.handlers import HubApplicationError
 from commitverse_hub.repositories.service import (
     RepositoryNotFoundError,
@@ -33,9 +40,10 @@ router = APIRouter(prefix="/repositories", tags=["ci-and-ai"])
 
 
 class WorkflowCreateRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=255)
-    trigger: str
-    jobs: dict[str, Any]
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    trigger: str | None = None
+    jobs: dict[str, Any] | None = None
+    yaml: str | None = Field(default=None, max_length=1_000_000)
     model_config = ConfigDict(extra="forbid")
 
 
@@ -48,6 +56,7 @@ class WorkflowResponse(BaseModel):
 
 class ExecutionCreateRequest(BaseModel):
     commit_id: str = Field(min_length=40, max_length=40)
+    workflow_id: uuid.UUID | None = None
     model_config = ConfigDict(extra="forbid")
 
 
@@ -87,11 +96,16 @@ def create_workflow(repository_id: uuid.UUID, payload: WorkflowCreateRequest, re
     factory = _factory(request)
     try:
         get_repository_for_access(factory, repository_id, user.id)
-        configuration = validate_workflow({
-            "name": payload.name,
-            "trigger": payload.trigger,
-            "jobs": payload.jobs,
-        })
+        if payload.yaml is not None:
+            configuration = parse_workflow_yaml(payload.yaml)
+        else:
+            if payload.name is None or payload.trigger is None or payload.jobs is None:
+                raise WorkflowValidationError("Provide workflow YAML or name, trigger, and jobs.")
+            configuration = validate_workflow({
+                "name": payload.name,
+                "trigger": payload.trigger,
+                "jobs": payload.jobs,
+            })
         with transactional_session(factory) as db:
             workflow = CIWorkflow(
                 repository_id=repository_id,
@@ -136,8 +150,17 @@ def create_execution(repository_id: uuid.UUID, payload: ExecutionCreateRequest, 
     try:
         get_repository_for_access(factory, repository_id, user.id)
         with transactional_session(factory) as db:
+            if payload.workflow_id is not None:
+                workflow = db.get(CIWorkflow, payload.workflow_id)
+                if workflow is None or workflow.repository_id != repository_id:
+                    raise HubApplicationError(
+                        404,
+                        "workflow_not_found",
+                        "Workflow not found.",
+                    )
             job = ExecutionJob(
                 repository_id=repository_id,
+                workflow_id=payload.workflow_id,
                 trigger_type="manual",
                 commit_id=payload.commit_id,
                 status="pending",
@@ -163,7 +186,19 @@ def create_ai_task(repository_id: uuid.UUID, payload: AITaskCreateRequest, reque
     try:
         get_repository_for_access(factory, repository_id, user.id)
         provider = DeterministicLocalProvider()
-        output = provider.analyze({}, {"query": payload.query})
+        with factory() as db:
+            repository = db.get(Repository, repository_id)
+            if repository is None:
+                raise RepositoryNotFoundError("Repository not found.")
+            storage_path = request.app.state.settings.repository_storage_root / f"{repository.storage_key}.git"
+        try:
+            core_repository = discover_repository(storage_path)
+            repository_files = index_bare_repository(core_repository)
+        except Exception:
+            repository_files = {}
+        references = lexical_rank(repository_files, payload.query)
+        output = provider.analyze(repository_files, {"query": payload.query})
+        output["references"] = references
         with transactional_session(factory) as db:
             task = AIEngineeringTask(
                 repository_id=repository_id,

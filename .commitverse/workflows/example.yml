@@ -1,0 +1,12 @@
+name: python-quality
+trigger: push
+jobs:
+  test:
+    image: python:3.12-slim
+    timeout: 300
+    memory_bytes: 536870912
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - run: python -m compileall -q .
+      - run: python -m unittest discover -s tests -v

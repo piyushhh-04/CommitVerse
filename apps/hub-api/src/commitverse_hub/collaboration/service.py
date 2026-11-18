@@ -9,8 +9,8 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
-from commitverse_core.merge_base import is_ancestor
-from commitverse_core.refs import resolve_branch, write_ref
+from commitverse_core.merge import MergeError, merge_branch
+from commitverse_core.refs import current_branch, resolve_branch, set_head_symbolic
 from commitverse_core.repository import Repository as CoreRepository, discover_repository
 
 from commitverse_hub.db.models import (
@@ -22,6 +22,7 @@ from commitverse_hub.db.models import (
     Repository,
     RepositoryIssue,
     RepositoryUserPermission,
+    ExecutionJob,
 )
 from commitverse_hub.db.session import transactional_session
 from commitverse_hub.repositories.service import (
@@ -375,23 +376,32 @@ def merge_pull_request(
                 ) or 0)
                 if approvals < protection.required_approvals:
                     raise CollaborationConflictError("Required pull request approvals are missing.")
+            if protection is not None and protection.require_ci_success:
+                core_repository = discover_repository(storage_path)
+                source_commit = resolve_branch(core_repository, pull_request.source_branch)
+                succeeded = db_session.scalar(
+                    select(ExecutionJob.id).where(
+                        ExecutionJob.repository_id == repository_id,
+                        ExecutionJob.commit_id == source_commit,
+                        ExecutionJob.status == "succeeded",
+                    ).limit(1)
+                )
+                if succeeded is None:
+                    raise CollaborationConflictError("A successful required CI execution is missing.")
 
             core_repository = discover_repository(storage_path)
-            source_commit = resolve_branch(core_repository, pull_request.source_branch)
-            target_commit = resolve_branch(core_repository, pull_request.target_branch)
-            if is_ancestor(core_repository, source_commit, target_commit):
-                merge_commit_id = target_commit
-            elif is_ancestor(core_repository, target_commit, source_commit):
-                write_ref(
+            if current_branch(core_repository) != pull_request.target_branch:
+                set_head_symbolic(
                     core_repository,
                     f"refs/heads/{pull_request.target_branch}",
-                    source_commit,
                 )
-                merge_commit_id = source_commit
-            else:
-                raise CollaborationConflictError(
-                    "This fast-forward-only merge is blocked because the branches have diverged."
+            try:
+                _merge_status, merge_commit_id = merge_branch(
+                    core_repository,
+                    pull_request.source_branch,
                 )
+            except MergeError as exc:
+                raise CollaborationConflictError(str(exc)) from exc
 
             pull_request.state = "merged"
             pull_request.merged_at = datetime.now(UTC)

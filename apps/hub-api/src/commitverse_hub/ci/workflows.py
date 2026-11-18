@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+import yaml
 
 
 class WorkflowValidationError(ValueError):
@@ -33,3 +34,17 @@ def validate_workflow(payload: dict[str, Any]) -> dict[str, Any]:
         "trigger": trigger,
         "jobs": jobs,
     }
+
+
+def parse_workflow_yaml(content: str) -> dict[str, Any]:
+    if not isinstance(content, str) or len(content) > 1_000_000:
+        raise WorkflowValidationError("Workflow YAML is missing or too large.")
+    try:
+        payload = yaml.safe_load(content)
+    except yaml.YAMLError as exc:
+        raise WorkflowValidationError("Workflow YAML is invalid.") from exc
+    if not isinstance(payload, dict):
+        raise WorkflowValidationError("Workflow YAML must contain an object.")
+    if "name" not in payload or "trigger" not in payload or "jobs" not in payload:
+        raise WorkflowValidationError("Workflow YAML requires name, trigger, and jobs.")
+    return validate_workflow(payload)

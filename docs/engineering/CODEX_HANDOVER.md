@@ -1,12 +1,12 @@
 # CommitVerse Codex Handover
 
-Date: 2026-11-15
+Date: 2026-11-18
 
 ## Current repository state
 
 - Root: `/Users/rathodpiyushmaheshbhai/Desktop/CommitVerse`
 - Branch: `main`
-- HEAD: `31a5c17a70d20232cc413ea3fb76a264849767a3`
+- HEAD: `b100d4170146699c6290479db3c63bd817153e8e`
 - Remote: `origin` points to `https://github.com/piyushhh-04/CommitVerse.git`.
 - GitHub connectivity was historically unavailable because DNS resolution for
   `github.com` failed.
@@ -122,8 +122,9 @@ Date: 2026-11-15
 - Hub API Python compilation passed.
 - Repository-invitation tests: `6 passed, 2 skipped`.
 - Hub API full suite after collaboration/platform additions:
-  `195 passed, 7 skipped, 31 warnings`.
-- Core full suite: `319 passed, 1 skipped`.
+- Hub API full suite after merge/CI/AI continuation:
+  `198 passed, 7 skipped, 31 warnings`.
+- Core full suite: `320 passed, 1 skipped`.
 - Frontend: `19 test files, 108 tests passed`.
 - Frontend typecheck, Oxlint, and production build passed.
 - Playwright: `28 passed, 8 skipped`.
@@ -163,8 +164,31 @@ organization invitation acceptance.
   embedding, agent patching, and Docker-backed validation remain future work.
 - The repository detail frontend includes real issue and pull-request panels.
 
+## Continued implementation
+
+- Core merge operations now support bare-repository three-way merge commits,
+  fast-forward updates, conflict rejection, and target branch ref updates.
+- Hub pull-request merge is connected to the Core merge engine. It still
+  reports merge conflicts to the caller and does not mark a PR merged unless
+  the real Core merge succeeds.
+- Branch protection can require approvals and successful CI execution records.
+- Docker Compose now provides PostgreSQL, the API, and a worker. Docker daemon
+  execution is unavailable in this environment, so only Compose
+  configuration and runtime code can be verified here.
+- The CI worker executes real container commands through Docker SDK with
+  resource limits, capability dropping, network isolation, timeout handling,
+  logs, and cleanup.
+- Workflow YAML supports `push`, `pull_request`, and `manual` triggers and
+  `name`, `trigger`, and `jobs` definitions.
+- AI repository indexing reads text blobs from bare Core repositories.
+  Lexical ranking with file and line attribution is implemented as an explicit
+  fallback. No external model or embedding provider is required or configured.
+
 ## Remaining work
 
+- Run the Docker Compose PostgreSQL/API/worker stack and real container
+  execution on a host with a running Docker daemon.
+- Run PostgreSQL migration and concurrency integration tests.
 - Run PostgreSQL-backed repository-invitation and concurrency tests with
   `HUB_TEST_DATABASE_URL` configured.
 - External email delivery remains intentionally absent; manual token sharing is

@@ -10,7 +10,13 @@ from commitverse_core.commit_service import resolve_identities
 from commitverse_core.commits import Commit, read_commit, write_commit
 from commitverse_core.merge_base import MergeBaseError, find_merge_base, is_ancestor
 from commitverse_core.objects.store import read_object, write_object
-from commitverse_core.refs import read_head, resolve_branch, resolve_head
+from commitverse_core.refs import (
+    current_branch,
+    read_head,
+    resolve_branch,
+    resolve_head,
+    write_ref,
+)
 from commitverse_core.repository import Repository
 from commitverse_core.status import StatusError, collect_snapshot
 from commitverse_core.index import write_index
@@ -77,6 +83,11 @@ def merge_branch(repository: Repository, branch_name: str) -> tuple[str, str]:
     if current is None:
         raise MergeError("cannot merge into an unborn branch")
     other = resolve_branch(repository, branch_name)
+    if repository.bare:
+        branch = current_branch(repository)
+        if branch is None:
+            raise MergeError("cannot merge in detached HEAD")
+        return _merge_bare(repository, branch, branch_name, current, other)
     try:
         snapshot = collect_snapshot(repository)
     except (OSError, StatusError, ValueError) as error:
@@ -147,6 +158,93 @@ def merge_branch(repository: Repository, branch_name: str) -> tuple[str, str]:
     merge_id = write_commit(repository.objects_dir, commit)
     checkout_commit(
         repository, merge_id, head=read_head(repository), advance_symbolic=True
+    )
+    return "merged", merge_id
+
+
+def _merge_bare(
+    repository: Repository,
+    target_branch: str,
+    source_branch: str,
+    target_commit: str,
+    source_commit: str,
+) -> tuple[str, str]:
+    if is_ancestor(repository, source_commit, target_commit):
+        return "already-up-to-date", target_commit
+    if is_ancestor(repository, target_commit, source_commit):
+        write_ref(
+            repository,
+            f"refs/heads/{target_branch}",
+            source_commit,
+        )
+        return "fast-forward", source_commit
+    base = find_merge_base(repository, target_commit, source_commit)
+    if base is None:
+        raise MergeError("branches have unrelated histories")
+    base_files = _files(repository, base)
+    left_files = _files(repository, target_commit)
+    right_files = _files(repository, source_commit)
+    merged: dict[bytes, tuple[str, str]] = {}
+    conflicts: list[Conflict] = []
+    for path in sorted(set(base_files) | set(left_files) | set(right_files)):
+        base_value = base_files.get(path)
+        left_value = left_files.get(path)
+        right_value = right_files.get(path)
+        if left_value == right_value:
+            chosen = left_value
+        elif left_value == base_value:
+            chosen = right_value
+        elif right_value == base_value:
+            chosen = left_value
+        elif left_value is None or right_value is None:
+            conflicts.append(Conflict(path, "modify/delete"))
+            continue
+        elif base_value is None:
+            conflicts.append(Conflict(path, "add/add"))
+            continue
+        elif left_value[0] != right_value[0]:
+            conflicts.append(Conflict(path, "mode"))
+            continue
+        else:
+            payload = _combine_text(
+                base_value[2],
+                left_value[2],
+                right_value[2],
+            )
+            if payload is None:
+                conflicts.append(Conflict(path, "content"))
+                continue
+            chosen = (
+                left_value[0],
+                write_object(repository.objects_dir, "blob", payload),
+            )
+        if chosen is not None:
+            merged[path] = (chosen[0], chosen[1])
+    if conflicts:
+        details = ", ".join(
+            f"{conflict.path!r} ({conflict.kind})"
+            for conflict in conflicts
+        )
+        raise MergeError(f"merge conflicts: {details}")
+
+    tree_id = _tree_from_files(repository, merged)
+    author, committer = resolve_identities(
+        repository,
+        environment=dict(os.environ),
+        now=datetime.now().astimezone(),
+    )
+    merge_commit = Commit(
+        tree_id,
+        (target_commit, source_commit),
+        author,
+        committer,
+        f"Merge branch '{source_branch}' into '{target_branch}'\n".encode(),
+    )
+    merge_id = write_commit(repository.objects_dir, merge_commit)
+    write_ref(
+        repository,
+        f"refs/heads/{target_branch}",
+        merge_id,
     )
     return "merged", merge_id
 

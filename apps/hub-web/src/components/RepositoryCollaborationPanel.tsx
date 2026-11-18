@@ -6,6 +6,7 @@ import {
   createPullRequest,
   listIssues,
   listPullRequests,
+  mergePullRequest,
 } from "../api/collaboration";
 import { protectedQueryKey } from "../app/protectedQueryCache";
 
@@ -56,6 +57,11 @@ export function RepositoryCollaborationPanel({ repositoryId, userId }: Props) {
       setSourceBranch("");
       refresh();
     },
+  });
+  const mergeMutation = useMutation({
+    mutationKey: [...prefix, "pull-request-merge"],
+    mutationFn: (pullRequestId: string) => mergePullRequest(repositoryId, pullRequestId),
+    onSuccess: refresh,
   });
 
   function submitIssue(event: FormEvent) {
@@ -126,10 +132,22 @@ export function RepositoryCollaborationPanel({ repositoryId, userId }: Props) {
             <li key={pullRequest.id}>
               <strong>#{pullRequest.number} {pullRequest.title}</strong>
               <p>{pullRequest.source_branch} → {pullRequest.target_branch}</p>
+              <button
+                type="button"
+                disabled={mergeMutation.isPending}
+                onClick={() => mergeMutation.mutate(pullRequest.id)}
+              >
+                {mergeMutation.isPending ? "Merging…" : "Merge pull request"}
+              </button>
             </li>
           ))}
         </ul>
       ) : <p className="repository-state">No open pull requests.</p>}
+      {mergeMutation.error ? (
+        <p className="repository-state-error" role="alert">
+          {mergeMutation.error instanceof Error ? mergeMutation.error.message : "Merge could not be completed."}
+        </p>
+      ) : null}
     </section>
   );
 }

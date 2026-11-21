@@ -246,7 +246,6 @@ export function OrganizationDetailPage() {
   if (organizationQuery.isPending)
     return (
       <main className="repository-page">
-        <p className="eyebrow">Organizations / Details</p>
         <h1 id="foundation-title" tabIndex={-1}>
           Organization details
         </h1>
@@ -258,7 +257,6 @@ export function OrganizationDetailPage() {
   if (!organization || organizationQuery.isError)
     return (
       <main className="repository-page">
-        <p className="eyebrow">Organizations / Details</p>
         <h1 id="foundation-title" tabIndex={-1}>
           Organization unavailable
         </h1>
@@ -277,7 +275,6 @@ export function OrganizationDetailPage() {
       </Link>
       <header className="repository-page-header repository-form-header">
         <div>
-          <p className="eyebrow">Organizations / {organization.role}</p>
           <h1 id="foundation-title" tabIndex={-1}>
             {organization.name}
           </h1>
@@ -298,7 +295,6 @@ export function OrganizationDetailPage() {
       ) : null}
       <section className="repository-form-section" aria-labelledby="organization-settings-title">
         <div className="repository-section-heading">
-          <p className="eyebrow">Settings</p>
           <h2 id="organization-settings-title">Organization details</h2>
         </div>
         <OrganizationForm
@@ -314,7 +310,6 @@ export function OrganizationDetailPage() {
       </section>
       <section className="repository-form-section" aria-labelledby="organization-members-title">
         <div className="repository-section-heading">
-          <p className="eyebrow">Membership</p>
           <h2 id="organization-members-title">Members</h2>
           <p>
             Membership changes are explicit; membership does not automatically grant repository
@@ -450,7 +445,6 @@ export function OrganizationDetailPage() {
           aria-labelledby="organization-add-member-title"
         >
           <div className="repository-section-heading">
-            <p className="eyebrow">Owner/admin action</p>
             <h2 id="organization-add-member-title">Add a member</h2>
             <p>Search active public profiles or paste an existing account user ID.</p>
           </div>
@@ -516,7 +510,6 @@ export function OrganizationDetailPage() {
           aria-labelledby="organization-invitations-title"
         >
           <div className="repository-section-heading">
-            <p className="eyebrow">Owner/admin action</p>
             <h2 id="organization-invitations-title">Invite someone</h2>
             <p>
               Invitation tokens are shown once for manual sharing; no email service is configured.
@@ -689,7 +682,6 @@ export function OrganizationDetailPage() {
       {organization.role === "owner" ? (
         <section className="repository-form-section" aria-labelledby="organization-transfer-title">
           <div className="repository-section-heading">
-            <p className="eyebrow">Owner action</p>
             <h2 id="organization-transfer-title">Transfer ownership</h2>
             <p>Ownership transfer requires the target user ID and your current password.</p>
           </div>
@@ -726,7 +718,6 @@ export function OrganizationDetailPage() {
       {organization.role !== "owner" ? (
         <section className="repository-danger-zone" aria-labelledby="organization-leave-title">
           <div>
-            <p className="eyebrow">Membership action</p>
             <h2 id="organization-leave-title">Leave organization</h2>
             <p>Leaving removes your membership. You may need an owner to add you again later.</p>
           </div>

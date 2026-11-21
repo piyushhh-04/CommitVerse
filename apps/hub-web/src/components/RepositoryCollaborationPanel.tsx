@@ -110,30 +110,42 @@ export function RepositoryCollaborationPanel({ repositoryId, userId }: Props) {
   return (
     <section className="repository-form-section" aria-labelledby="repository-collaboration-title">
       <div className="repository-section-heading">
-        <p className="eyebrow">Collaboration</p>
         <h2 id="repository-collaboration-title">Issues and pull requests</h2>
         <p>Create persistent engineering work and propose real branch merges.</p>
       </div>
       {indexQuery.data ? (
         <p className="repository-state">
-          Repository index: {indexQuery.data.indexed_files} text files · {indexQuery.data.python_files} Python files · {indexQuery.data.total_text_bytes} bytes
+          Repository index: {indexQuery.data.indexed_files} text files ·{" "}
+          {indexQuery.data.python_files} Python files · {indexQuery.data.total_text_bytes} bytes
         </p>
       ) : indexQuery.isError ? (
-        <p className="repository-state-error" role="alert">Repository index status could not be loaded.</p>
+        <p className="repository-state-error" role="alert">
+          Repository index status could not be loaded.
+        </p>
       ) : (
-        <p className="repository-state" role="status">Loading repository index status…</p>
+        <p className="repository-state" role="status">
+          Loading repository index status…
+        </p>
       )}
 
       <form className="repository-form" onSubmit={submitIssue}>
-        <label>
+        <label className="repository-field">
           Issue title
-          <input value={issueTitle} onChange={(event) => setIssueTitle(event.target.value)} required />
+          <input
+            value={issueTitle}
+            onChange={(event) => setIssueTitle(event.target.value)}
+            required
+          />
         </label>
-        <label>
+        <label className="repository-field">
           Description
           <textarea value={issueBody} onChange={(event) => setIssueBody(event.target.value)} />
         </label>
-        <button className="repository-primary-action" type="submit" disabled={issueMutation.isPending || !issueTitle.trim()}>
+        <button
+          className="repository-primary-action"
+          type="submit"
+          disabled={issueMutation.isPending || !issueTitle.trim()}
+        >
           {issueMutation.isPending ? "Creating…" : "Create issue"}
         </button>
       </form>
@@ -142,28 +154,46 @@ export function RepositoryCollaborationPanel({ repositoryId, userId }: Props) {
         <ul className="repository-list" aria-label="Open issues">
           {issuesQuery.data.items.map((issue) => (
             <li key={issue.id}>
-              <strong>#{issue.number} {issue.title}</strong>
+              <strong>
+                #{issue.number} {issue.title}
+              </strong>
               {issue.body ? <p>{issue.body}</p> : null}
-              <button type="button" onClick={() => closeMutation.mutate(issue.id)}>Close issue</button>
+              <button type="button" onClick={() => closeMutation.mutate(issue.id)}>
+                Close issue
+              </button>
             </li>
           ))}
         </ul>
-      ) : <p className="repository-state">No open issues.</p>}
+      ) : (
+        <p className="repository-state">No open issues.</p>
+      )}
 
       <form className="repository-form" onSubmit={submitPullRequest}>
-        <label>
+        <label className="repository-field">
           Pull request title
           <input value={prTitle} onChange={(event) => setPrTitle(event.target.value)} required />
         </label>
-        <label>
+        <label className="repository-field">
           Source branch
-          <input value={sourceBranch} onChange={(event) => setSourceBranch(event.target.value)} required />
+          <input
+            value={sourceBranch}
+            onChange={(event) => setSourceBranch(event.target.value)}
+            required
+          />
         </label>
-        <label>
+        <label className="repository-field">
           Target branch
-          <input value={targetBranch} onChange={(event) => setTargetBranch(event.target.value)} required />
+          <input
+            value={targetBranch}
+            onChange={(event) => setTargetBranch(event.target.value)}
+            required
+          />
         </label>
-        <button className="repository-primary-action" type="submit" disabled={prMutation.isPending || !prTitle.trim() || !sourceBranch.trim()}>
+        <button
+          className="repository-primary-action"
+          type="submit"
+          disabled={prMutation.isPending || !prTitle.trim() || !sourceBranch.trim()}
+        >
           {prMutation.isPending ? "Creating…" : "Create pull request"}
         </button>
       </form>
@@ -172,8 +202,12 @@ export function RepositoryCollaborationPanel({ repositoryId, userId }: Props) {
         <ul className="repository-list" aria-label="Open pull requests">
           {pullRequestsQuery.data.map((pullRequest) => (
             <li key={pullRequest.id}>
-              <strong>#{pullRequest.number} {pullRequest.title}</strong>
-              <p>{pullRequest.source_branch} → {pullRequest.target_branch}</p>
+              <strong>
+                #{pullRequest.number} {pullRequest.title}
+              </strong>
+              <p>
+                {pullRequest.source_branch} → {pullRequest.target_branch}
+              </p>
               <button
                 type="button"
                 disabled={mergeMutation.isPending}
@@ -184,9 +218,10 @@ export function RepositoryCollaborationPanel({ repositoryId, userId }: Props) {
             </li>
           ))}
         </ul>
-      ) : <p className="repository-state">No open pull requests.</p>}
+      ) : (
+        <p className="repository-state">No open pull requests.</p>
+      )}
       <div className="repository-section-heading">
-        <p className="eyebrow">CI execution</p>
         <h2>Workflow runs</h2>
       </div>
       {executionsQuery.data?.length ? (
@@ -194,7 +229,9 @@ export function RepositoryCollaborationPanel({ repositoryId, userId }: Props) {
           {executionsQuery.data.map((execution) => (
             <li key={execution.id}>
               <strong>{execution.status}</strong>
-              <p>{execution.trigger_type} · {execution.commit_id.slice(0, 12)}</p>
+              <p>
+                {execution.trigger_type} · {execution.commit_id.slice(0, 12)}
+              </p>
               {execution.error_message ? <p>{execution.error_message}</p> : null}
               {["pending", "scheduled", "starting", "running"].includes(execution.status) ? (
                 <button type="button" onClick={() => cancelExecutionMutation.mutate(execution.id)}>
@@ -204,23 +241,30 @@ export function RepositoryCollaborationPanel({ repositoryId, userId }: Props) {
             </li>
           ))}
         </ul>
-      ) : <p className="repository-state">No workflow executions.</p>}
+      ) : (
+        <p className="repository-state">No workflow executions.</p>
+      )}
       <div className="repository-section-heading">
-        <p className="eyebrow">Repository AI</p>
         <h2>Evidence-grounded query</h2>
       </div>
       <form className="repository-form" onSubmit={submitAI}>
-        <label>
+        <label className="repository-field">
           Question
           <input value={aiQuery} onChange={(event) => setAiQuery(event.target.value)} required />
         </label>
-        <button className="repository-primary-action" type="submit" disabled={aiMutation.isPending || !aiQuery.trim()}>
+        <button
+          className="repository-primary-action"
+          type="submit"
+          disabled={aiMutation.isPending || !aiQuery.trim()}
+        >
           {aiMutation.isPending ? "Analyzing…" : "Run local analysis"}
         </button>
       </form>
       {aiMutation.error ? (
         <p className="repository-state-error" role="alert">
-          {aiMutation.error instanceof Error ? aiMutation.error.message : "AI analysis could not run."}
+          {aiMutation.error instanceof Error
+            ? aiMutation.error.message
+            : "AI analysis could not run."}
         </p>
       ) : null}
       {aiResult?.output_data ? (
@@ -232,7 +276,9 @@ export function RepositoryCollaborationPanel({ repositoryId, userId }: Props) {
       ) : null}
       {mergeMutation.error ? (
         <p className="repository-state-error" role="alert">
-          {mergeMutation.error instanceof Error ? mergeMutation.error.message : "Merge could not be completed."}
+          {mergeMutation.error instanceof Error
+            ? mergeMutation.error.message
+            : "Merge could not be completed."}
         </p>
       ) : null}
     </section>

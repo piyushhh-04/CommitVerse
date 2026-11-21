@@ -108,7 +108,6 @@ export function OrganizationRepositoryDetailPage() {
   if (repositoryQuery.isPending)
     return (
       <main className="repository-page">
-        <p className="eyebrow">Organization repositories / Details</p>
         <h1 id="foundation-title" tabIndex={-1}>
           Repository details
         </h1>
@@ -121,7 +120,6 @@ export function OrganizationRepositoryDetailPage() {
   if (!repository || repositoryQuery.isError)
     return (
       <main className="repository-page">
-        <p className="eyebrow">Organization repositories / Details</p>
         <h1 id="foundation-title" tabIndex={-1}>
           Repository unavailable
         </h1>
@@ -146,7 +144,6 @@ export function OrganizationRepositoryDetailPage() {
       </Link>
       <header className="repository-page-header repository-form-header">
         <div>
-          <p className="eyebrow">Organization repositories / Details</p>
           <h1 id="foundation-title" tabIndex={-1}>
             {repository.name}
           </h1>
@@ -162,7 +159,6 @@ export function OrganizationRepositoryDetailPage() {
         aria-labelledby="organization-repository-settings-title"
       >
         <div className="repository-section-heading">
-          <p className="eyebrow">Settings</p>
           <h2 id="organization-repository-settings-title">Repository details</h2>
         </div>
         <RepositoryForm
@@ -186,7 +182,6 @@ export function OrganizationRepositoryDetailPage() {
         aria-labelledby="organization-repository-delete-title"
       >
         <div>
-          <p className="eyebrow">Destructive action</p>
           <h2 id="organization-repository-delete-title">Delete this repository</h2>
           <p>Deletion removes the Core storage and leaves a metadata tombstone.</p>
         </div>

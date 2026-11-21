@@ -1,9 +1,21 @@
 <!doctype html>
-<html lang="en">
+<html
+  lang="en"
+  data-type="software"
+  data-site-kind="software"
+  data-radius="sharp"
+  data-motion="standard"
+>
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#f8f5ef" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <meta name="page-type" content="software" />
+    <meta name="site-kind" content="software" />
+    <meta name="theme-color" content="#f7f6f2" />
+    <meta name="color-scheme" content="light dark" />
     <meta
       name="description"
       content="CommitVerse is building a Git-like version control engine and a thoughtful path toward developer collaboration."
@@ -47,7 +59,7 @@
         document.documentElement.style.colorScheme = resolved;
         document
           .querySelector('meta[name="theme-color"]')
-          ?.setAttribute("content", resolved === "dark" ? "#191b18" : "#f8f5ef");
+          ?.setAttribute("content", resolved === "dark" ? "#161715" : "#f7f6f2");
       })();
     </script>
   </head>

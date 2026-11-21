@@ -200,7 +200,6 @@ export function RepositoryAccessPanel({
       aria-labelledby="access-title"
     >
       <div className="repository-section-heading">
-        <p className="eyebrow">Collaboration</p>
         <h2 id="access-title">Repository access</h2>
         <p>Direct access is separate from organization membership.</p>
       </div>

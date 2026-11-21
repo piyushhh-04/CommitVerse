@@ -109,7 +109,6 @@ export function RepositoryBrowsePanel({
   return (
     <section className="repository-browse-section" aria-labelledby="repository-browse-title">
       <div className="repository-section-heading">
-        <p className="eyebrow">Repository contents</p>
         <h2 id="repository-browse-title">Browse the latest snapshot</h2>
         <p>Read-only browsing follows a selected local branch or tag.</p>
       </div>
@@ -197,7 +196,6 @@ export function RepositoryBrowsePanel({
       {selectedFile ? (
         <section className="repository-file-viewer" aria-labelledby="repository-file-title">
           <div className="repository-section-heading">
-            <p className="eyebrow">File</p>
             <h3 id="repository-file-title">{selectedFile}</h3>
           </div>
           {blobQuery.isPending ? (
@@ -221,7 +219,6 @@ export function RepositoryBrowsePanel({
       ) : null}
       <section className="repository-history-section" aria-labelledby="repository-history-title">
         <div className="repository-section-heading">
-          <p className="eyebrow">History</p>
           <h3 id="repository-history-title">Recent commits</h3>
         </div>
         {commitsQuery.isPending ? (
@@ -261,7 +258,6 @@ export function RepositoryBrowsePanel({
           aria-labelledby="repository-commit-detail-title"
         >
           <div className="repository-section-heading">
-            <p className="eyebrow">Commit detail</p>
             <h3 id="repository-commit-detail-title">
               {commitQuery.data.message.split("\n", 1)[0] || "No commit message"}
             </h3>
@@ -292,7 +288,6 @@ export function RepositoryBrowsePanel({
       {diffQuery.data ? (
         <section className="repository-diff-section" aria-labelledby="repository-diff-title">
           <div className="repository-section-heading">
-            <p className="eyebrow">Changes</p>
             <h3 id="repository-diff-title">Files changed</h3>
           </div>
           {diffQuery.data.files.length ? (

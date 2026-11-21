@@ -1,0 +1,44 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "fraunces",
+        "files": [
+          "apps/hub-web/src/index.css"
+        ],
+        "createdAt": "2026-11-20T16:46:33.058Z",
+        "reason": "Pinned CommitVerse display font in the approved design brief"
+      },
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "files": [
+          "apps/hub-web/src/index.css"
+        ],
+        "createdAt": "2026-11-20T16:46:33.080Z",
+        "reason": "Pinned CommitVerse UI font in the approved design brief"
+      },
+      {
+        "rule": "overused-font",
+        "value": "fraunces",
+        "files": [
+          "apps/hub-web/src/App.css"
+        ],
+        "createdAt": "2026-11-20T16:46:33.097Z",
+        "reason": "Pinned CommitVerse display font in the approved design brief"
+      },
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "files": [
+          "apps/hub-web/src/App.css"
+        ],
+        "createdAt": "2026-11-20T16:46:33.113Z",
+        "reason": "Pinned CommitVerse UI font in the approved design brief"
+      }
+    ]
+  }
+}

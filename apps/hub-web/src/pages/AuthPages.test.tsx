@@ -369,12 +369,18 @@ describe("authentication pages", () => {
     expect(within(navigation).getByRole("link", { name: "Organizations" })).toBeInTheDocument();
 
     const menuButton = screen.getByRole("button", { name: "Open application navigation" });
+    const previousOverflow = document.body.style.overflow;
     await userEventInstance.click(menuButton);
     expect(menuButton).toHaveAttribute("aria-expanded", "true");
+    expect(document.body.style.overflow).toBe("hidden");
+    expect(within(navigation).getByRole("link", { name: "Dashboard" })).toHaveFocus();
+    await userEventInstance.tab({ shift: true });
+    expect(within(navigation).getByRole("button", { name: "Sign out" })).toHaveFocus();
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.getByRole("button", { name: "Open application navigation" })).toHaveFocus();
+    expect(document.body.style.overflow).toBe(previousOverflow);
 
-    await userEventInstance.click(screen.getByRole("button", { name: "Switch to dark theme" }));
+    await userEventInstance.click(screen.getByRole("radio", { name: "Switch to dark theme" }));
     expect(document.documentElement).toHaveAttribute("data-theme", "dark");
 
     await userEventInstance.click(screen.getByRole("button", { name: "Sign out" }));

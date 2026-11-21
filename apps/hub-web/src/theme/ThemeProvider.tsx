@@ -14,7 +14,7 @@ type ResolvedTheme = "light" | "dark";
 type ThemeContextValue = {
   preference: ThemePreference;
   resolvedTheme: ResolvedTheme;
-  cycleTheme: () => void;
+  selectTheme: (preference: ThemePreference) => void;
 };
 
 const STORAGE_KEY = "commitverse-theme";
@@ -64,7 +64,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     document.documentElement.style.colorScheme = resolvedTheme;
     document
       .querySelector('meta[name="theme-color"]')
-      ?.setAttribute("content", resolvedTheme === "dark" ? "#191b18" : "#f8f5ef");
+      ?.setAttribute("content", resolvedTheme === "dark" ? "#161715" : "#f7f6f2");
 
     try {
       window.localStorage.setItem(STORAGE_KEY, preference);
@@ -73,16 +73,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   }, [preference, resolvedTheme]);
 
-  const cycleTheme = useCallback(() => {
-    setPreference((current) => {
-      if (current === "system") return "light";
-      return current === "light" ? "dark" : "system";
-    });
+  const selectTheme = useCallback((selected: ThemePreference) => {
+    setPreference(selected);
   }, []);
 
   const value = useMemo(
-    () => ({ preference, resolvedTheme, cycleTheme }),
-    [preference, resolvedTheme, cycleTheme],
+    () => ({ preference, resolvedTheme, selectTheme }),
+    [preference, resolvedTheme, selectTheme],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
@@ -121,20 +118,34 @@ function ThemeIcon({ theme }: { theme: ThemePreference }) {
 }
 
 export function ThemeToggle() {
-  const { preference, cycleTheme } = useTheme();
-  const nextPreference =
-    preference === "system" ? "light" : preference === "light" ? "dark" : "system";
+  const { preference, selectTheme } = useTheme();
+  const options: { value: ThemePreference; label: string }[] = [
+    { value: "system", label: "System" },
+    { value: "light", label: "Light" },
+    { value: "dark", label: "Dark" },
+  ];
 
   return (
-    <button
-      className="theme-toggle"
-      type="button"
-      aria-label={`Switch to ${nextPreference} theme`}
-      title={`Theme: ${preference}`}
-      onClick={cycleTheme}
-    >
-      <ThemeIcon theme={preference} />
-      <span className="sr-only">Current theme: {preference}</span>
-    </button>
+    <fieldset className="theme-toggle" role="radiogroup" aria-labelledby="theme-toggle-label">
+      <legend className="sr-only" id="theme-toggle-label">
+        Color theme
+      </legend>
+      {options.map((option) => (
+        <label className="theme-option" key={option.value}>
+          <input
+            type="radio"
+            name="commitverse-theme"
+            value={option.value}
+            checked={preference === option.value}
+            aria-label={`Switch to ${option.value} theme`}
+            onChange={() => selectTheme(option.value)}
+          />
+          <span className="theme-option-visual" aria-hidden="true">
+            <ThemeIcon theme={option.value} />
+            <span className="theme-option-label">{option.label}</span>
+          </span>
+        </label>
+      ))}
+    </fieldset>
   );
 }

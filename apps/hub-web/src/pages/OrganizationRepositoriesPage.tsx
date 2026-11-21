@@ -25,7 +25,6 @@ export function OrganizationRepositoriesPage() {
       </Link>
       <header className="repository-page-header">
         <div>
-          <p className="eyebrow">Organization / Repositories</p>
           <h1 id="foundation-title" tabIndex={-1}>
             Repositories
           </h1>
@@ -47,7 +46,6 @@ export function OrganizationRepositoriesPage() {
       ) : null}
       {repositoriesQuery.isError ? (
         <section className="repository-state repository-state-error" role="alert">
-          <p className="eyebrow">Organization repositories / Unavailable</p>
           <h2>We could not load these repositories.</h2>
           <p>
             {repositoriesQuery.error instanceof ApiError
@@ -65,7 +63,6 @@ export function OrganizationRepositoriesPage() {
       ) : null}
       {list && list.items.length === 0 && offset === 0 ? (
         <section className="repository-state repository-empty-state">
-          <p className="eyebrow">A shared beginning</p>
           <h2>No organization repositories yet.</h2>
           <p>Create the first repository for this organization.</p>
           <Link

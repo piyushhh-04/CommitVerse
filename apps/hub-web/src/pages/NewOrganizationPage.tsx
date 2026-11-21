@@ -49,7 +49,6 @@ export function NewOrganizationPage() {
       </Link>
       <header className="repository-page-header repository-form-header">
         <div>
-          <p className="eyebrow">Organizations / New</p>
           <h1 id="foundation-title" tabIndex={-1}>
             New organization
           </h1>

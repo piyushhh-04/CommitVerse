@@ -19,7 +19,6 @@ export function ProtectedRoute() {
     return (
       <main className="foundation-page">
         <section className="foundation-content" role="alert">
-          <p className="eyebrow">Session</p>
           <h1>We could not verify your session.</h1>
           <p>{auth.error.message}</p>
           <button

@@ -17,7 +17,6 @@ function formatRepositoryDate(value: string): string {
 function RepositoryListError({ error, onRetry }: { error: ApiError; onRetry: () => void }) {
   return (
     <section className="repository-state repository-state-error" role="alert">
-      <p className="eyebrow">Repositories / Unavailable</p>
       <h2>We could not load your repositories.</h2>
       <p>{error.message}</p>
       {error.requestId ? (
@@ -57,7 +56,6 @@ export function RepositoriesPage() {
     <main className="repository-page">
       <header className="repository-page-header">
         <div>
-          <p className="eyebrow">CommitVerse Hub / Personal repositories</p>
           <h1 id="foundation-title" tabIndex={-1}>
             Repositories
           </h1>
@@ -89,7 +87,6 @@ export function RepositoriesPage() {
       </aside>
       <section className="repository-form-section" aria-labelledby="repository-discovery-title">
         <div className="repository-section-heading">
-          <p className="eyebrow">Discovery</p>
           <h2 id="repository-discovery-title">Search repositories</h2>
         </div>
         <label>
@@ -118,14 +115,15 @@ export function RepositoriesPage() {
       {activityQuery.data?.length ? (
         <section className="repository-form-section" aria-labelledby="activity-title">
           <div className="repository-section-heading">
-            <p className="eyebrow">Recent activity</p>
             <h2 id="activity-title">Your repository actions</h2>
           </div>
           <ul className="repository-list" aria-label="Repository activity">
             {activityQuery.data.map((event) => (
               <li key={event.id}>
                 <strong>{event.action}</strong>
-                <p>{event.target_type} · {event.target_id}</p>
+                <p>
+                  {event.target_type} · {event.target_id}
+                </p>
               </li>
             ))}
           </ul>
@@ -159,7 +157,6 @@ export function RepositoriesPage() {
           className="repository-state repository-empty-state"
           aria-labelledby="repository-empty-title"
         >
-          <p className="eyebrow">A clear beginning</p>
           <h2 id="repository-empty-title">Your repositories will live here.</h2>
           <p>
             Create a personal repository to start organizing your work. Once ready, its contents can
@@ -174,7 +171,6 @@ export function RepositoriesPage() {
 
       {list && list.items.length === 0 && offset > 0 ? (
         <section className="repository-state repository-empty-state">
-          <p className="eyebrow">Page no longer available</p>
           <h2>No repositories on this page.</h2>
           <p>The list may have changed since you moved to this page.</p>
           <button

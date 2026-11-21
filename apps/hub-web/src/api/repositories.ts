@@ -135,9 +135,7 @@ export async function searchRepositories(
   );
 }
 
-export async function getRepositoryActivity(
-  limit = 50,
-): Promise<RepositoryActivity[]> {
+export async function getRepositoryActivity(limit = 50): Promise<RepositoryActivity[]> {
   return requireResponse(
     await apiClient.get<RepositoryActivity[]>(`/repositories/activity?limit=${limit}`),
   );

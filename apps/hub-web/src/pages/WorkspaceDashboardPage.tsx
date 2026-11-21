@@ -61,7 +61,6 @@ export function WorkspaceDashboardPage() {
     <main className="repository-page workspace-dashboard">
       <header className="repository-page-header dashboard-welcome">
         <div>
-          <p className="eyebrow">CommitVerse Hub / Workspace</p>
           <h1 id="foundation-title" tabIndex={-1}>
             Welcome, {auth.user.display_name}
           </h1>
@@ -83,7 +82,6 @@ export function WorkspaceDashboardPage() {
         <section className="dashboard-summary" aria-labelledby="dashboard-repositories-title">
           <div className="dashboard-summary-heading">
             <div>
-              <p className="eyebrow">Personal work</p>
               <h2 id="dashboard-repositories-title">Repositories</h2>
             </div>
             {repositories ? (
@@ -147,7 +145,6 @@ export function WorkspaceDashboardPage() {
         <section className="dashboard-summary" aria-labelledby="dashboard-organizations-title">
           <div className="dashboard-summary-heading">
             <div>
-              <p className="eyebrow">Shared work</p>
               <h2 id="dashboard-organizations-title">Organizations</h2>
             </div>
             {organizations ? (

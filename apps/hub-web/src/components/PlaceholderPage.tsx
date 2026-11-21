@@ -2,17 +2,15 @@ import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 interface PlaceholderPageProps {
-  eyebrow: string;
   title: string;
   description: string;
   children?: ReactNode;
 }
 
-export function PlaceholderPage({ eyebrow, title, description, children }: PlaceholderPageProps) {
+export function PlaceholderPage({ title, description, children }: PlaceholderPageProps) {
   return (
     <main className="foundation-page">
       <section className="foundation-content" aria-labelledby="foundation-title">
-        <p className="eyebrow">{eyebrow}</p>
         <h1 id="foundation-title" tabIndex={-1}>
           {title}
         </h1>

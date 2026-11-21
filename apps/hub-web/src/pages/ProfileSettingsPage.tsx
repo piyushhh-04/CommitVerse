@@ -94,7 +94,6 @@ export function ProfileSettingsPage() {
       </Link>
       <header className="repository-page-header repository-form-header">
         <div>
-          <p className="eyebrow">Account / Profile</p>
           <h1 id="foundation-title" tabIndex={-1}>
             Profile settings
           </h1>
@@ -106,7 +105,6 @@ export function ProfileSettingsPage() {
       </header>
       <section className="repository-form-section" aria-labelledby="profile-form-title">
         <div className="repository-section-heading">
-          <p className="eyebrow">Public identity</p>
           <h2 id="profile-form-title">Profile details</h2>
         </div>
         <form

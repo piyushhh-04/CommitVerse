@@ -111,7 +111,6 @@ export function RepositoryDetailPage() {
   if (!repository && repositoryQuery.isPending) {
     return (
       <main className="repository-page">
-        <p className="eyebrow">Personal repositories / Details</p>
         <h1 id="foundation-title" aria-busy="true" tabIndex={-1}>
           Repository details
         </h1>
@@ -125,7 +124,6 @@ export function RepositoryDetailPage() {
   if (!repository && (repositoryQuery.isError || !repositoryId)) {
     return (
       <main className="repository-page repository-state-page">
-        <p className="eyebrow">Personal repositories / Details</p>
         <h1 id="foundation-title" tabIndex={-1}>
           Repository unavailable
         </h1>
@@ -178,7 +176,6 @@ export function RepositoryDetailPage() {
 
       <header className="repository-detail-header">
         <div>
-          <p className="eyebrow">Personal repository / Details</p>
           <h1 id="foundation-title" tabIndex={-1}>
             {repository.name}
           </h1>
@@ -222,7 +219,6 @@ export function RepositoryDetailPage() {
 
       <section className="repository-form-section" aria-labelledby="repository-settings-title">
         <div className="repository-section-heading">
-          <p className="eyebrow">Settings</p>
           <h2 id="repository-settings-title">Repository details</h2>
           <p>Update the name, description, or visibility for this repository.</p>
         </div>
@@ -245,7 +241,6 @@ export function RepositoryDetailPage() {
 
       <section className="repository-danger-zone" aria-labelledby="repository-delete-title">
         <div>
-          <p className="eyebrow">Destructive action</p>
           <h2 id="repository-delete-title">Delete this repository</h2>
           <p>
             Deletion permanently removes this repository’s local Core storage and leaves a metadata

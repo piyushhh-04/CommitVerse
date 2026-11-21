@@ -1,31 +1,18 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { useMobileNavigation } from "../app/useMobileNavigation";
 import { ThemeToggle } from "../theme/ThemeProvider";
 
 const navigation = [
-  { href: "#core", label: "Core" },
-  { href: "#hub", label: "Hub" },
-  { href: "#architecture", label: "Architecture" },
-  { href: "#roadmap", label: "Roadmap" },
+  { href: "#product", label: "Product" },
+  { href: "#how-it-works", label: "How it works" },
 ];
 
 export function SiteHeader() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!isMenuOpen) return;
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setIsMenuOpen(false);
-        menuButtonRef.current?.focus();
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isMenuOpen]);
+  const navigationRef = useRef<HTMLElement>(null);
+  useMobileNavigation(isMenuOpen, menuButtonRef, navigationRef, () => setIsMenuOpen(false));
 
   return (
     <header className="site-header">
@@ -37,12 +24,20 @@ export function SiteHeader() {
           <span>CommitVerse</span>
         </a>
         <nav
+          ref={navigationRef}
           className={`site-nav${isMenuOpen ? " is-open" : ""}`}
           id="site-navigation"
           aria-label="Primary navigation"
         >
           {navigation.map((item) => (
-            <a key={item.href} href={item.href} onClick={() => setIsMenuOpen(false)}>
+            <a
+              key={item.href}
+              href={item.href}
+              onClick={() => {
+                setIsMenuOpen(false);
+                menuButtonRef.current?.focus();
+              }}
+            >
               {item.label}
             </a>
           ))}
@@ -64,8 +59,13 @@ export function SiteHeader() {
             aria-controls="site-navigation"
             onClick={() => setIsMenuOpen((open) => !open)}
           >
-            <span />
-            <span />
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              {isMenuOpen ? (
+                <path d="m5 5 10 10M15 5 5 15" />
+              ) : (
+                <path d="M3 6h14M3 10h14M3 14h14" />
+              )}
+            </svg>
           </button>
         </div>
       </div>

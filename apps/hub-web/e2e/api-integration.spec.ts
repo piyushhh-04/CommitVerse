@@ -236,7 +236,11 @@ test("personal repository creation, editing, and deletion use the real API", asy
     .click();
   await expect(page.getByRole("heading", { name: "Repositories", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "New repository" }).click();
-  await page.getByLabel("Repository name").fill(`browser-project-${suffix}`);
+  await expect(page).toHaveURL(/\/app\/repositories\/new$/);
+  await expect(page.getByRole("heading", { name: "New repository" })).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  await page.getByLabel("Repository name").pressSequentially(`browser-project-${suffix}`);
+  await expect(page.getByLabel("Repository name")).toHaveValue(`browser-project-${suffix}`);
   await page.getByLabel("Description (optional)").fill("A description to clear.");
   await page.getByRole("button", { name: "Create repository" }).click();
 
@@ -328,7 +332,11 @@ test("repository owners manage direct access and invite a user to browse a priva
 
     await page.getByRole("link", { name: "Repositories" }).click();
     await page.getByRole("link", { name: "New repository" }).click();
-    await page.getByLabel("Repository name").fill(`shared-${suffix}`);
+    await expect(page).toHaveURL(/\/app\/repositories\/new$/);
+    await expect(page.getByRole("heading", { name: "New repository" })).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    await page.getByLabel("Repository name").pressSequentially(`shared-${suffix}`);
+    await expect(page.getByLabel("Repository name")).toHaveValue(`shared-${suffix}`);
     await page.getByRole("button", { name: "Create repository" }).click();
     await expect(page.getByRole("heading", { name: `shared-${suffix}` })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Repository access" })).toBeVisible();

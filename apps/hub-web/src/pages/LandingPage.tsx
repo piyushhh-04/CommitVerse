@@ -2,22 +2,11 @@ import { SiteHeader } from "../components/SiteHeader";
 import { TechnicalHeroVisual } from "../components/TechnicalHeroVisual";
 import "../App.css";
 
-function SectionHeading({
-  id,
-  eyebrow,
-  title,
-  copy,
-}: {
-  id?: string;
-  eyebrow: string;
-  title: string;
-  copy?: string;
-}) {
+function SectionHeading({ id, title, copy }: { id: string; title: string; copy: string }) {
   return (
     <div className="section-heading">
-      <p className="eyebrow">{eyebrow}</p>
       <h2 id={id}>{title}</h2>
-      {copy ? <p className="section-copy">{copy}</p> : null}
+      <p className="section-copy">{copy}</p>
     </div>
   );
 }
@@ -33,411 +22,153 @@ function LandingPage() {
         <section className="hero section-shell" id="top" aria-labelledby="hero-title">
           <div className="hero-grid">
             <div className="hero-copy-block">
-              <p className="eyebrow">A developer platform, built from the core up</p>
               <h1 id="hero-title">
                 Version control,
                 <br />
-                <em>with room to grow.</em>
+                built from the <span>objects up.</span>
               </h1>
               <p className="hero-description">
-                CommitVerse is building a purpose-made Git-like engine and a considered path toward
-                developer collaboration. The working foundation is local; the larger product is
-                still taking shape.
+                Python Core builds local Git-like repositories. Hub adds account management and
+                read-only repository browsing.
               </p>
               <div className="hero-actions">
-                <a className="button button-primary" href="#core">
-                  Meet the Core <span aria-hidden="true">↘</span>
+                <a className="button button-primary" href="/register">
+                  Create account
                 </a>
-                <a
-                  className="text-link"
-                  href="https://github.com/piyushhh-04/CommitVerse"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Explore the project <span aria-hidden="true">↗</span>
+                <a className="text-link" href="/login">
+                  Sign in
                 </a>
               </div>
-              <p className="hero-footnote">
-                Core foundation implemented · Hub API local · AI future work
-              </p>
             </div>
             <TechnicalHeroVisual />
           </div>
-          <div className="hero-status" role="group" aria-label="Project status">
-            <span>
-              <i className="status-dot status-dot-sage" aria-hidden="true" />
-              Core <b>Implemented foundation</b>
-            </span>
-            <span>
-              <i className="status-dot status-dot-peach" aria-hidden="true" />
-              Hub <b>Local API foundation</b>
-            </span>
-            <span>
-              <i className="status-dot status-dot-muted" aria-hidden="true" />
-              AI <b>Future scope</b>
-            </span>
-          </div>
         </section>
 
         <section
-          className="vision-section section-shell section-divider"
-          id="vision"
-          aria-labelledby="vision-title"
-        >
-          <div className="vision-intro">
-            <p className="eyebrow">01 / The point of view</p>
-            <h2 id="vision-title">
-              Useful tools begin with <em>clear foundations.</em>
-            </h2>
-          </div>
-          <div className="vision-details">
-            <p>
-              CommitVerse keeps version-control data, application metadata, and future assistant
-              capabilities in distinct places. That makes the system easier to understand today—and
-              gives each layer room to evolve without pretending the roadmap is already shipped.
-            </p>
-            <ul className="principle-list">
-              <li>
-                <span>01</span>
-                <div>
-                  <strong>Build the engine, don&apos;t wrap one</strong>
-                  <p>Core implements its Git-like internals in Python.</p>
-                </div>
-              </li>
-              <li>
-                <span>02</span>
-                <div>
-                  <strong>Keep boundaries visible</strong>
-                  <p>Repository objects stay separate from Hub metadata.</p>
-                </div>
-              </li>
-              <li>
-                <span>03</span>
-                <div>
-                  <strong>Say what works</strong>
-                  <p>Current capabilities and future plans are labeled plainly.</p>
-                </div>
-              </li>
-            </ul>
-          </div>
-        </section>
-
-        <section className="core-section section-shell" id="core" aria-labelledby="core-title">
-          <div className="section-grid">
-            <SectionHeading
-              id="core-title"
-              eyebrow="02 / CommitVerse Core"
-              title="A small engine, built deliberately."
-              copy="The current foundation handles local repository work without claiming to replace all of Git."
-            />
-            <div className="capability-panel">
-              <div className="panel-topline">
-                <span className="eyebrow">Implemented · local workflows</span>
-                <span className="mono-label">PYTHON / CORE</span>
-              </div>
-              <div className="capability-grid">
-                <article>
-                  <span className="capability-index">01</span>
-                  <h3>Objects &amp; trees</h3>
-                  <p>Canonical objects, loose storage, and Git-compatible trees.</p>
-                </article>
-                <article>
-                  <span className="capability-index">02</span>
-                  <h3>Index &amp; staging</h3>
-                  <p>Index-v2 staging with bounded, explicit worktree operations.</p>
-                </article>
-                <article>
-                  <span className="capability-index">03</span>
-                  <h3>History &amp; refs</h3>
-                  <p>Commits, branches, revision lookup, and history traversal.</p>
-                </article>
-                <article>
-                  <span className="capability-index">04</span>
-                  <h3>Status &amp; merge</h3>
-                  <p>Read-only status/diff and a basic, non-conflict-resolving merge.</p>
-                </article>
-              </div>
-              <p className="panel-note">
-                Network Git transport, packfiles, conflict resolution, and full Git compatibility
-                are not implemented.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <section
-          className="hub-section section-shell section-divider"
-          id="hub"
-          aria-labelledby="hub-title"
-        >
-          <div className="hub-copy">
-            <SectionHeading
-              id="hub-title"
-              eyebrow="03 / CommitVerse Hub"
-              title="A local collaboration workspace, built on clear boundaries."
-              copy="Hub connects account sessions, organization and repository management, and authorized read-only repository browsing to Core through a separate API layer."
-            />
-            <p className="hub-caveat">
-              This public overview is informational and makes no API calls. The authenticated Hub
-              app provides local account, organization, and repository workflows; it is not ready
-              for hosted deployment.
-            </p>
-          </div>
-          <div className="hub-status-card">
-            <p className="eyebrow">Today / Scope at a glance</p>
-            <div className="status-row">
-              <span className="status-symbol status-symbol-ready" aria-hidden="true">
-                ✓
-              </span>
-              <div>
-                <strong>Available in the local web app</strong>
-                <p>Accounts, profiles, personal and organization repositories, and membership.</p>
-              </div>
-              <span className="status-tag">Local</span>
-            </div>
-            <div className="status-row">
-              <span className="status-symbol status-symbol-ready" aria-hidden="true">
-                ✓
-              </span>
-              <div>
-                <strong>Read-only repository browsing</strong>
-                <p>Trees, text files, branches, tags, commits, and bounded diffs.</p>
-              </div>
-              <span className="status-tag">Local</span>
-            </div>
-            <div className="status-row">
-              <span className="status-symbol status-symbol-next" aria-hidden="true">
-                →
-              </span>
-              <div>
-                <strong>Still to come</strong>
-                <p>Code writes, branch creation, pull requests, and broader collaboration.</p>
-              </div>
-              <span className="status-tag status-tag-muted">Future</span>
-            </div>
-            <div className="status-row">
-              <span className="status-symbol status-symbol-next" aria-hidden="true">
-                →
-              </span>
-              <div>
-                <strong>Hosting remains unresolved</strong>
-                <p>Deployment must fit the project&apos;s strict zero-cost policy.</p>
-              </div>
-              <span className="status-tag status-tag-muted">Deferred</span>
-            </div>
-          </div>
-        </section>
-
-        <section
-          className="architecture-section section-shell"
-          id="architecture"
-          aria-labelledby="architecture-title"
+          className="object-model-section section-shell section-divider"
+          id="how-it-works"
+          aria-labelledby="object-model-title"
         >
           <SectionHeading
-            id="architecture-title"
-            eyebrow="04 / System boundaries"
-            title="Three layers. No blurred promises."
-            copy="Each area has a different responsibility—and a different implementation status."
+            id="object-model-title"
+            title="A repository is a chain of real objects."
+            copy="Core records file contents and structure as objects, then connects them to history through commits and refs."
+          />
+          <ol className="object-model-list">
+            <li>
+              <span className="object-model-index">01</span>
+              <h3>Blob</h3>
+              <p>Stores a file's contents.</p>
+              <code>README.md → blob</code>
+            </li>
+            <li>
+              <span className="object-model-index">02</span>
+              <h3>Tree</h3>
+              <p>Maps names to blobs and nested trees.</p>
+              <code>src/ → tree</code>
+            </li>
+            <li>
+              <span className="object-model-index">03</span>
+              <h3>Commit</h3>
+              <p>Points to a tree and its parent history.</p>
+              <code>commit → tree + parents</code>
+            </li>
+            <li>
+              <span className="object-model-index">04</span>
+              <h3>Ref</h3>
+              <p>Names a commit, as a branch or tag does.</p>
+              <code>main → commit</code>
+            </li>
+          </ol>
+        </section>
+
+        <section
+          className="capabilities-section section-shell"
+          id="product"
+          aria-labelledby="capabilities-title"
+        >
+          <SectionHeading
+            id="capabilities-title"
+            title="What works today."
+            copy="A practical local foundation, with the responsibilities of each part kept explicit."
           />
           <div
-            className="architecture-map"
-            role="group"
-            aria-label="CommitVerse architecture layers"
+            className="capability-ledger"
+            role="list"
+            aria-label="Implemented CommitVerse capabilities"
           >
-            <article className="architecture-node architecture-core">
-              <span className="node-kicker">01 / Working today</span>
+            <div className="capability-row" role="listitem">
               <h3>Core</h3>
-              <p>Owns repository objects, refs, index, and local version-control operations.</p>
-              <span className="node-status">Python · implemented foundation</span>
-            </article>
-            <span className="architecture-connector" aria-hidden="true">
-              <span>narrow adapter</span>
-              <i />
-            </span>
-            <article className="architecture-node architecture-hub">
-              <span className="node-kicker">02 / Local API foundation</span>
-              <h3>Hub</h3>
-              <p>Owns account, permission, and repository metadata—not Git object storage.</p>
-              <span className="node-status">FastAPI · local development</span>
-            </article>
-            <span className="architecture-connector future-connector" aria-hidden="true">
-              <span>future boundary</span>
-              <i />
-            </span>
-            <article className="architecture-node architecture-ai">
-              <span className="node-kicker">03 / Future scope</span>
-              <h3>AI</h3>
               <p>
-                A possible assistant layer; no runtime, data access, or product integration exists.
+                Initialize and inspect local repositories; stage files; create commits; manage
+                branches; read history, status, and diffs; perform basic merges.
               </p>
-              <span className="node-status">Not implemented</span>
-            </article>
-          </div>
-          <p className="architecture-caption">
-            Conceptual system map · Core repository data remains distinct from Hub application data.
-          </p>
-        </section>
-
-        <section
-          className="workflow-section section-shell section-divider"
-          id="workflow"
-          aria-labelledby="workflow-title"
-        >
-          <SectionHeading
-            id="workflow-title"
-            eyebrow="05 / The Core path"
-            title="From working tree to recorded history."
-            copy="A simplified view of the local path already covered by the Core foundation."
-          />
-          <ol className="workflow-list">
-            <li>
-              <span className="workflow-number">01</span>
-              <span className="workflow-icon" aria-hidden="true">
-                ⌘
-              </span>
-              <h3>Working tree</h3>
-              <p>Inspect and stage files in a non-bare repository.</p>
-              <code>cv status</code>
-            </li>
-            <li>
-              <span className="workflow-number">02</span>
-              <span className="workflow-icon" aria-hidden="true">
-                ▤
-              </span>
-              <h3>Index &amp; tree</h3>
-              <p>Record the staged snapshot as Git-compatible tree objects.</p>
-              <code>cv add -A</code>
-            </li>
-            <li>
-              <span className="workflow-number">03</span>
-              <span className="workflow-icon" aria-hidden="true">
-                ◉
-              </span>
-              <h3>Commit</h3>
-              <p>Create a commit from the current index and configured identity.</p>
-              <code>cv commit -m</code>
-            </li>
-            <li>
-              <span className="workflow-number">04</span>
-              <span className="workflow-icon" aria-hidden="true">
-                ⑂
-              </span>
-              <h3>History &amp; refs</h3>
-              <p>Follow local branch state and traverse parent history.</p>
-              <code>cv log</code>
-            </li>
-          </ol>
-          <p className="workflow-note">
-            These are Core CLI examples, not controls connected to this page.
-          </p>
-        </section>
-
-        <section className="ai-section section-shell" id="ai" aria-labelledby="ai-title">
-          <div className="ai-mark" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-            <span />
-          </div>
-          <div className="ai-copy">
-            <p className="eyebrow">06 / A future layer</p>
-            <h2 id="ai-title">
-              Make room for <em>assistance.</em>
-              <br />
-              Don&apos;t pretend it&apos;s here.
-            </h2>
-            <p>
-              CommitVerse AI is a long-term direction, not a feature in this release. There is no
-              assistant, model, repository access, or generated output behind this page. Any future
-              integration needs its own explicit data and permission boundaries.
-            </p>
-            <span className="status-tag status-tag-muted">Future scope · not implemented</span>
+              <span>Python · local</span>
+            </div>
+            <div className="capability-row" role="listitem">
+              <h3>Hub</h3>
+              <p>
+                Manage accounts, profiles, personal and organization repositories, memberships,
+                invitations, issues, and pull requests through the local API.
+              </p>
+              <span>FastAPI · local</span>
+            </div>
+            <div className="capability-row" role="listitem">
+              <h3>Repository browser</h3>
+              <p>
+                Browse authorized trees, files, branches, tags, commits, and bounded diffs without
+                writing repository contents from the web app.
+              </p>
+              <span>Read-only</span>
+            </div>
           </div>
         </section>
 
         <section
-          className="roadmap-section section-shell section-divider"
-          id="roadmap"
-          aria-labelledby="roadmap-title"
+          className="scope-section section-shell section-divider"
+          aria-labelledby="scope-title"
         >
           <SectionHeading
-            id="roadmap-title"
-            eyebrow="07 / Build sequence"
-            title="Progress, in honest increments."
-            copy="A short read of what exists, what this milestone adds, and what remains a plan."
+            id="scope-title"
+            title="The boundaries are part of the product."
+            copy="CommitVerse labels what is implemented and what remains unfinished."
           />
-          <ol className="roadmap-list">
-            <li className="roadmap-item is-complete">
-              <span className="roadmap-marker" aria-hidden="true">
-                ✓
+          <ul className="scope-list">
+            <li>
+              <strong>Core is not full Git.</strong>
+              <span>
+                Network transport, packfiles, conflict resolution, and complete compatibility are
+                not implemented.
               </span>
-              <div>
-                <span className="roadmap-state">Implemented foundation</span>
-                <h3>Core &amp; local Hub API</h3>
-                <p>Local version-control workflows and authenticated Hub API capabilities.</p>
-              </div>
-              <span className="roadmap-index">01</span>
             </li>
-            <li className="roadmap-item is-current">
-              <span className="roadmap-marker" aria-hidden="true">
-                02
+            <li>
+              <strong>Hub runs locally.</strong>
+              <span>
+                Its filesystem lifecycle is not ready for hosted or multi-worker deployment.
               </span>
-              <div>
-                <span className="roadmap-state">Implemented locally</span>
-                <h3>Authenticated Hub workflows</h3>
-                <p>
-                  Accounts, profile settings, repository management, organizations, and browsing.
-                </p>
-              </div>
-              <span className="roadmap-index">02</span>
             </li>
-            <li className="roadmap-item">
-              <span className="roadmap-marker" aria-hidden="true">
-                03
-              </span>
-              <div>
-                <span className="roadmap-state">Future work</span>
-                <h3>Expanded collaboration &amp; repository writes</h3>
-                <p>
-                  Add code writes, branch management, and richer collaboration when API contracts
-                  are ready.
-                </p>
-              </div>
-              <span className="roadmap-index">03</span>
+            <li>
+              <strong>Invitations are shared manually.</strong>
+              <span>Hub does not send invitation email.</span>
             </li>
-            <li className="roadmap-item">
-              <span className="roadmap-marker" aria-hidden="true">
-                04
-              </span>
-              <div>
-                <span className="roadmap-state">Future work</span>
-                <h3>Assistant &amp; deployment decisions</h3>
-                <p>Define data boundaries and a compliant hosting path before making claims.</p>
-              </div>
-              <span className="roadmap-index">04</span>
+            <li>
+              <strong>AI remains future product scope.</strong>
+              <span>There is no hosted assistant or model integration on this overview.</span>
             </li>
-          </ol>
+          </ul>
         </section>
 
-        <section className="closing-section section-shell" id="next" aria-labelledby="next-title">
+        <section className="closing-section section-shell" aria-labelledby="next-title">
           <div className="closing-inner">
-            <p className="eyebrow">08 / Keep following the work</p>
-            <h2 id="next-title">
-              Thoughtful tools take
-              <br />
-              <em>one clear step at a time.</em>
-            </h2>
-            <p>
-              See the implementation and its current boundaries in the project repository. The Hub
-              workflows are available for local development.
-            </p>
+            <h2 id="next-title">Read the implementation, not just the promise.</h2>
+            <p>Explore the source and tests behind the current CommitVerse foundation.</p>
             <a
-              className="button button-light"
+              className="button button-primary"
               href="https://github.com/piyushhh-04/CommitVerse"
               target="_blank"
               rel="noreferrer"
             >
-              Explore CommitVerse on GitHub <span aria-hidden="true">↗</span>
+              Explore the project
             </a>
           </div>
         </section>
@@ -449,9 +180,9 @@ function LandingPage() {
           </span>
           <span>CommitVerse</span>
         </a>
-        <p>Built with care. Still being built.</p>
+        <p>Local development foundation</p>
         <a href="https://github.com/piyushhh-04/CommitVerse" target="_blank" rel="noreferrer">
-          Project repository <span aria-hidden="true">↗</span>
+          Project repository
         </a>
       </footer>
     </>

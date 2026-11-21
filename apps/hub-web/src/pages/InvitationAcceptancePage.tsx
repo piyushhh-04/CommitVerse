@@ -44,7 +44,6 @@ export function InvitationAcceptancePage() {
       </Link>
       <header className="repository-page-header repository-form-header">
         <div>
-          <p className="eyebrow">Organizations / Invitation</p>
           <h1 id="foundation-title" tabIndex={-1}>
             Accept an invitation
           </h1>
@@ -55,7 +54,6 @@ export function InvitationAcceptancePage() {
       </header>
       <section className="repository-form-section" aria-labelledby="invitation-token-title">
         <div className="repository-section-heading">
-          <p className="eyebrow">Secure token</p>
           <h2 id="invitation-token-title">Invitation token</h2>
         </div>
         <div className="organization-inline-form">

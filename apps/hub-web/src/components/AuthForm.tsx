@@ -172,7 +172,6 @@ function AuthForm({ mode }: { mode: AuthFormMode }) {
       </header>
       <main className="account-layout">
         <section className="account-story" aria-labelledby="account-story-title">
-          <p className="eyebrow">CommitVerse Hub / Account</p>
           <h1 id="account-story-title">
             A considered home
             <br />
@@ -191,7 +190,6 @@ function AuthForm({ mode }: { mode: AuthFormMode }) {
         </section>
 
         <section className="account-form-panel" aria-labelledby="account-form-title">
-          <p className="eyebrow">{isRegister ? "New account" : "Welcome back"}</p>
           <h2 id="account-form-title">{title}</h2>
           <p className="account-form-intro">
             {isRegister

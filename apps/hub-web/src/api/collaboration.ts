@@ -53,7 +53,10 @@ export async function closeIssue(repositoryId: string, issueId: string) {
   );
 }
 
-export async function listPullRequests(repositoryId: string, state: "open" | "closed" | "merged" | "all" = "open") {
+export async function listPullRequests(
+  repositoryId: string,
+  state: "open" | "closed" | "merged" | "all" = "open",
+) {
   return apiClient.get<PullRequest[]>(
     `${API_BASE_PATH}/repositories/${encodeURIComponent(repositoryId)}/pull-requests?state=${state}`,
   );
@@ -68,7 +71,13 @@ export async function createPullRequest(
 ) {
   return apiClient.post<
     PullRequest,
-    { title: string; body: string | null; source_branch: string; target_branch: string; draft: boolean }
+    {
+      title: string;
+      body: string | null;
+      source_branch: string;
+      target_branch: string;
+      draft: boolean;
+    }
   >(`${API_BASE_PATH}/repositories/${encodeURIComponent(repositoryId)}/pull-requests`, {
     title,
     body,
@@ -89,12 +98,26 @@ export interface Execution {
   workflow_id: string | null;
   trigger_type: string;
   commit_id: string;
-  status: "pending" | "scheduled" | "starting" | "running" | "succeeded" | "failed" | "cancelled" | "timed_out";
+  status:
+    | "pending"
+    | "scheduled"
+    | "starting"
+    | "running"
+    | "succeeded"
+    | "failed"
+    | "cancelled"
+    | "timed_out";
   started_at?: string | null;
   finished_at?: string | null;
   error_message?: string | null;
   logs?: Array<{ sequence: number; stream: string; content: string; created_at: string }>;
-  artifacts?: Array<{ id: string; name: string; storage_path: string; size_bytes: number; created_at: string }>;
+  artifacts?: Array<{
+    id: string;
+    name: string;
+    storage_path: string;
+    size_bytes: number;
+    created_at: string;
+  }>;
 }
 
 export async function listExecutions(repositoryId: string) {
@@ -130,10 +153,14 @@ export async function createAITask(
   query: string,
   provider: "deterministic" | "ollama" = "deterministic",
 ) {
-  return apiClient.post<AITask, { kind: string; query: string; provider: "deterministic" | "ollama" }>(
-    `${API_BASE_PATH}/repositories/${encodeURIComponent(repositoryId)}/ai/tasks`,
-    { kind, query, provider },
-  );
+  return apiClient.post<
+    AITask,
+    { kind: string; query: string; provider: "deterministic" | "ollama" }
+  >(`${API_BASE_PATH}/repositories/${encodeURIComponent(repositoryId)}/ai/tasks`, {
+    kind,
+    query,
+    provider,
+  });
 }
 
 export interface ReviewComment {

@@ -64,7 +64,7 @@ test("login submits through the API client and returns to a protected destinatio
 
   await expect(page).toHaveURL(/\/app\/repositories$/);
   await expect(page.getByRole("heading", { name: "Repositories", exact: true })).toBeVisible();
-  if (test.info().project.name === "mobile-chromium") {
+  if (await page.locator(".app-menu-toggle").isVisible()) {
     await page.locator(".app-menu-toggle").click();
   }
   await expect(page.getByText("Browser Developer")).toBeVisible();
@@ -175,7 +175,7 @@ test("registration submits only supported fields and handles backend errors", as
 test("mobile application navigation is keyboard accessible and logout returns to sign in", async ({
   page,
 }) => {
-  test.skip(test.info().project.name !== "mobile-chromium");
+  test.skip(!(((await page.viewportSize())?.width ?? 0) <= 1023));
 
   await page.route("**/api/v1/me", (route) =>
     route.fulfill({
@@ -209,7 +209,6 @@ test("mobile application navigation is keyboard accessible and logout returns to
   await page.keyboard.press("Enter");
   await expect(menuButton).toHaveAttribute("aria-expanded", "true");
 
-  await page.keyboard.press("Tab");
   await page.keyboard.press("Tab");
   const repositoriesLink = page
     .getByRole("navigation", { name: "Application navigation" })
@@ -249,7 +248,7 @@ test("mobile application navigation is keyboard accessible and logout returns to
 test("modified mobile navigation clicks preserve the open menu and visible focus", async ({
   page,
 }) => {
-  test.skip(test.info().project.name !== "desktop-chromium");
+  test.skip(!(((await page.viewportSize())?.width ?? 0) > 1023));
   await page.setViewportSize({ width: 360, height: 800 });
 
   await page.context().route("**/api/v1/me", (route) =>

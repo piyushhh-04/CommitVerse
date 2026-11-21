@@ -23,7 +23,6 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
     if (this.state.hasError) {
       return (
         <main className="repository-page repository-error-boundary" role="alert">
-          <p className="eyebrow">CommitVerse / Unexpected error</p>
           <h1>We could not render this page.</h1>
           <p>Your session and saved work are unchanged. Reload the page to try again.</p>
           <button

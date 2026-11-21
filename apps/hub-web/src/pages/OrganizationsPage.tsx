@@ -22,7 +22,6 @@ export function OrganizationsPage() {
     <main className="repository-page">
       <header className="repository-page-header">
         <div>
-          <p className="eyebrow">CommitVerse Hub / Organizations</p>
           <h1 id="foundation-title" tabIndex={-1}>
             Organizations
           </h1>
@@ -46,7 +45,6 @@ export function OrganizationsPage() {
       ) : null}
       {organizationsQuery.isError ? (
         <section className="repository-state repository-state-error" role="alert">
-          <p className="eyebrow">Organizations / Unavailable</p>
           <h2>We could not load your organizations.</h2>
           <p>
             {organizationsQuery.error instanceof ApiError
@@ -64,7 +62,6 @@ export function OrganizationsPage() {
       ) : null}
       {list && list.items.length === 0 && offset === 0 ? (
         <section className="repository-state repository-empty-state">
-          <p className="eyebrow">A shared beginning</p>
           <h2 id="organization-empty-title">No organizations yet.</h2>
           <p>Create an organization when a project needs shared membership and ownership.</p>
           <Link className="repository-secondary-action" to="/app/organizations/new">

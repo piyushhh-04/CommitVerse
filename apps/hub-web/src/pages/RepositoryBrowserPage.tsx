@@ -12,7 +12,6 @@ export function PublicRepositoryPage() {
       </Link>
       <header className="repository-detail-header">
         <div>
-          <p className="eyebrow">Repository / Anonymous read-only</p>
           <h1 id="foundation-title" tabIndex={-1}>
             Repository contents
           </h1>
@@ -48,7 +47,6 @@ export function AuthenticatedRepositoryBrowserPage() {
       </Link>
       <header className="repository-detail-header">
         <div>
-          <p className="eyebrow">Repository / Browse</p>
           <h1 id="foundation-title" tabIndex={-1}>
             Repository contents
           </h1>

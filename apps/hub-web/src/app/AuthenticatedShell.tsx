@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "r
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ThemeToggle } from "../theme/ThemeProvider";
+import { useMobileNavigation } from "./useMobileNavigation";
 
 function requestsHeadingFocus(state: unknown): boolean {
   return (
@@ -17,6 +18,7 @@ export function AuthenticatedShell() {
   const location = useLocation();
   const [isNavigationOpen, setIsNavigationOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const navigationRef = useRef<HTMLElement>(null);
   const previousPathname = useRef(location.pathname);
   const focusDestinationHeading = useRef(false);
   const isLogoutPending = auth.operation.status === "pending" && auth.operation.action === "logout";
@@ -25,19 +27,13 @@ export function AuthenticatedShell() {
       ? auth.operation.error
       : null;
 
+  useMobileNavigation(isNavigationOpen, menuButtonRef, navigationRef, () =>
+    setIsNavigationOpen(false),
+  );
+
   useEffect(() => {
-    if (!isNavigationOpen) return;
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setIsNavigationOpen(false);
-        menuButtonRef.current?.focus();
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isNavigationOpen]);
+    setIsNavigationOpen(false);
+  }, [location.pathname]);
 
   useLayoutEffect(() => {
     const pathnameChanged = previousPathname.current !== location.pathname;
@@ -80,18 +76,22 @@ export function AuthenticatedShell() {
       return;
     }
 
-    if (isNavigationOpen && window.matchMedia("(max-width: 760px)").matches) {
-      if (location.pathname === destination) {
+    const isCompactNavigation = window.matchMedia("(max-width: 1023px)").matches;
+    if (location.pathname === destination) {
+      if (isNavigationOpen && isCompactNavigation) {
         menuButtonRef.current?.focus();
-      } else {
-        focusDestinationHeading.current = true;
       }
+    } else if (isCompactNavigation) {
+      focusDestinationHeading.current = true;
     }
     setIsNavigationOpen(false);
   }
 
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#app-main">
+        Skip to content
+      </a>
       <header className="app-header">
         <div className="app-header-inner">
           <Link className="brand app-brand" to="/app" aria-label="CommitVerse Hub dashboard">
@@ -113,11 +113,21 @@ export function AuthenticatedShell() {
             aria-controls="app-navigation"
             onClick={() => setIsNavigationOpen((open) => !open)}
           >
-            <span />
-            <span />
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              {isNavigationOpen ? (
+                <path d="m5 5 10 10M15 5 5 15" />
+              ) : (
+                <path d="M3 6h14M3 10h14M3 14h14" />
+              )}
+            </svg>
           </button>
 
-          <nav className={navClass} id="app-navigation" aria-label="Application navigation">
+          <nav
+            ref={navigationRef}
+            className={navClass}
+            id="app-navigation"
+            aria-label="Application navigation"
+          >
             <div className="app-navigation-links">
               <NavLink to="/app" end onClick={(event) => closeNavigation("/app", event)}>
                 Dashboard
@@ -138,6 +148,7 @@ export function AuthenticatedShell() {
             <div className="app-navigation-account">
               <div className="app-user-summary">
                 <span className="app-user-name">{auth.user.display_name}</span>
+                <span className="app-user-username">@{auth.user.username}</span>
                 <span className="app-user-email">{auth.user.email}</span>
               </div>
               <Link className="app-account-link" to="/app/settings/profile">
@@ -158,7 +169,7 @@ export function AuthenticatedShell() {
         </div>
       </header>
 
-      <div className="app-content">
+      <div className="app-content" id="app-main" tabIndex={-1}>
         {logoutError ? (
           <div className="app-operation-error" role="alert">
             <span>{logoutError.message}</span>
